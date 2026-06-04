@@ -40,6 +40,7 @@ body {
     linear-gradient(125deg, rgba(66, 222, 153, 0.08), transparent 34%),
     linear-gradient(315deg, rgba(242, 184, 97, 0.06), transparent 32%),
     var(--bg);
+  font-size: 13px;
 }
 
 button,
@@ -53,7 +54,7 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 286px minmax(420px, 1fr) 330px;
+  grid-template-columns: 268px minmax(420px, 1fr) 318px;
   height: 100vh;
   min-height: 100vh;
   overflow: hidden;
@@ -69,8 +70,8 @@ button {
 .sidebar {
   display: grid;
   grid-template-rows: auto auto auto auto auto 1fr auto;
-  gap: 16px;
-  padding: 20px 16px;
+  gap: 12px;
+  padding: 16px 13px;
   overflow: hidden;
   border-right: 1px solid var(--line);
 }
@@ -97,7 +98,7 @@ button {
   border-radius: 8px;
   background: linear-gradient(145deg, #1c2a23, #243129);
   color: var(--green);
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 900;
 }
 
@@ -109,7 +110,7 @@ button {
 }
 
 .brand h1 {
-  font-size: 24px;
+  font-size: 21px;
   line-height: 1;
 }
 
@@ -123,7 +124,7 @@ button {
 
 .brand p {
   margin-top: 6px;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .section-label {
@@ -152,12 +153,12 @@ button {
 .skills-card {
   display: grid;
   gap: 8px;
-  padding: 12px;
+  padding: 10px;
 }
 
 .project-card strong {
   overflow: hidden;
-  font-size: 15px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -201,7 +202,7 @@ button {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 44px;
+  min-height: 38px;
   border: 0;
   border-radius: 8px;
   background: var(--green);
@@ -286,7 +287,7 @@ button {
   width: 100%;
   border: 1px solid transparent;
   border-radius: 8px;
-  padding: 11px 12px;
+  padding: 9px 10px;
   background: transparent;
   color: var(--text);
   text-align: left;
@@ -324,7 +325,7 @@ button {
 
 .skills-card p {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.6;
 }
 
@@ -338,12 +339,12 @@ code {
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 12px;
   height: 100vh;
-  padding: 20px;
+  padding: 16px;
 }
 
 .chat-header {
   justify-content: space-between;
-  padding: 14px 16px;
+  padding: 11px 13px;
 }
 
 .eyebrow {
@@ -354,7 +355,7 @@ code {
 
 .chat-header h2 {
   margin-top: 4px;
-  font-size: 21px;
+  font-size: 18px;
   line-height: 1.2;
 }
 
@@ -391,7 +392,7 @@ code {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 12px 14px;
+  padding: 10px 12px;
 }
 
 .thread-plan div {
@@ -401,17 +402,17 @@ code {
 
 .thread-plan span {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
 .messages {
   display: grid;
   align-content: start;
-  gap: 14px;
+  gap: 10px;
   min-height: 0;
   overflow: auto;
-  padding: 20px;
+  padding: 14px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 22%),
     rgba(14, 17, 16, 0.72);
@@ -419,14 +420,14 @@ code {
 
 .empty-state {
   display: grid;
-  gap: 16px;
+  gap: 12px;
   max-width: 620px;
   margin: 12vh auto 0;
   text-align: center;
 }
 
 .empty-state h3 {
-  font-size: 34px;
+  font-size: 25px;
   line-height: 1.15;
 }
 
@@ -434,6 +435,7 @@ code {
   margin: 0;
   color: var(--muted);
   line-height: 1.8;
+  font-size: 13px;
 }
 
 .quick-actions {
@@ -465,7 +467,7 @@ code {
   max-width: min(780px, 86%);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 12px 14px;
+  padding: 10px 12px;
   background: rgba(35, 43, 38, 0.88);
   animation: message-in 180ms ease both;
 }
@@ -514,7 +516,8 @@ code {
 
 .message-content {
   overflow-wrap: anywhere;
-  line-height: 1.72;
+  font-size: 13px;
+  line-height: 1.62;
 }
 
 .message-time {
@@ -606,6 +609,7 @@ code {
 }
 
 .composer {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
@@ -646,7 +650,8 @@ textarea {
   padding: 0;
   background: transparent;
   color: var(--text);
-  line-height: 1.65;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 textarea::placeholder {
@@ -690,14 +695,14 @@ textarea::placeholder {
   gap: 12px;
   height: 100vh;
   overflow: auto;
-  padding: 20px 16px;
+  padding: 16px 13px;
   border-left: 1px solid var(--line);
 }
 
 .inspector-card {
   display: grid;
   gap: 12px;
-  padding: 13px;
+  padding: 10px;
   box-shadow: none;
 }
 
@@ -734,7 +739,7 @@ textarea::placeholder {
   margin: 0;
   overflow-wrap: anywhere;
   color: var(--text);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -797,8 +802,100 @@ textarea::placeholder {
 
 .muted {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.6;
+}
+
+.command-palette {
+  position: absolute;
+  right: 122px;
+  bottom: calc(100% + 8px);
+  left: 10px;
+  z-index: 10;
+  display: grid;
+  gap: 4px;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 6px;
+  background: rgba(18, 22, 20, 0.98);
+  box-shadow: var(--shadow);
+}
+
+.command-palette[hidden] {
+  display: none;
+}
+
+.command-item {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border: 0;
+  border-radius: 7px;
+  padding: 8px 9px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.command-item:hover {
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.command-item strong {
+  color: var(--green);
+  font-size: 12px;
+}
+
+.command-item span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-list,
+.memory-list {
+  display: grid;
+  gap: 7px;
+}
+
+.tool-chip,
+.memory-row {
+  display: grid;
+  align-items: center;
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.tool-chip {
+  grid-template-columns: minmax(0, 1fr) auto;
+  color: var(--text);
+  text-align: left;
+}
+
+.tool-chip strong,
+.memory-row span {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-chip span,
+.memory-row strong {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.memory-row {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 @keyframes message-in {

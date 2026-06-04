@@ -17,12 +17,12 @@ class BigModelProvider:
     def __init__(
         self,
         *,
-        base_url: str = "https://open.bigmodel.cn/api/paas/v4",
-        model: str = "glm-4.7",
+        base_url: str | None = None,
+        model: str | None = None,
         api_key_env: str = "BIGMODEL_API_KEY",
     ) -> None:
-        self.base_url = base_url.rstrip("/")
-        self.model = model
+        self.base_url = (base_url or os.getenv("BIGMODEL_BASE_URL", "https://open.bigmodel.cn/api/paas/v4")).rstrip("/")
+        self.model = model or os.getenv("BIGMODEL_MODEL", "glm-4.7")
         self.api_key_env = api_key_env
 
     def is_configured(self) -> bool:

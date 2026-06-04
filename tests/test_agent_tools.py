@@ -36,6 +36,16 @@ class WorkspaceToolsTest(unittest.TestCase):
         with self.assertRaises(ToolExecutionError):
             self.tools.run("shell_command", {"command": "rm -rf .nova"})
 
+    def test_read_only_permission_blocks_write(self) -> None:
+        tools = WorkspaceTools(self.root, permission_mode="read_only")
+        with self.assertRaises(ToolExecutionError):
+            tools.run("create_file", {"path": "new.txt", "content": "x"})
+
+    def test_tool_specs_include_parallel_flag(self) -> None:
+        specs = {item["name"]: item for item in self.tools.list_specs()}
+        self.assertTrue(specs["read_file"]["supports_parallel"])
+        self.assertFalse(specs["create_file"]["supports_parallel"])
+
 
 if __name__ == "__main__":
     unittest.main()

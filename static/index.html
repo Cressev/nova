@@ -81,6 +81,7 @@
             placeholder="和 Nova 对话，让它帮你读代码、拆任务、解释实现..."
             required
           ></textarea>
+          <div id="command-palette" class="command-palette" hidden></div>
           <button id="send-button" type="submit">
             <span class="send-label">发送</span>
             <span class="send-icon">→</span>
@@ -133,10 +134,26 @@
 
         <section class="inspector-card">
           <div class="card-title">
-            <span>Browser</span>
-            <strong>预览</strong>
+            <span>Tools</span>
+            <strong id="tool-count">0</strong>
           </div>
-          <p class="muted">后续接入本地预览、截图和页面批注；当前用 Playwright 做验收。</p>
+          <div id="tool-list" class="tool-list"></div>
+        </section>
+
+        <section class="inspector-card">
+          <div class="card-title">
+            <span>Memory</span>
+            <strong id="memory-state">读取中</strong>
+          </div>
+          <div id="memory-list" class="memory-list"></div>
+        </section>
+
+        <section class="inspector-card">
+          <div class="card-title">
+            <span>Config</span>
+            <strong id="config-state">本地</strong>
+          </div>
+          <div id="config-list" class="permissions-list"></div>
         </section>
       </aside>
     </main>

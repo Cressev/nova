@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 import json
+import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,9 +22,96 @@ class ToolResult:
     data: dict[str, Any] | None = None
 
 
+@dataclass(frozen=True)
+class ToolSpec:
+    name: str
+    description: str
+    read_only: bool
+    supports_parallel: bool
+    permission: str
+    schema: dict[str, Any]
+
+
+TOOL_SPECS: dict[str, ToolSpec] = {
+    "read_file": ToolSpec(
+        name="read_file",
+        description="读取工作区内文件内容。",
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={"path": "相对路径", "max_bytes": 24000},
+    ),
+    "list_files": ToolSpec(
+        name="list_files",
+        description="列出工作区内文件。",
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={"path": ".", "limit": 200},
+    ),
+    "search_text": ToolSpec(
+        name="search_text",
+        description="使用 ripgrep 在工作区内搜索固定文本。",
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={"query": "关键词", "path": ".", "max_results": 80},
+    ),
+    "git_status": ToolSpec(
+        name="git_status",
+        description="读取 Git 分支和工作区变更摘要。",
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={},
+    ),
+    "git_diff": ToolSpec(
+        name="git_diff",
+        description="读取当前工作区 diff。",
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={"path": "可选相对路径", "max_bytes": 24000},
+    ),
+    "shell_command": ToolSpec(
+        name="shell_command",
+        description="执行受控白名单 shell 命令。",
+        read_only=False,
+        supports_parallel=False,
+        permission="shell",
+        schema={"command": "受控命令", "workdir": ".", "timeout_ms": 10000},
+    ),
+    "replace_in_file": ToolSpec(
+        name="replace_in_file",
+        description="替换文件中的第一处匹配文本。",
+        read_only=False,
+        supports_parallel=False,
+        permission="write",
+        schema={"path": "文件", "old": "原文", "new": "新文"},
+    ),
+    "create_file": ToolSpec(
+        name="create_file",
+        description="创建新文件。",
+        read_only=False,
+        supports_parallel=False,
+        permission="write",
+        schema={"path": "文件", "content": "内容"},
+    ),
+    "apply_patch": ToolSpec(
+        name="apply_patch",
+        description="应用 unified diff 补丁到工作区。",
+        read_only=False,
+        supports_parallel=False,
+        permission="write",
+        schema={"patch": "unified diff"},
+    ),
+}
+
+
 class WorkspaceTools:
-    def __init__(self, project_root: Path) -> None:
+    def __init__(self, project_root: Path, *, permission_mode: str = "workspace_write") -> None:
         self.project_root = project_root.resolve()
+        self.permission_mode = permission_mode
 
     def run(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         handlers = {
@@ -34,11 +122,31 @@ class WorkspaceTools:
             "replace_in_file": self.replace_in_file,
             "create_file": self.create_file,
             "git_status": self.git_status,
+            "git_diff": self.git_diff,
+            "apply_patch": self.apply_patch,
         }
         handler = handlers.get(name)
         if handler is None:
             raise ToolExecutionError(f"未知工具：{name}")
+        self._check_permission(name)
         return handler(arguments)
+
+    def list_specs(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "name": spec.name,
+                "description": spec.description,
+                "read_only": spec.read_only,
+                "supports_parallel": spec.supports_parallel,
+                "permission": spec.permission,
+                "schema": spec.schema,
+            }
+            for spec in TOOL_SPECS.values()
+        ]
+
+    def supports_parallel(self, name: str) -> bool:
+        spec = TOOL_SPECS.get(name)
+        return bool(spec and spec.supports_parallel and spec.read_only)
 
     def read_file(self, arguments: dict[str, Any]) -> ToolResult:
         path = self._resolve_workspace_path(str(arguments.get("path", "")))
@@ -199,6 +307,62 @@ class WorkspaceTools:
             ok=result.returncode == 0,
         )
 
+    def git_diff(self, arguments: dict[str, Any]) -> ToolResult:
+        path_value = str(arguments.get("path") or "").strip()
+        max_bytes = int(arguments.get("max_bytes") or 24000)
+        command = ["git", "-c", "core.quotepath=false", "diff", "--"]
+        title = "读取 Git diff"
+        if path_value:
+            path = self._resolve_workspace_path(path_value)
+            command.append(self._display(path))
+            title = f"读取 Git diff：{self._display(path)}"
+        result = subprocess.run(
+            command,
+            cwd=self.project_root,
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+        output = (result.stdout or result.stderr or "当前没有 diff")[:max_bytes]
+        return ToolResult(
+            tool="git_diff",
+            title=title,
+            output=output,
+            ok=result.returncode == 0,
+            data={"exit_code": result.returncode},
+        )
+
+    def apply_patch(self, arguments: dict[str, Any]) -> ToolResult:
+        patch_text = str(arguments.get("patch") or "")
+        if not patch_text.strip():
+            raise ToolExecutionError("apply_patch 需要 patch")
+        self._validate_patch_paths(patch_text)
+        check = subprocess.run(
+            ["git", "apply", "--check", "-"],
+            cwd=self.project_root,
+            input=patch_text,
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+        if check.returncode != 0:
+            raise ToolExecutionError(check.stderr.strip() or "补丁校验失败")
+        result = subprocess.run(
+            ["git", "apply", "-"],
+            cwd=self.project_root,
+            input=patch_text,
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+        return ToolResult(
+            tool="apply_patch",
+            title="应用补丁",
+            output=result.stdout.strip() or result.stderr.strip() or "补丁已应用",
+            ok=result.returncode == 0,
+            data={"exit_code": result.returncode},
+        )
+
     def _resolve_workspace_path(self, value: str) -> Path:
         if not value:
             raise ToolExecutionError("路径不能为空")
@@ -228,6 +392,12 @@ class WorkspaceTools:
         blocked = ["rm ", "rm -", "sudo", "chmod ", "chown ", "mkfs", "dd ", ":(){", "git push"]
         if any(token in lowered for token in blocked):
             return False
+        try:
+            first_token = shlex.split(command)[0]
+        except (IndexError, ValueError):
+            return False
+        if first_token in {"rm", "sudo", "chmod", "chown", "mkfs", "dd"}:
+            return False
         allowed_prefixes = (
             "pwd",
             "ls",
@@ -246,6 +416,26 @@ class WorkspaceTools:
         )
         return lowered.startswith(allowed_prefixes)
 
+    def _check_permission(self, name: str) -> None:
+        spec = TOOL_SPECS.get(name)
+        if spec is None or spec.permission == "read":
+            return
+        if self.permission_mode == "read_only":
+            raise ToolExecutionError(f"当前权限模式为 read_only，禁止执行 {name}")
+        if self.permission_mode == "ask":
+            raise ToolExecutionError(f"{name} 需要用户审批；当前版本尚未实现前端审批确认")
+
+    def _validate_patch_paths(self, patch_text: str) -> None:
+        for line in patch_text.splitlines():
+            if not (line.startswith("+++ ") or line.startswith("--- ")):
+                continue
+            raw = line[4:].strip()
+            if raw == "/dev/null":
+                continue
+            if raw.startswith("a/") or raw.startswith("b/"):
+                raw = raw[2:]
+            self._resolve_workspace_path(raw)
+
 
 def tool_result_as_json(result: ToolResult) -> str:
     return json.dumps(
@@ -258,3 +448,7 @@ def tool_result_as_json(result: ToolResult) -> str:
         },
         ensure_ascii=False,
     )
+
+
+def tool_specs_as_jsonable() -> list[dict[str, Any]]:
+    return WorkspaceTools(Path.cwd()).list_specs()

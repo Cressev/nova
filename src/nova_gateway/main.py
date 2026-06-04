@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .agent_runtime import CodexLikeAgentRuntime
+from .agent_tools import WorkspaceTools
 from .models import (
     ChatMessage,
     ChatMessageCreate,
@@ -37,10 +38,19 @@ from .store import TaskStore
 settings = load_settings()
 store = TaskStore(settings.state_dir)
 runtime = DemoAgentRuntime(store=store, project_root=settings.project_root)
-provider = BigModelProvider()
+provider = BigModelProvider(
+    base_url=settings.provider_base_url,
+    model=settings.provider_model,
+)
 agent_runtime = CodexLikeAgentRuntime(
     provider=provider,
     project_root=settings.project_root,
+    max_tool_rounds=settings.max_tool_rounds,
+    permission_mode=settings.permission_mode,
+)
+workspace_tools = WorkspaceTools(
+    settings.project_root,
+    permission_mode=settings.permission_mode,
 )
 
 app = FastAPI(title="Nova Gateway", version=__version__)
@@ -73,6 +83,31 @@ async def provider_status() -> dict:
     }
 
 
+@app.get("/api/runtime/config")
+async def runtime_config() -> dict:
+    return {
+        "model": provider.model,
+        "base_url": provider.base_url,
+        "permission_mode": settings.permission_mode,
+        "network_access": settings.network_access,
+        "max_tool_rounds": settings.max_tool_rounds,
+        "worktree_enabled": False,
+        "approval_ui_enabled": False,
+        "tool_parallel_readonly": True,
+        "memory_enabled": True,
+    }
+
+
+@app.get("/api/tools")
+async def tool_list() -> dict:
+    return {"items": workspace_tools.list_specs()}
+
+
+@app.get("/api/memory/status")
+async def memory_status() -> dict:
+    return agent_runtime.memory.status()
+
+
 @app.get("/api/workspace/status", response_model=WorkspaceStatus)
 async def workspace_status() -> WorkspaceStatus:
     return WorkspaceStatus(
@@ -99,9 +134,15 @@ async def workspace_status() -> WorkspaceStatus:
             ),
         ],
         permissions=WorkspacePermissions(
-            workspace_write=True,
-            network_access=False,
-            approval_policy="按需审批",
+            workspace_write=settings.permission_mode == "workspace_write",
+            network_access=settings.network_access,
+            approval_policy=(
+                "自动允许工作区写入"
+                if settings.permission_mode == "workspace_write"
+                else "需要审批" if settings.permission_mode == "ask" else "只读"
+            ),
+            permission_mode=settings.permission_mode,
+            shell_commands=settings.permission_mode == "workspace_write",
         ),
         commands=WorkspaceCommands(
             test="PYTHONPATH=src python3 -m unittest discover -s tests",
@@ -329,6 +370,24 @@ async def stream_chat_message(
                     task_id=task.id,
                     type="assistant_stream_failed",
                     title="流式回复失败",
+                    message=str(exc),
+                    status="error",
+                    data={"session_id": session_id},
+                )
+            )
+            yield _ndjson({"type": "error", "message": error_message.model_dump(mode="json")})
+        except Exception as exc:
+            error_message = ChatMessage(
+                session_id=session_id,
+                role=ChatRole.ERROR,
+                content=f"Nova 运行时异常：{exc}",
+            )
+            store.add_chat_message(error_message)
+            store.add_event(
+                TimelineEvent(
+                    task_id=task.id,
+                    type="assistant_runtime_failed",
+                    title="运行时异常",
                     message=str(exc),
                     status="error",
                     data={"session_id": session_id},

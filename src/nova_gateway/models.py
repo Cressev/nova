@@ -108,6 +108,8 @@ class WorkspacePermissions(BaseModel):
     workspace_write: bool
     network_access: bool
     approval_policy: str
+    permission_mode: str = "workspace_write"
+    shell_commands: bool = True
 
 
 class WorkspaceCommands(BaseModel):

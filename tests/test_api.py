@@ -32,6 +32,22 @@ class ApiTest(unittest.TestCase):
         self.assertIn("permissions", payload)
         self.assertIn("commands", payload)
         self.assertTrue(any(mode["id"] == "local" for mode in payload["modes"]))
+        self.assertIn("permission_mode", payload["permissions"])
+
+    def test_runtime_config_tools_and_memory(self) -> None:
+        config = self.client.get("/api/runtime/config")
+        self.assertEqual(config.status_code, 200)
+        self.assertIn("permission_mode", config.json())
+
+        tools = self.client.get("/api/tools")
+        self.assertEqual(tools.status_code, 200)
+        names = {item["name"] for item in tools.json()["items"]}
+        self.assertIn("read_file", names)
+        self.assertIn("apply_patch", names)
+
+        memory = self.client.get("/api/memory/status")
+        self.assertEqual(memory.status_code, 200)
+        self.assertTrue(memory.json()["enabled"])
 
     def test_create_task(self) -> None:
         response = self.client.post("/api/tasks", json={"prompt": "测试任务"})

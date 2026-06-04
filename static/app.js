@@ -25,6 +25,23 @@ const modePillEl = document.querySelector("#mode-pill");
 const permissionsListEl = document.querySelector("#permissions-list");
 const testCommandEl = document.querySelector("#test-command");
 const serveCommandEl = document.querySelector("#serve-command");
+const commandPaletteEl = document.querySelector("#command-palette");
+const toolCountEl = document.querySelector("#tool-count");
+const toolListEl = document.querySelector("#tool-list");
+const memoryStateEl = document.querySelector("#memory-state");
+const memoryListEl = document.querySelector("#memory-list");
+const configStateEl = document.querySelector("#config-state");
+const configListEl = document.querySelector("#config-list");
+
+const BUILTIN_COMMANDS = [
+  { name: "/status", description: "查看网关、权限和 Git 状态" },
+  { name: "/tools", description: "列出当前可用工具和并行能力" },
+  { name: "/permissions", description: "查看权限模式和限制" },
+  { name: "/memory", description: "查看项目记忆注入状态" },
+  { name: "/review", description: "读取当前 diff 摘要" },
+  { name: "/plan", description: "先拆解任务再执行" },
+  { name: "/help", description: "查看内置指令说明" },
+];
 
 async function api(path, options = {}) {
   // 统一处理 API 错误，调用方只关注业务逻辑。
@@ -79,6 +96,17 @@ async function loadWorkspaceStatus() {
     workspacePathEl.textContent = "工作区状态读取失败";
     dirtyCountEl.textContent = "-";
   }
+}
+
+async function loadRuntimePanels() {
+  const [config, tools, memory] = await Promise.all([
+    api("/api/runtime/config"),
+    api("/api/tools"),
+    api("/api/memory/status"),
+  ]);
+  renderRuntimeConfig(config);
+  renderTools(tools.items || []);
+  renderMemory(memory);
 }
 
 function renderWorkspace(status) {
@@ -138,12 +166,71 @@ function renderPermissions(permissions) {
     ["工作区写入", permissions.workspace_write ? "允许" : "只读"],
     ["网络访问", permissions.network_access ? "允许" : "关闭"],
     ["审批策略", permissions.approval_policy],
+    ["权限模式", permissions.permission_mode],
+    ["Shell", permissions.shell_commands ? "受控允许" : "关闭"],
   ];
   for (const [label, value] of rows) {
     const item = document.createElement("div");
     item.className = "permission-row";
     item.innerHTML = `<span>${label}</span><strong>${value}</strong>`;
     permissionsListEl.appendChild(item);
+  }
+}
+
+function renderRuntimeConfig(config) {
+  configStateEl.textContent = config.permission_mode;
+  const rows = [
+    ["模型", config.model],
+    ["工具轮次", String(config.max_tool_rounds)],
+    ["只读并行", config.tool_parallel_readonly ? "已启用" : "关闭"],
+    ["审批 UI", config.approval_ui_enabled ? "已启用" : "未实现"],
+    ["工作树", config.worktree_enabled ? "已启用" : "未实现"],
+  ];
+  renderKeyValueRows(configListEl, rows);
+}
+
+function renderTools(items) {
+  toolCountEl.textContent = `${items.length}`;
+  toolListEl.innerHTML = "";
+  for (const item of items) {
+    const node = document.createElement("button");
+    node.type = "button";
+    node.className = "tool-chip";
+    node.innerHTML = `
+      <strong>${escapeHtml(item.name)}</strong>
+      <span>${item.supports_parallel ? "并行" : item.permission}</span>
+    `;
+    node.title = item.description;
+    node.addEventListener("click", () => {
+      messageEl.value = `/tools`;
+      autoResizeTextarea();
+      messageEl.focus();
+    });
+    toolListEl.appendChild(node);
+  }
+}
+
+function renderMemory(memory) {
+  memoryStateEl.textContent = memory.enabled ? "已启用" : "关闭";
+  memoryListEl.innerHTML = "";
+  for (const item of memory.files || []) {
+    const row = document.createElement("div");
+    row.className = "memory-row";
+    row.innerHTML = `
+      <span>${escapeHtml(item.path)}</span>
+      <strong>${item.exists ? "已注入" : "缺失"}</strong>
+    `;
+    memoryListEl.appendChild(row);
+  }
+}
+
+function renderKeyValueRows(container, rows) {
+  container.innerHTML = "";
+  for (const [label, value] of rows) {
+    const item = document.createElement("div");
+    item.className = "permission-row";
+    item.innerHTML = `<span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>`;
+    container.appendChild(item);
   }
 }
 
@@ -347,11 +434,15 @@ newChatEl.addEventListener("click", async () => {
 document.addEventListener("click", (event) => {
   const target = event.target.closest("[data-prompt]");
   if (!target) {
+    if (!event.target.closest(".command-palette")) {
+      hideCommandPalette();
+    }
     return;
   }
   messageEl.value = target.dataset.prompt;
   autoResizeTextarea();
   messageEl.focus();
+  updateCommandPalette();
 });
 
 form.addEventListener("submit", async (event) => {
@@ -392,6 +483,7 @@ form.addEventListener("submit", async (event) => {
     await Promise.all([
       loadSessions({ refreshMessages: false }),
       loadWorkspaceStatus(),
+      loadRuntimePanels(),
       loadHealth(),
     ]);
   } catch (error) {
@@ -454,6 +546,9 @@ async function streamAssistant(sessionId, content, assistantNode) {
         activeToolNode = null;
         streamStateEl.textContent = event.ok ? "工具完成，继续推理" : "工具失败，继续处理";
       },
+      onStatus: (event) => {
+        streamStateEl.textContent = event.status || "运行中";
+      },
     });
     buffer = result.rest;
     ok = ok && result.ok;
@@ -472,6 +567,9 @@ async function streamAssistant(sessionId, content, assistantNode) {
         finishToolEvent(activeToolNode, event);
         activeToolNode = null;
         streamStateEl.textContent = event.ok ? "工具完成，继续推理" : "工具失败，继续处理";
+      },
+      onStatus: (event) => {
+        streamStateEl.textContent = event.status || "运行中";
       },
     });
     ok = ok && result.ok;
@@ -503,6 +601,9 @@ function consumeStreamLines(buffer, assistantNode, handlers) {
     if (event.type === "tool_done") {
       handlers.onToolDone?.(event);
     }
+    if (event.type === "agent_status") {
+      handlers.onStatus?.(event);
+    }
     if (event.type === "assistant_done") {
       assistantNode.classList.remove("streaming");
       if (event.message?.content) {
@@ -525,12 +626,21 @@ function consumeStreamLines(buffer, assistantNode, handlers) {
 }
 
 messageEl.addEventListener("keydown", (event) => {
+  if (!commandPaletteEl.hidden && event.key === "Escape") {
+    hideCommandPalette();
+    return;
+  }
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
     form.requestSubmit();
   }
 });
 
-messageEl.addEventListener("input", autoResizeTextarea);
+messageEl.addEventListener("input", () => {
+  autoResizeTextarea();
+  updateCommandPalette();
+});
+
+messageEl.addEventListener("focus", updateCommandPalette);
 
 function autoResizeTextarea() {
   // 输入区随内容长高，但限制最大高度，避免挤掉对话窗口。
@@ -538,6 +648,43 @@ function autoResizeTextarea() {
   messageEl.style.height = `${Math.min(messageEl.scrollHeight, 180)}px`;
 }
 
+function updateCommandPalette() {
+  const value = messageEl.value.trimStart();
+  if (!value.startsWith("/")) {
+    hideCommandPalette();
+    return;
+  }
+  const query = value.split(/\s+/, 1)[0].toLowerCase();
+  const matches = BUILTIN_COMMANDS.filter((command) => command.name.startsWith(query));
+  if (matches.length === 0) {
+    hideCommandPalette();
+    return;
+  }
+  commandPaletteEl.innerHTML = "";
+  for (const command of matches) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "command-item";
+    item.innerHTML = `
+      <strong>${command.name}</strong>
+      <span>${command.description}</span>
+    `;
+    item.addEventListener("click", () => {
+      messageEl.value = `${command.name} `;
+      autoResizeTextarea();
+      hideCommandPalette();
+      messageEl.focus();
+    });
+    commandPaletteEl.appendChild(item);
+  }
+  commandPaletteEl.hidden = false;
+}
+
+function hideCommandPalette() {
+  commandPaletteEl.hidden = true;
+}
+
 loadHealth();
 loadWorkspaceStatus();
+loadRuntimePanels();
 loadSessions();

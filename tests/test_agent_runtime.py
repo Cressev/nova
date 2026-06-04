@@ -32,6 +32,20 @@ class AgentRuntimeTest(unittest.TestCase):
         )
         self.assertEqual(payload, {"tool": "read_file", "arguments": {"path": "README.md"}})
 
+    def test_parse_parallel_tool_calls(self) -> None:
+        payload = self.runtime._parse_tool_calls(
+            '<tool_calls>[{"tool":"read_file","arguments":{"path":"README.md"}},'
+            '{"tool":"git_status","arguments":{}}]</tool_calls>'
+        )
+        self.assertEqual(len(payload), 2)
+        self.assertEqual(payload[0]["tool"], "read_file")
+        self.assertEqual(payload[1]["tool"], "git_status")
+
+    def test_builtin_tools_command(self) -> None:
+        text = self.runtime._builtin_response("/tools")
+        self.assertIn("read_file", text)
+        self.assertIn("并行", text)
+
 
 if __name__ == "__main__":
     unittest.main()
