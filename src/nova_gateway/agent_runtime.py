@@ -134,9 +134,26 @@ class CodexLikeAgentRuntime:
         async for delta in self.provider.stream([*working_messages, final_prompt]):
             emitted = True
             parts.append(delta)
-            yield {"type": "assistant_delta", "delta": delta}
-
         text = "".join(parts)
+        final_tool_calls = self._parse_tool_calls(text)
+        if final_tool_calls:
+            # 有些模型会在“最终回答”阶段才吐工具标签；这里收回文本，改为真实执行工具。
+            yield {"type": "agent_status", "status": "识别到最终回答中的工具调用，转为真实执行"}
+            tool_results: list[str] = []
+            async for event in self._run_tool_calls(final_tool_calls):
+                if event["type"] == "tool_result_json":
+                    tool_results.append(event["result_json"])
+                    continue
+                yield event
+            answer = self._answer_from_tool_results(tool_results)
+            for chunk in self._chunk_text(answer, 36):
+                yield {"type": "assistant_delta", "delta": chunk}
+            yield {"type": "assistant_done_content", "content": answer}
+            return
+
+        for part in parts:
+            yield {"type": "assistant_delta", "delta": part}
+
         if not emitted or not text.strip():
             text = self._strip_final_tags(fallback) or "模型没有返回有效内容，请换一种更具体的说法再试。"
             parts = [text]
@@ -289,6 +306,16 @@ class CodexLikeAgentRuntime:
 
     def _direct_tool_calls_from_user(self, content: str) -> list[dict]:
         normalized = content.strip().lower()
+        shell_intents = [
+            "命令行工具",
+            "调用命令",
+            "执行命令",
+            "shell",
+            "terminal",
+            "command line",
+        ]
+        if any(intent in normalized for intent in shell_intents):
+            return [{"tool": "shell_command", "arguments": {"command": "pwd", "workdir": ".", "timeout_ms": 5000}}]
         if "文档目录" in normalized or "文档集" in normalized:
             path = "产品研发文档集" if (self.tools.project_root / "产品研发文档集").is_dir() else "."
             return [{"tool": "list_files", "arguments": {"path": path, "limit": 120}}]

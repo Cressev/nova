@@ -114,6 +114,14 @@ class AgentRuntimeTest(unittest.TestCase):
 
         self.assertEqual(calls, [{"tool": "list_files", "arguments": {"path": "产品研发文档集", "limit": 120}}])
 
+    def test_direct_shell_intent_routes_to_safe_shell_command(self) -> None:
+        calls = self.runtime._direct_tool_calls_from_user("你不会调用命令行工具吗")
+
+        self.assertEqual(
+            calls,
+            [{"tool": "shell_command", "arguments": {"command": "pwd", "workdir": ".", "timeout_ms": 5000}}],
+        )
+
     def test_tool_events_have_stable_call_id(self) -> None:
         async def collect_events() -> list[dict]:
             return [
@@ -129,6 +137,21 @@ class AgentRuntimeTest(unittest.TestCase):
 
         self.assertTrue(start["call_id"].startswith("tool_"))
         self.assertEqual(start["call_id"], done["call_id"])
+
+    def test_final_stream_tool_calls_are_executed_not_rendered_as_text(self) -> None:
+        async def fake_stream(_messages):
+            yield '<tool_calls>[{"tool":"shell_command","arguments":{"command":"pwd","workdir":".","timeout_ms":5000}}]</tool_calls>'
+
+        self.runtime.provider.stream = fake_stream  # type: ignore[method-assign]
+
+        async def collect_events() -> list[dict]:
+            return [event async for event in self.runtime._stream_final([], "")]
+
+        events = asyncio.run(collect_events())
+        deltas = "".join(event.get("delta", "") for event in events if event["type"] == "assistant_delta")
+
+        self.assertTrue(any(event["type"] == "tool_start" and event["tool"] == "shell_command" for event in events))
+        self.assertNotIn("<tool_calls>", deltas)
 
 
 if __name__ == "__main__":

@@ -80,7 +80,10 @@
           </div>
         </section>
 
-        <section id="messages" class="messages"></section>
+        <div class="messages-wrap">
+          <section id="messages" class="messages"></section>
+          <nav id="message-rail" class="message-rail" aria-label="历史提问导航"></nav>
+        </div>
 
         <form id="chat-form" class="composer">
           <div class="composer-status">
@@ -170,6 +173,17 @@
         </section>
       </aside>
     </main>
+    <dialog id="workspace-dialog" class="workspace-dialog">
+      <form method="dialog" class="workspace-dialog-panel">
+        <div class="dialog-title">
+          <strong>切换项目目录</strong>
+          <button id="workspace-dialog-close" type="button" aria-label="关闭">×</button>
+        </div>
+        <input id="workspace-dialog-input" placeholder="输入本地项目绝对路径" autocomplete="off" />
+        <div id="workspace-dialog-list" class="workspace-dialog-list"></div>
+        <button id="workspace-dialog-submit" type="button">切换到此目录</button>
+      </form>
+    </dialog>
     <script src="/static/app.js"></script>
   </body>
 </html>

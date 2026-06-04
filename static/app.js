@@ -2,6 +2,9 @@ const state = {
   selectedSessionId: null,
   selectedSessionTitle: "Nova Chat",
   sending: false,
+  collapsedProjects: new Set(),
+  workspaceCandidates: [],
+  messagesRequestId: 0,
 };
 
 const healthEl = document.querySelector("#health");
@@ -36,6 +39,12 @@ const configListEl = document.querySelector("#config-list");
 const workspaceFormEl = document.querySelector("#workspace-form");
 const workspaceInputEl = document.querySelector("#workspace-input");
 const workspaceCandidatesEl = document.querySelector("#workspace-candidates");
+const workspaceDialogEl = document.querySelector("#workspace-dialog");
+const workspaceDialogInputEl = document.querySelector("#workspace-dialog-input");
+const workspaceDialogListEl = document.querySelector("#workspace-dialog-list");
+const workspaceDialogCloseEl = document.querySelector("#workspace-dialog-close");
+const workspaceDialogSubmitEl = document.querySelector("#workspace-dialog-submit");
+const messageRailEl = document.querySelector("#message-rail");
 
 const BUILTIN_COMMANDS = [
   { name: "/status", description: "查看网关、权限和 Git 状态" },
@@ -154,12 +163,14 @@ function renderWorkspace(status) {
 }
 
 function renderWorkspacePicker(workspaces) {
+  state.workspaceCandidates = workspaces.candidates || [];
   workspaceCandidatesEl.innerHTML = "";
-  for (const path of workspaces.candidates || []) {
+  for (const path of state.workspaceCandidates) {
     const option = document.createElement("option");
     option.value = path;
     workspaceCandidatesEl.appendChild(option);
   }
+  renderWorkspaceDialogList();
 }
 
 function renderGitFiles(git) {
@@ -310,7 +321,67 @@ async function loadSessions({ refreshMessages = true } = {}) {
     state.selectedSessionId = sessions[0].id;
   }
 
+  const groups = groupSessionsByProject(sessions);
+  for (const group of groups) {
+    const groupNode = document.createElement("section");
+    groupNode.className = "session-group";
+    const collapsed = state.collapsedProjects.has(group.workspace);
+    const activeInGroup = group.sessions.some((session) => session.id === state.selectedSessionId);
+    groupNode.innerHTML = `
+      <button class="session-group-head ${activeInGroup ? "active" : ""}" type="button">
+        <span>${collapsed ? "▸" : "▾"}</span>
+        <strong>${escapeHtml(group.name)}</strong>
+        <em>${group.sessions.length}</em>
+      </button>
+      <div class="session-group-items" ${collapsed ? "hidden" : ""}></div>
+    `;
+    groupNode.querySelector(".session-group-head").addEventListener("click", () => {
+      if (state.collapsedProjects.has(group.workspace)) {
+        state.collapsedProjects.delete(group.workspace);
+      } else {
+        state.collapsedProjects.add(group.workspace);
+      }
+      loadSessions({ refreshMessages: false });
+    });
+    const itemsEl = groupNode.querySelector(".session-group-items");
+    for (const session of group.sessions) {
+      itemsEl.appendChild(renderSessionItem(session));
+    }
+    sessionListEl.appendChild(groupNode);
+  }
+
+  const selected = sessions.find((session) => session.id === state.selectedSessionId);
+  if (selected) {
+    state.selectedSessionTitle = selected.title;
+    chatTitleEl.textContent = selected.title;
+  }
+  if (refreshMessages) {
+    await loadMessages();
+  }
+}
+
+function groupSessionsByProject(sessions) {
+  const map = new Map();
   for (const session of sessions) {
+    const workspace = session.workspace || "unknown";
+    if (!map.has(workspace)) {
+      map.set(workspace, {
+        workspace,
+        name: projectName(workspace),
+        sessions: [],
+        updated_at: session.updated_at,
+      });
+    }
+    const group = map.get(workspace);
+    group.sessions.push(session);
+    if (new Date(session.updated_at) > new Date(group.updated_at)) {
+      group.updated_at = session.updated_at;
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+}
+
+function renderSessionItem(session) {
     const item = document.createElement("button");
     item.type = "button";
     item.className = `session-item ${session.id === state.selectedSessionId ? "active" : ""}`;
@@ -327,17 +398,7 @@ async function loadSessions({ refreshMessages = true } = {}) {
       event.stopPropagation();
       await deleteSession(session.id);
     });
-    sessionListEl.appendChild(item);
-  }
-
-  const selected = sessions.find((session) => session.id === state.selectedSessionId);
-  if (selected) {
-    state.selectedSessionTitle = selected.title;
-    chatTitleEl.textContent = selected.title;
-  }
-  if (refreshMessages) {
-    await loadMessages();
-  }
+  return item;
 }
 
 async function deleteSession(sessionId) {
@@ -379,6 +440,7 @@ function renderEmptyState() {
       updateCommandPalette();
     });
   }
+  renderMessageRail();
 }
 
 async function loadMessages() {
@@ -386,7 +448,12 @@ async function loadMessages() {
     renderEmptyState();
     return;
   }
-  const timeline = await api(`/api/chat/sessions/${state.selectedSessionId}/timeline`);
+  const sessionId = state.selectedSessionId;
+  const requestId = ++state.messagesRequestId;
+  const timeline = await api(`/api/chat/sessions/${sessionId}/timeline`);
+  if (requestId !== state.messagesRequestId || sessionId !== state.selectedSessionId) {
+    return;
+  }
   const items = timeline.items || [];
 
   if (items.length === 0) {
@@ -409,6 +476,7 @@ async function loadMessages() {
       appendStoredEvent(entry.item);
     }
   }
+  renderMessageRail();
   scrollMessagesToBottom();
 }
 
@@ -493,6 +561,9 @@ function appendMessage(message, options = {}) {
     <div class="message-time">${message.created_at ? formatTime(message.created_at) : "生成中"}</div>
   `;
   messagesEl.appendChild(node);
+  if (message.role === "user") {
+    renderMessageRail();
+  }
   scrollMessagesToBottom();
   return node;
 }
@@ -608,8 +679,64 @@ workspaceFormEl.addEventListener("submit", async (event) => {
   event.preventDefault();
   const path = workspaceInputEl.value.trim();
   if (!path) {
+    openWorkspaceDialog();
     return;
   }
+  if (path === projectRootEl.textContent.trim()) {
+    openWorkspaceDialog();
+    return;
+  }
+  await switchWorkspace(path);
+});
+
+workspaceInputEl.addEventListener("focus", () => {
+  renderWorkspaceDialogList();
+});
+
+workspaceInputEl.addEventListener("dblclick", openWorkspaceDialog);
+
+workspaceDialogCloseEl.addEventListener("click", () => {
+  workspaceDialogEl.close();
+});
+
+workspaceDialogSubmitEl.addEventListener("click", async () => {
+  const path = workspaceDialogInputEl.value.trim();
+  if (!path) {
+    return;
+  }
+  workspaceDialogEl.close();
+  await switchWorkspace(path);
+});
+
+function openWorkspaceDialog() {
+  workspaceDialogInputEl.value = workspaceInputEl.value.trim();
+  renderWorkspaceDialogList();
+  workspaceDialogEl.showModal();
+  workspaceDialogInputEl.focus();
+  workspaceDialogInputEl.select();
+}
+
+function renderWorkspaceDialogList() {
+  if (!workspaceDialogListEl) {
+    return;
+  }
+  workspaceDialogListEl.innerHTML = "";
+  for (const path of state.workspaceCandidates) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.innerHTML = `
+      <strong>${escapeHtml(projectName(path))}</strong>
+      <span>${escapeHtml(path)}</span>
+    `;
+    item.addEventListener("click", () => {
+      workspaceDialogInputEl.value = path;
+      workspaceInputEl.value = path;
+    });
+    workspaceDialogListEl.appendChild(item);
+  }
+}
+
+async function switchWorkspace(path) {
   streamStateEl.textContent = "正在切换项目";
   try {
     await api("/api/workspace/select", {
@@ -623,15 +750,37 @@ workspaceFormEl.addEventListener("submit", async (event) => {
     const message = error instanceof Error ? error.message : "切换失败";
     streamStateEl.textContent = `切换失败：${message}`;
   }
-});
+}
 
 collapseToolsEl.addEventListener("click", () => {
-  const toolDetails = messagesEl.querySelectorAll(".tool-event details");
-  for (const detail of toolDetails) {
-    detail.open = false;
+  const collapsed = messagesEl.classList.toggle("tools-collapsed");
+  if (collapsed) {
+    collapseToolsEl.textContent = "展开过程";
+    streamStateEl.textContent = "已收起执行过程，只保留最终回答";
+    return;
   }
-  streamStateEl.textContent = `已折叠 ${toolDetails.length} 个工具详情`;
+  collapseToolsEl.textContent = "收起过程";
+  streamStateEl.textContent = "已展开执行过程";
 });
+
+function renderMessageRail() {
+  messageRailEl.innerHTML = "";
+  const userMessages = Array.from(messagesEl.querySelectorAll(".message.user"));
+  if (userMessages.length <= 1) {
+    messageRailEl.hidden = true;
+    return;
+  }
+  messageRailEl.hidden = false;
+  for (const node of userMessages) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.title = shortText(node.querySelector(".message-content")?.textContent || "历史提问", 80);
+    button.addEventListener("click", () => {
+      node.scrollIntoView({ block: "start", behavior: "smooth" });
+    });
+    messageRailEl.appendChild(button);
+  }
+}
 
 function setupInspectorCards() {
   for (const card of document.querySelectorAll(".inspector-card")) {

@@ -298,7 +298,7 @@ button {
 .session-list {
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: 9px;
   min-height: 0;
   overflow: auto;
   padding-right: 2px;
@@ -333,6 +333,52 @@ button {
     border-color 150ms ease,
     background 150ms ease,
     transform 150ms ease;
+}
+
+.session-group {
+  display: grid;
+  gap: 6px;
+}
+
+.session-group-head {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 8px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  text-align: left;
+}
+
+.session-group-head.active {
+  border-color: rgba(66, 222, 153, 0.34);
+  background: rgba(66, 222, 153, 0.08);
+}
+
+.session-group-head span,
+.session-group-head em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.session-group-head strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-group-items {
+  display: grid;
+  gap: 7px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
 }
 
 .session-item:hover {
@@ -401,6 +447,7 @@ code {
 }
 
 .main-panel {
+  position: relative;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 12px;
@@ -479,7 +526,13 @@ code {
   line-height: 1.5;
 }
 
+.messages-wrap {
+  position: relative;
+  min-height: 0;
+}
+
 .messages {
+  height: 100%;
   display: grid;
   align-content: start;
   gap: 10px;
@@ -492,6 +545,42 @@ code {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 22%),
     rgba(14, 17, 16, 0.72);
+}
+
+.message-rail {
+  position: absolute;
+  top: 16px;
+  right: 8px;
+  bottom: 16px;
+  z-index: 5;
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  width: 18px;
+  pointer-events: none;
+}
+
+.message-rail[hidden] {
+  display: none;
+}
+
+.message-rail button {
+  width: 15px;
+  height: 3px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(238, 244, 239, 0.26);
+  pointer-events: auto;
+  transition:
+    width 150ms ease,
+    background 150ms ease,
+    transform 150ms ease;
+}
+
+.message-rail button:hover {
+  width: 18px;
+  background: var(--green);
+  transform: translateX(-2px);
 }
 
 .empty-state {
@@ -743,6 +832,24 @@ code {
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.messages.tools-collapsed .tool-event,
+.messages.tools-collapsed .agent-status {
+  display: none;
+}
+
+.messages.tools-collapsed::before {
+  justify-self: start;
+  width: min(720px, 92%);
+  border: 1px dashed rgba(115, 201, 244, 0.34);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--muted);
+  background: rgba(115, 201, 244, 0.06);
+  content: "执行过程已收起";
+  font-size: 12px;
+  font-weight: 850;
 }
 
 .composer {
@@ -1091,6 +1198,102 @@ textarea::placeholder {
 
 .memory-row.ignored strong {
   color: var(--amber);
+}
+
+.workspace-dialog {
+  width: min(620px, calc(100vw - 32px));
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 0;
+  background: rgba(18, 22, 20, 0.98);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.workspace-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(6px);
+}
+
+.workspace-dialog-panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.dialog-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dialog-title strong {
+  font-size: 14px;
+}
+
+.dialog-title button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+}
+
+.workspace-dialog input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px;
+  outline: 0;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text);
+}
+
+.workspace-dialog input:focus {
+  border-color: rgba(66, 222, 153, 0.42);
+}
+
+.workspace-dialog-list {
+  display: grid;
+  gap: 7px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.workspace-dialog-list button {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  text-align: left;
+}
+
+.workspace-dialog-list button:hover {
+  border-color: rgba(115, 201, 244, 0.42);
+}
+
+.workspace-dialog-list span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#workspace-dialog-submit {
+  min-height: 38px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--green);
+  color: #08110d;
+  font-weight: 900;
 }
 
 @keyframes message-in {
