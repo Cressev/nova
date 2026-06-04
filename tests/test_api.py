@@ -60,6 +60,10 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(selected.status_code, 200)
         self.assertEqual(selected.json()["current_root"], current)
 
+        queried = self.client.get("/api/workspaces", params={"q": current[: max(1, len(current) - 2)]})
+        self.assertEqual(queried.status_code, 200)
+        self.assertIn(current, queried.json()["candidates"])
+
     def test_create_task(self) -> None:
         response = self.client.post("/api/tasks", json={"prompt": "测试任务"})
         self.assertEqual(response.status_code, 201)

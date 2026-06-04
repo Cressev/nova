@@ -5,7 +5,7 @@ import json
 import subprocess
 from collections.abc import AsyncIterator
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -126,8 +126,8 @@ async def memory_status() -> dict:
 
 
 @app.get("/api/workspaces")
-async def workspace_list() -> dict:
-    return workspace_manager.status()
+async def workspace_list(q: str | None = Query(default=None, max_length=1200)) -> dict:
+    return workspace_manager.status(query=q)
 
 
 @app.post("/api/workspace/select")

@@ -29,7 +29,6 @@ const permissionsListEl = document.querySelector("#permissions-list");
 const testCommandEl = document.querySelector("#test-command");
 const serveCommandEl = document.querySelector("#serve-command");
 const commandPaletteEl = document.querySelector("#command-palette");
-const collapseToolsEl = document.querySelector("#collapse-tools");
 const toolCountEl = document.querySelector("#tool-count");
 const toolListEl = document.querySelector("#tool-list");
 const memoryStateEl = document.querySelector("#memory-state");
@@ -39,12 +38,14 @@ const configListEl = document.querySelector("#config-list");
 const workspaceFormEl = document.querySelector("#workspace-form");
 const workspaceInputEl = document.querySelector("#workspace-input");
 const workspaceCandidatesEl = document.querySelector("#workspace-candidates");
+const workspaceSuggestionsEl = document.querySelector("#workspace-suggestions");
 const workspaceDialogEl = document.querySelector("#workspace-dialog");
 const workspaceDialogInputEl = document.querySelector("#workspace-dialog-input");
 const workspaceDialogListEl = document.querySelector("#workspace-dialog-list");
 const workspaceDialogCloseEl = document.querySelector("#workspace-dialog-close");
 const workspaceDialogSubmitEl = document.querySelector("#workspace-dialog-submit");
 const messageRailEl = document.querySelector("#message-rail");
+let workspaceSuggestTimer = null;
 
 const BUILTIN_COMMANDS = [
   { name: "/status", description: "查看网关、权限和 Git 状态" },
@@ -120,6 +121,13 @@ async function loadWorkspaceStatus() {
   }
 }
 
+async function loadWorkspaceCandidates(query = "") {
+  const suffix = query ? `?q=${encodeURIComponent(query)}` : "";
+  const workspaces = await api(`/api/workspaces${suffix}`);
+  renderWorkspacePicker(workspaces);
+  return workspaces;
+}
+
 async function loadRuntimePanels() {
   const [config, tools, memory] = await Promise.all([
     api("/api/runtime/config"),
@@ -171,6 +179,7 @@ function renderWorkspacePicker(workspaces) {
     workspaceCandidatesEl.appendChild(option);
   }
   renderWorkspaceDialogList();
+  renderWorkspaceSuggestions();
 }
 
 function renderGitFiles(git) {
@@ -336,12 +345,17 @@ async function loadSessions({ refreshMessages = true } = {}) {
       <div class="session-group-items" ${collapsed ? "hidden" : ""}></div>
     `;
     groupNode.querySelector(".session-group-head").addEventListener("click", () => {
+      const items = groupNode.querySelector(".session-group-items");
+      const arrow = groupNode.querySelector(".session-group-head span");
       if (state.collapsedProjects.has(group.workspace)) {
         state.collapsedProjects.delete(group.workspace);
+        items.hidden = false;
+        arrow.textContent = "▾";
       } else {
         state.collapsedProjects.add(group.workspace);
+        items.hidden = true;
+        arrow.textContent = "▸";
       }
-      loadSessions({ refreshMessages: false });
     });
     const itemsEl = groupNode.querySelector(".session-group-items");
     for (const session of group.sessions) {
@@ -476,6 +490,7 @@ async function loadMessages() {
       appendStoredEvent(entry.item);
     }
   }
+  updateAllTurnToolControls();
   renderMessageRail();
   scrollMessagesToBottom();
 }
@@ -556,10 +571,16 @@ function appendMessage(message, options = {}) {
   node.id = targetId;
   node.dataset.messageId = message.id || "";
   node.innerHTML = `
-    <div class="message-role">${roleLabel(message.role)}</div>
+    <div class="message-head">
+      <div class="message-role">${roleLabel(message.role)}</div>
+      ${message.role === "assistant" ? '<button class="turn-tools-toggle" type="button" hidden>收起过程</button>' : ""}
+    </div>
     <div class="message-content">${escapeHtml(message.content || "")}</div>
     <div class="message-time">${message.created_at ? formatTime(message.created_at) : "生成中"}</div>
   `;
+  if (message.role === "assistant") {
+    setupTurnToolToggle(node);
+  }
   messagesEl.appendChild(node);
   if (message.role === "user") {
     renderMessageRail();
@@ -690,10 +711,18 @@ workspaceFormEl.addEventListener("submit", async (event) => {
 });
 
 workspaceInputEl.addEventListener("focus", () => {
-  renderWorkspaceDialogList();
+  scheduleWorkspaceSuggestions(0);
+});
+
+workspaceInputEl.addEventListener("input", () => {
+  scheduleWorkspaceSuggestions(160);
 });
 
 workspaceInputEl.addEventListener("dblclick", openWorkspaceDialog);
+
+workspaceDialogInputEl.addEventListener("input", () => {
+  scheduleWorkspaceSuggestions(160, workspaceDialogInputEl.value);
+});
 
 workspaceDialogCloseEl.addEventListener("click", () => {
   workspaceDialogEl.close();
@@ -736,6 +765,45 @@ function renderWorkspaceDialogList() {
   }
 }
 
+function scheduleWorkspaceSuggestions(delay = 160, query = workspaceInputEl.value.trim()) {
+  window.clearTimeout(workspaceSuggestTimer);
+  workspaceSuggestTimer = window.setTimeout(async () => {
+    try {
+      await loadWorkspaceCandidates(query);
+      renderWorkspaceSuggestions();
+    } catch {
+      workspaceSuggestionsEl.hidden = true;
+    }
+  }, delay);
+}
+
+function renderWorkspaceSuggestions() {
+  workspaceSuggestionsEl.innerHTML = "";
+  const currentValue = workspaceInputEl.value.trim().toLowerCase();
+  const candidates = state.workspaceCandidates
+    .filter((path) => !currentValue || path.toLowerCase().includes(currentValue) || projectName(path).toLowerCase().includes(currentValue))
+    .slice(0, 8);
+  if (!document.activeElement || document.activeElement !== workspaceInputEl || candidates.length === 0) {
+    workspaceSuggestionsEl.hidden = true;
+    return;
+  }
+  for (const path of candidates) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.innerHTML = `
+      <strong>${escapeHtml(projectName(path))}</strong>
+      <span>${escapeHtml(path)}</span>
+    `;
+    item.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      workspaceInputEl.value = path;
+      workspaceSuggestionsEl.hidden = true;
+    });
+    workspaceSuggestionsEl.appendChild(item);
+  }
+  workspaceSuggestionsEl.hidden = false;
+}
+
 async function switchWorkspace(path) {
   streamStateEl.textContent = "正在切换项目";
   try {
@@ -751,17 +819,6 @@ async function switchWorkspace(path) {
     streamStateEl.textContent = `切换失败：${message}`;
   }
 }
-
-collapseToolsEl.addEventListener("click", () => {
-  const collapsed = messagesEl.classList.toggle("tools-collapsed");
-  if (collapsed) {
-    collapseToolsEl.textContent = "展开过程";
-    streamStateEl.textContent = "已收起执行过程，只保留最终回答";
-    return;
-  }
-  collapseToolsEl.textContent = "收起过程";
-  streamStateEl.textContent = "已展开执行过程";
-});
 
 function renderMessageRail() {
   messageRailEl.innerHTML = "";
@@ -779,6 +836,51 @@ function renderMessageRail() {
       node.scrollIntoView({ block: "start", behavior: "smooth" });
     });
     messageRailEl.appendChild(button);
+  }
+}
+
+function setupTurnToolToggle(assistantNode) {
+  const button = assistantNode.querySelector(".turn-tools-toggle");
+  if (!button) {
+    return;
+  }
+  button.addEventListener("click", () => {
+    const processNodes = turnProcessNodes(assistantNode);
+    const collapsed = !assistantNode.classList.contains("turn-process-collapsed");
+    assistantNode.classList.toggle("turn-process-collapsed", collapsed);
+    for (const node of processNodes) {
+      node.classList.toggle("turn-process-hidden", collapsed);
+    }
+    button.textContent = collapsed ? "展开过程" : "收起过程";
+    streamStateEl.textContent = collapsed ? "已收起当前轮执行过程" : "已展开当前轮执行过程";
+  });
+  updateTurnToolControl(assistantNode);
+}
+
+function turnProcessNodes(assistantNode) {
+  const nodes = [];
+  let node = assistantNode.previousElementSibling;
+  while (node && !(node.classList.contains("message") && node.classList.contains("user"))) {
+    if (node.classList.contains("tool-event") || node.classList.contains("agent-status")) {
+      nodes.push(node);
+    }
+    node = node.previousElementSibling;
+  }
+  return nodes.reverse();
+}
+
+function updateTurnToolControl(assistantNode) {
+  const button = assistantNode?.querySelector?.(".turn-tools-toggle");
+  if (!button) {
+    return;
+  }
+  const count = turnProcessNodes(assistantNode).filter((node) => node.classList.contains("tool-event")).length;
+  button.hidden = count === 0;
+}
+
+function updateAllTurnToolControls() {
+  for (const node of messagesEl.querySelectorAll(".message.assistant")) {
+    updateTurnToolControl(node);
   }
 }
 
@@ -802,6 +904,9 @@ function setupInspectorCards() {
 }
 
 document.addEventListener("click", (event) => {
+  if (!event.target.closest(".workspace-switcher")) {
+    workspaceSuggestionsEl.hidden = true;
+  }
   const target = event.target.closest("[data-prompt]");
   if (!target) {
     if (!event.target.closest(".command-palette")) {
@@ -911,6 +1016,7 @@ async function streamAssistant(sessionId, content, assistantNode) {
         streamStateEl.textContent = `工具执行：${event.tool}`;
         const node = appendToolEvent(event, assistantNode);
         activeToolNodes.set(event.call_id || event.tool || "tool", node);
+        updateTurnToolControl(assistantNode);
       },
       onToolDone: (event) => {
         const key = event.call_id || event.tool || "tool";
@@ -921,6 +1027,7 @@ async function streamAssistant(sessionId, content, assistantNode) {
       onStatus: (event) => {
         streamStateEl.textContent = event.status || "运行中";
         appendStatusEvent(event.status || "运行中", { beforeNode: assistantNode });
+        updateTurnToolControl(assistantNode);
       },
     });
     buffer = result.rest;
@@ -936,6 +1043,7 @@ async function streamAssistant(sessionId, content, assistantNode) {
       onToolStart: (event) => {
         const node = appendToolEvent(event, assistantNode);
         activeToolNodes.set(event.call_id || event.tool || "tool", node);
+        updateTurnToolControl(assistantNode);
       },
       onToolDone: (event) => {
         const key = event.call_id || event.tool || "tool";
@@ -946,6 +1054,7 @@ async function streamAssistant(sessionId, content, assistantNode) {
       onStatus: (event) => {
         streamStateEl.textContent = event.status || "运行中";
         appendStatusEvent(event.status || "运行中", { beforeNode: assistantNode });
+        updateTurnToolControl(assistantNode);
       },
     });
     ok = ok && result.ok;

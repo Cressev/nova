@@ -49,6 +49,13 @@ class CodexLikeAgentRuntime:
             async for event in self._handle_builtin_command(latest_user):
                 yield event
             return
+        direct_response = self._direct_response_from_user(latest_user)
+        if direct_response:
+            yield {"type": "agent_status", "status": "识别到无需工具的边界问题"}
+            for chunk in self._chunk_text(direct_response, 36):
+                yield {"type": "assistant_delta", "delta": chunk}
+            yield {"type": "assistant_done_content", "content": direct_response}
+            return
         direct_tool_calls = self._direct_tool_calls_from_user(latest_user)
         if direct_tool_calls:
             yield {"type": "agent_status", "status": "识别到明确工具意图"}
@@ -332,6 +339,17 @@ class CodexLikeAgentRuntime:
         if any(intent in normalized for intent in directory_intents):
             return [{"tool": "list_files", "arguments": {"path": ".", "limit": 120}}]
         return []
+
+    def _direct_response_from_user(self, content: str) -> str | None:
+        normalized = content.strip().lower()
+        secret_terms = ["wifi密码", "wi-fi密码", "wifi 密码", "无线密码", "密码是多少", "password"]
+        if any(term in normalized for term in secret_terms):
+            return (
+                "我不能帮你获取或破解 WiFi 密码、账号密码、密钥这类凭据。"
+                "如果这是你自己的网络，可以在路由器管理页、系统已保存网络设置，"
+                "或运营商/设备标签中查看；也可以重置路由器后重新设置密码。"
+            )
+        return None
 
     async def _run_tool_calls(self, tool_calls: list[dict]) -> AsyncIterator[dict]:
         normalized = [

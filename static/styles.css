@@ -156,6 +156,17 @@ button {
   padding: 10px;
 }
 
+.project-card {
+  position: relative;
+  z-index: 45;
+}
+
+.mode-card,
+.skills-card {
+  position: relative;
+  z-index: 1;
+}
+
 .project-card strong {
   overflow: hidden;
   font-size: 13px;
@@ -171,6 +182,7 @@ button {
 }
 
 .workspace-switcher {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px;
@@ -201,6 +213,59 @@ button {
   color: #9af0c7;
   font-size: 12px;
   font-weight: 850;
+}
+
+.workspace-suggestions {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  z-index: 35;
+  display: grid;
+  gap: 5px;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 6px;
+  background: rgba(18, 22, 20, 0.98);
+  box-shadow: var(--shadow);
+}
+
+.workspace-suggestions[hidden] {
+  display: none;
+}
+
+.workspace-suggestions button {
+  display: grid;
+  gap: 3px;
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  text-align: left;
+}
+
+.workspace-suggestions button:hover {
+  border-color: rgba(115, 201, 244, 0.42);
+}
+
+.workspace-suggestions strong,
+.workspace-suggestions span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-suggestions strong {
+  font-size: 12px;
+}
+
+.workspace-suggestions span {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .mode-list {
@@ -717,10 +782,33 @@ code {
   background: rgba(255, 107, 97, 0.12);
 }
 
+.message-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .message-role {
   color: var(--muted);
   font-size: 12px;
   font-weight: 850;
+}
+
+.turn-tools-toggle {
+  min-height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 3px 7px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.turn-tools-toggle:hover {
+  border-color: rgba(115, 201, 244, 0.42);
+  color: var(--text);
 }
 
 .message.user .message-role {
@@ -836,6 +924,10 @@ code {
 
 .messages.tools-collapsed .tool-event,
 .messages.tools-collapsed .agent-status {
+  display: none;
+}
+
+.turn-process-hidden {
   display: none;
 }
 

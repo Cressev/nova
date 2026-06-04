@@ -30,6 +30,7 @@
               autocomplete="off"
             />
             <datalist id="workspace-candidates"></datalist>
+            <div id="workspace-suggestions" class="workspace-suggestions" hidden></div>
             <button type="submit">切换</button>
           </form>
         </section>
@@ -75,7 +76,6 @@
             <span>复杂任务先用 <code>/plan</code> 拆解，再切到执行；变更完成后用右侧 Review 检查。</span>
           </div>
           <div class="thread-actions">
-            <button id="collapse-tools" class="ghost-button" type="button">折叠工具</button>
             <button class="ghost-button" type="button" data-prompt="/status">状态</button>
           </div>
         </section>

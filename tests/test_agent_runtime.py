@@ -122,6 +122,28 @@ class AgentRuntimeTest(unittest.TestCase):
             [{"tool": "shell_command", "arguments": {"command": "pwd", "workdir": ".", "timeout_ms": 5000}}],
         )
 
+    def test_secret_request_returns_direct_boundary_response_without_tools(self) -> None:
+        text = self.runtime._direct_response_from_user("我的wifi密码是多少")
+
+        self.assertIsNotNone(text)
+        self.assertIn("不能帮你获取或破解", text or "")
+
+    def test_secret_request_stream_does_not_call_tools(self) -> None:
+        from nova_gateway.models import ChatMessage, ChatRole
+
+        async def collect_events() -> list[dict]:
+            return [
+                event
+                async for event in self.runtime.stream(
+                    [ChatMessage(session_id="s", role=ChatRole.USER, content="我的wifi密码是多少")]
+                )
+            ]
+
+        events = asyncio.run(collect_events())
+
+        self.assertFalse(any(event["type"].startswith("tool_") for event in events))
+        self.assertIn("不能帮你获取或破解", "".join(event.get("delta", "") for event in events))
+
     def test_tool_events_have_stable_call_id(self) -> None:
         async def collect_events() -> list[dict]:
             return [
