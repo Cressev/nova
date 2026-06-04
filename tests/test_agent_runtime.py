@@ -59,6 +59,11 @@ class AgentRuntimeTest(unittest.TestCase):
         )
         self.assertEqual(payload, [{"name": "git_status", "parameters": {}}])
 
+    def test_parse_named_tool_call_without_json_wrapper(self) -> None:
+        payload = self.runtime._parse_tool_calls('<tool_call>list_files{"path":".","limit":100}</think>')
+
+        self.assertEqual(payload, [{"tool": "list_files", "arguments": {"path": ".", "limit": 100}}])
+
     def test_builtin_tools_command(self) -> None:
         text = self.runtime._builtin_response("/tools")
         self.assertIn("read_file", text)
@@ -100,6 +105,13 @@ class AgentRuntimeTest(unittest.TestCase):
         calls = self.runtime._direct_tool_calls_from_user("查看当前文件目录")
 
         self.assertEqual(calls, [{"tool": "list_files", "arguments": {"path": ".", "limit": 120}}])
+
+    def test_direct_document_directory_intent_routes_to_docs_folder(self) -> None:
+        Path(self.tmpdir.name, "产品研发文档集").mkdir()
+
+        calls = self.runtime._direct_tool_calls_from_user("查看当前文档目录")
+
+        self.assertEqual(calls, [{"tool": "list_files", "arguments": {"path": "产品研发文档集", "limit": 120}}])
 
 
 if __name__ == "__main__":

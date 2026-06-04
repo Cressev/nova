@@ -407,10 +407,11 @@ async def stream_chat_message(
             )
             yield _ndjson({"type": "error", "message": error_message.model_dump(mode="json")})
         except Exception as exc:
+            detail = str(exc) or repr(exc)
             error_message = ChatMessage(
                 session_id=session_id,
                 role=ChatRole.ERROR,
-                content=f"Nova 运行时异常：{exc}",
+                content=f"Nova 运行时异常：{type(exc).__name__}: {detail}",
             )
             store.add_chat_message(error_message)
             store.add_event(
@@ -418,7 +419,7 @@ async def stream_chat_message(
                     task_id=task.id,
                     type="assistant_runtime_failed",
                     title="运行时异常",
-                    message=str(exc),
+                    message=detail,
                     status="error",
                     data={"session_id": session_id},
                 )

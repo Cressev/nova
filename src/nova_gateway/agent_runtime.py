@@ -149,6 +149,10 @@ class CodexLikeAgentRuntime:
 
     def _parse_tool_calls(self, text: str) -> list[dict]:
         payloads: list[dict] = []
+        named_payload = self._extract_named_tool_payload(text)
+        if named_payload is not None:
+            payloads.append(named_payload)
+
         calls_payload = self._extract_json_after_marker(text, "<tool_calls>", "[")
         if calls_payload is not None:
             try:
@@ -160,7 +164,7 @@ class CodexLikeAgentRuntime:
             elif isinstance(parsed, dict):
                 payloads.extend(self._coerce_tool_call_payload(parsed))
 
-        single_payload = self._extract_tool_payload(text)
+        single_payload = None if named_payload is not None else self._extract_tool_payload(text)
         if single_payload is not None:
             try:
                 parsed = json.loads(single_payload)
@@ -177,6 +181,26 @@ class CodexLikeAgentRuntime:
 
     def _extract_tool_payload(self, text: str) -> str | None:
         return self._extract_json_after_marker(text, "<tool_call>", "{")
+
+    def _extract_named_tool_payload(self, text: str) -> dict | None:
+        start = text.find("<tool_call>")
+        if start < 0:
+            return None
+        body = text[start + len("<tool_call>") :].strip()
+        first_json = body.find("{")
+        if first_json <= 0:
+            return None
+        tool_name = body[:first_json].strip()
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", tool_name):
+            return None
+        arguments_json = self._extract_json_after_marker(text, "<tool_call>", "{")
+        if arguments_json is None:
+            return None
+        try:
+            arguments = json.loads(arguments_json)
+        except json.JSONDecodeError:
+            return None
+        return {"tool": tool_name, "arguments": arguments if isinstance(arguments, dict) else {}}
 
     def _extract_json_after_marker(self, text: str, marker: str, open_char: str) -> str | None:
         start = text.find(marker)
@@ -264,6 +288,9 @@ class CodexLikeAgentRuntime:
 
     def _direct_tool_calls_from_user(self, content: str) -> list[dict]:
         normalized = content.strip().lower()
+        if "文档目录" in normalized or "文档集" in normalized:
+            path = "产品研发文档集" if (self.tools.project_root / "产品研发文档集").is_dir() else "."
+            return [{"tool": "list_files", "arguments": {"path": path, "limit": 120}}]
         directory_intents = [
             "查看当前文件目录",
             "查看当前目录",
