@@ -77,6 +77,7 @@ class ApiTest(unittest.TestCase):
         )
         self.assertEqual(session_response.status_code, 201)
         session = session_response.json()
+        self.assertEqual(session["workspace"], str(app_module.workspace_manager.current_root))
 
         with patch.dict("os.environ", {"BIGMODEL_API_KEY": ""}, clear=False):
             message_response = self.client.post(
@@ -90,6 +91,24 @@ class ApiTest(unittest.TestCase):
         messages = self.client.get(f"/api/chat/sessions/{session['id']}/messages")
         self.assertEqual(messages.status_code, 200)
         self.assertGreaterEqual(len(messages.json()), 2)
+
+    def test_chat_sessions_are_project_scoped_and_deletable(self) -> None:
+        session_response = self.client.post(
+            "/api/chat/sessions",
+            json={"title": "可删除对话"},
+        )
+        self.assertEqual(session_response.status_code, 201)
+        session = session_response.json()
+
+        sessions = self.client.get("/api/chat/sessions")
+        self.assertEqual(sessions.status_code, 200)
+        self.assertTrue(any(item["id"] == session["id"] for item in sessions.json()))
+
+        delete_response = self.client.delete(f"/api/chat/sessions/{session['id']}")
+        self.assertEqual(delete_response.status_code, 204)
+
+        missing_messages = self.client.get(f"/api/chat/sessions/{session['id']}/messages")
+        self.assertEqual(missing_messages.status_code, 404)
 
     def test_stream_missing_provider_key(self) -> None:
         session_response = self.client.post(

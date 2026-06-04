@@ -318,6 +318,10 @@ button {
 }
 
 .session-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -342,6 +346,10 @@ button {
   background: var(--green-soft);
 }
 
+.session-main {
+  min-width: 0;
+}
+
 .session-item strong,
 .git-file strong {
   display: block;
@@ -350,11 +358,35 @@ button {
   white-space: nowrap;
 }
 
-.session-item span {
+.session-item span span,
+.session-item small {
   display: block;
   margin-top: 6px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.session-item small {
+  color: var(--faint);
+}
+
+.session-delete {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.session-delete:hover {
+  border-color: rgba(255, 107, 97, 0.35);
+  background: rgba(255, 107, 97, 0.12);
+  color: #ffaaa4;
 }
 
 .skills-card p {
@@ -429,6 +461,13 @@ code {
   padding: 10px 12px;
 }
 
+.thread-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .thread-plan div {
   display: grid;
   gap: 4px;
@@ -446,7 +485,10 @@ code {
   gap: 10px;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 14px;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 22%),
     rgba(14, 17, 16, 0.72);
@@ -504,6 +546,44 @@ code {
   padding: 10px 12px;
   background: rgba(35, 43, 38, 0.88);
   animation: message-in 180ms ease both;
+}
+
+.turn-divider {
+  display: grid;
+  grid-template-columns: minmax(32px, 1fr) minmax(0, auto) auto;
+  align-items: center;
+  gap: 10px;
+  width: min(760px, 96%);
+  border: 0;
+  padding: 2px 0;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+}
+
+.turn-divider span {
+  height: 1px;
+  background: var(--line-strong);
+}
+
+.turn-divider strong {
+  overflow: hidden;
+  max-width: min(360px, 44vw);
+  color: var(--faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-divider em {
+  color: var(--faint);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.turn-divider:hover strong,
+.turn-divider:hover em {
+  color: var(--green);
 }
 
 .message.user {
@@ -753,6 +833,10 @@ textarea::placeholder {
   box-shadow: none;
 }
 
+.inspector-card.collapsed > :not(.card-title) {
+  display: none;
+}
+
 .card-title span {
   color: var(--text);
   font-weight: 850;
@@ -761,6 +845,23 @@ textarea::placeholder {
 .card-title strong {
   color: var(--green);
   font-size: 12px;
+}
+
+.card-toggle {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.card-toggle:hover {
+  border-color: rgba(115, 201, 244, 0.42);
+  color: var(--text);
 }
 
 .metric-list {
@@ -1048,6 +1149,10 @@ textarea::placeholder {
   .thread-plan {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .thread-actions {
+    justify-content: flex-start;
   }
 
   .header-actions {

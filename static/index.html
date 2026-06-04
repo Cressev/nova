@@ -74,7 +74,10 @@
             <strong>计划优先</strong>
             <span>复杂任务先用 <code>/plan</code> 拆解，再切到执行；变更完成后用右侧 Review 检查。</span>
           </div>
-          <button class="ghost-button" type="button" data-prompt="/status">状态</button>
+          <div class="thread-actions">
+            <button id="collapse-tools" class="ghost-button" type="button">折叠工具</button>
+            <button class="ghost-button" type="button" data-prompt="/status">状态</button>
+          </div>
         </section>
 
         <section id="messages" class="messages"></section>

@@ -26,6 +26,7 @@ const permissionsListEl = document.querySelector("#permissions-list");
 const testCommandEl = document.querySelector("#test-command");
 const serveCommandEl = document.querySelector("#serve-command");
 const commandPaletteEl = document.querySelector("#command-palette");
+const collapseToolsEl = document.querySelector("#collapse-tools");
 const toolCountEl = document.querySelector("#tool-count");
 const toolListEl = document.querySelector("#tool-list");
 const memoryStateEl = document.querySelector("#memory-state");
@@ -66,6 +67,10 @@ function formatTime(value) {
 
 function shortText(text, max = 64) {
   return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+function scrollMessagesToBottom() {
+  messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: "smooth" });
 }
 
 function projectName(path) {
@@ -292,13 +297,16 @@ async function loadSessions({ refreshMessages = true } = {}) {
 
   if (sessions.length === 0) {
     sessionListEl.innerHTML = '<div class="section-label">暂无对话</div>';
+    state.selectedSessionId = null;
+    state.selectedSessionTitle = "Nova Chat";
+    chatTitleEl.textContent = state.selectedSessionTitle;
     if (refreshMessages) {
       renderEmptyState();
     }
     return;
   }
 
-  if (!state.selectedSessionId) {
+  if (!state.selectedSessionId || !sessions.some((session) => session.id === state.selectedSessionId)) {
     state.selectedSessionId = sessions[0].id;
   }
 
@@ -307,10 +315,18 @@ async function loadSessions({ refreshMessages = true } = {}) {
     item.type = "button";
     item.className = `session-item ${session.id === state.selectedSessionId ? "active" : ""}`;
     item.innerHTML = `
-      <strong>${shortText(session.title)}</strong>
-      <span>${formatTime(session.updated_at)}</span>
+      <span class="session-main">
+        <strong>${shortText(session.title)}</strong>
+        <small>${shortText(projectName(session.workspace || ""), 28)}</small>
+        <span>${formatTime(session.updated_at)}</span>
+      </span>
+      <button class="session-delete" type="button" aria-label="删除对话" title="删除对话">×</button>
     `;
     item.addEventListener("click", () => selectSession(session.id, session.title));
+    item.querySelector(".session-delete").addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await deleteSession(session.id);
+    });
     sessionListEl.appendChild(item);
   }
 
@@ -322,6 +338,18 @@ async function loadSessions({ refreshMessages = true } = {}) {
   if (refreshMessages) {
     await loadMessages();
   }
+}
+
+async function deleteSession(sessionId) {
+  const response = await fetch(`/api/chat/sessions/${sessionId}`, { method: "DELETE" });
+  if (!response.ok) {
+    streamStateEl.textContent = "删除对话失败";
+    return;
+  }
+  if (state.selectedSessionId === sessionId) {
+    state.selectedSessionId = null;
+  }
+  await loadSessions();
 }
 
 async function selectSession(sessionId, title) {
@@ -366,15 +394,40 @@ async function loadMessages() {
   }
 
   messagesEl.innerHTML = "";
-  for (const message of messages) {
-    appendMessage(message);
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    appendMessage(message, { showDivider: message.role === "user" && index > 0 });
   }
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  scrollMessagesToBottom();
 }
 
-function appendMessage(message) {
+function appendTurnDivider(message) {
+  const targetId = `message-${message.id || Date.now()}`;
+  const divider = document.createElement("button");
+  divider.type = "button";
+  divider.className = "turn-divider";
+  divider.innerHTML = `
+    <span></span>
+    <strong>${escapeHtml(shortText(message.content || "历史提问", 72))}</strong>
+    <em>${message.created_at ? formatTime(message.created_at) : "刚刚"}</em>
+  `;
+  divider.addEventListener("click", () => {
+    document.querySelector(`#${targetId}`)?.scrollIntoView({
+      block: "start",
+      behavior: "smooth",
+    });
+  });
+  messagesEl.appendChild(divider);
+  return targetId;
+}
+
+function appendMessage(message, options = {}) {
+  const targetId = options.showDivider && message.role === "user"
+    ? appendTurnDivider(message)
+    : `message-${message.id || Date.now()}`;
   const node = document.createElement("article");
   node.className = `message ${message.role}`;
+  node.id = targetId;
   node.dataset.messageId = message.id || "";
   node.innerHTML = `
     <div class="message-role">${roleLabel(message.role)}</div>
@@ -382,13 +435,13 @@ function appendMessage(message) {
     <div class="message-time">${message.created_at ? formatTime(message.created_at) : "生成中"}</div>
   `;
   messagesEl.appendChild(node);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  scrollMessagesToBottom();
   return node;
 }
 
 function updateMessage(node, content) {
   node.querySelector(".message-content").innerHTML = escapeHtml(content);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  scrollMessagesToBottom();
 }
 
 function updateMessageMeta(node, message) {
@@ -419,7 +472,7 @@ function appendToolEvent(event, beforeNode = null) {
   } else {
     messagesEl.appendChild(node);
   }
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  scrollMessagesToBottom();
   return node;
 }
 
@@ -435,16 +488,16 @@ function finishToolEvent(node, event) {
       <strong>${escapeHtml(event.title || "工具完成")}</strong>
       <em>${event.ok ? "完成" : "失败"}</em>
     </div>
-    <details>
+    <details class="tool-args" open>
       <summary>调用参数</summary>
       <pre>${escapeHtml(args)}</pre>
     </details>
-    <details open>
+    <details class="tool-result">
       <summary>工具结果</summary>
       <pre>${escapeHtml(shortText(event.output || "", 4000))}</pre>
     </details>
   `;
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  scrollMessagesToBottom();
 }
 
 function roleLabel(role) {
@@ -500,13 +553,41 @@ workspaceFormEl.addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify({ path }),
     });
-    await Promise.all([loadWorkspaceStatus(), loadRuntimePanels()]);
+    state.selectedSessionId = null;
+    await Promise.all([loadWorkspaceStatus(), loadRuntimePanels(), loadSessions()]);
     streamStateEl.textContent = "项目已切换";
   } catch (error) {
     const message = error instanceof Error ? error.message : "切换失败";
     streamStateEl.textContent = `切换失败：${message}`;
   }
 });
+
+collapseToolsEl.addEventListener("click", () => {
+  const toolDetails = messagesEl.querySelectorAll(".tool-event details");
+  for (const detail of toolDetails) {
+    detail.open = false;
+  }
+  streamStateEl.textContent = `已折叠 ${toolDetails.length} 个工具详情`;
+});
+
+function setupInspectorCards() {
+  for (const card of document.querySelectorAll(".inspector-card")) {
+    const title = card.querySelector(".card-title");
+    if (!title || title.querySelector(".card-toggle")) {
+      continue;
+    }
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "card-toggle";
+    toggle.setAttribute("aria-label", "折叠或展开面板");
+    toggle.textContent = "−";
+    toggle.addEventListener("click", () => {
+      const collapsed = card.classList.toggle("collapsed");
+      toggle.textContent = collapsed ? "+" : "−";
+    });
+    title.appendChild(toggle);
+  }
+}
 
 document.addEventListener("click", (event) => {
   const target = event.target.closest("[data-prompt]");
@@ -784,3 +865,4 @@ loadHealth();
 loadWorkspaceStatus();
 loadRuntimePanels();
 loadSessions();
+setupInspectorCards();

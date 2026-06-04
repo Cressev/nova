@@ -142,10 +142,17 @@ class TaskStore:
             self._save_chats()
             return session
 
-    def list_chat_sessions(self) -> list[ChatSession]:
+    def list_chat_sessions(self, *, workspace: str | None = None) -> list[ChatSession]:
         with self._lock:
+            sessions = self._chat_sessions.values()
+            if workspace is not None:
+                sessions = [
+                    session
+                    for session in sessions
+                    if session.workspace == workspace
+                ]
             return sorted(
-                self._chat_sessions.values(),
+                sessions,
                 key=lambda item: item.updated_at,
                 reverse=True,
             )
@@ -153,6 +160,15 @@ class TaskStore:
     def get_chat_session(self, session_id: str) -> ChatSession | None:
         with self._lock:
             return self._chat_sessions.get(session_id)
+
+    def delete_chat_session(self, session_id: str) -> bool:
+        with self._lock:
+            if session_id not in self._chat_sessions:
+                return False
+            del self._chat_sessions[session_id]
+            self._chat_messages.pop(session_id, None)
+            self._save_chats()
+            return True
 
     def add_chat_message(self, message: ChatMessage) -> ChatMessage:
         with self._lock:

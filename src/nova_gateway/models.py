@@ -37,6 +37,7 @@ class ChatSessionCreate(BaseModel):
 class ChatSession(BaseModel):
     id: str
     title: str
+    workspace: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 

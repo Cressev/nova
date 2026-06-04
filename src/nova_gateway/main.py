@@ -221,26 +221,39 @@ def _git(args: list[str]) -> str:
 
 @app.get("/api/chat/sessions", response_model=list[ChatSession])
 async def list_chat_sessions() -> list[ChatSession]:
-    return store.list_chat_sessions()
+    return store.list_chat_sessions(workspace=str(workspace_manager.current_root))
 
 
 @app.post("/api/chat/sessions", response_model=ChatSession, status_code=201)
 async def create_chat_session(payload: ChatSessionCreate) -> ChatSession:
-    session = ChatSession(id=new_id("chat"), title=payload.title or "新对话")
+    session = ChatSession(
+        id=new_id("chat"),
+        title=payload.title or "新对话",
+        workspace=str(workspace_manager.current_root),
+    )
     store.create_chat_session(session)
     return session
 
 
+@app.delete("/api/chat/sessions/{session_id}", status_code=204)
+async def delete_chat_session(session_id: str) -> Response:
+    session = _get_current_chat_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    store.delete_chat_session(session.id)
+    return Response(status_code=204)
+
+
 @app.get("/api/chat/sessions/{session_id}/messages", response_model=list[ChatMessage])
 async def list_chat_messages(session_id: str) -> list[ChatMessage]:
-    if store.get_chat_session(session_id) is None:
+    if _get_current_chat_session(session_id) is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
     return store.list_chat_messages(session_id)
 
 
 @app.post("/api/chat/sessions/{session_id}/messages", response_model=ChatMessage)
 async def create_chat_message(session_id: str, payload: ChatMessageCreate) -> ChatMessage:
-    session = store.get_chat_session(session_id)
+    session = _get_current_chat_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
 
@@ -325,7 +338,7 @@ async def stream_chat_message(
     session_id: str,
     payload: ChatMessageCreate,
 ) -> StreamingResponse:
-    if store.get_chat_session(session_id) is None:
+    if _get_current_chat_session(session_id) is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
 
     async def emit() -> AsyncIterator[str]:
@@ -427,6 +440,16 @@ async def stream_chat_message(
             yield _ndjson({"type": "error", "message": error_message.model_dump(mode="json")})
 
     return StreamingResponse(emit(), media_type="application/x-ndjson")
+
+
+def _get_current_chat_session(session_id: str) -> ChatSession | None:
+    # 会话按项目目录隔离，避免切换项目后把上下文发进错误仓库。
+    session = store.get_chat_session(session_id)
+    if session is None:
+        return None
+    if session.workspace != str(workspace_manager.current_root):
+        return None
+    return session
 
 
 def _ndjson(payload: dict) -> str:
