@@ -509,12 +509,14 @@ git初始化，并推送到远程仓库
   - [x] 3.4 验证真实对话请求
 - [] 4. 提交推送并交付网站
   - [x] 4.1 检查密钥未落盘
-  - [] 4.2 git 提交并推送
-  - [] 4.3 更新 CURRENT.md、PROGRESS.md、log.md
-  - [] 4.4 为 user-queries.md 追加 Done 时间和提交码
+  - [x] 4.2 git 提交并推送
+  - [x] 4.3 更新 CURRENT.md、PROGRESS.md、log.md
+  - [x] 4.4 为 user-queries.md 追加 Done 时间和提交码
 
 执行问题记录：
 执行 1.2 时第一次非 TTY stdin 未保持，导致服务以空 key 启动；已立即停止该进程，改用 TTY 会话读取 key 且关闭回显，随后 provider 状态返回 `configured=true`，真实 GLM-4.7 对话返回 `Nova 已连接`。
+
+------ todo-list end at 2026/06/04/15:23:23 -----
 
 ------ todo-list begin at 2026/06/03/15:32:59 -----
 
