@@ -157,13 +157,15 @@ function bindCommandChip(node, command, label) {
   };
 }
 
-async function loadSessions() {
+async function loadSessions({ refreshMessages = true } = {}) {
   const sessions = await api("/api/chat/sessions");
   sessionListEl.innerHTML = "";
 
   if (sessions.length === 0) {
     sessionListEl.innerHTML = '<div class="section-label">暂无对话</div>';
-    renderEmptyState();
+    if (refreshMessages) {
+      renderEmptyState();
+    }
     return;
   }
 
@@ -188,7 +190,9 @@ async function loadSessions() {
     state.selectedSessionTitle = selected.title;
     chatTitleEl.textContent = selected.title;
   }
-  await loadMessages();
+  if (refreshMessages) {
+    await loadMessages();
+  }
 }
 
 async function selectSession(sessionId, title) {
@@ -263,6 +267,42 @@ function updateMessageMeta(node, message) {
     : "生成中";
 }
 
+function appendToolEvent(event, beforeNode = null) {
+  const node = document.createElement("article");
+  node.className = "tool-event running";
+  node.dataset.tool = event.tool || "";
+  node.innerHTML = `
+    <div class="tool-event-head">
+      <span>${escapeHtml(event.tool || "tool")}</span>
+      <strong>${escapeHtml(event.title || "工具执行中")}</strong>
+    </div>
+    <pre>${escapeHtml(JSON.stringify(event.arguments || {}, null, 2))}</pre>
+  `;
+  if (beforeNode?.parentElement === messagesEl) {
+    messagesEl.insertBefore(node, beforeNode);
+  } else {
+    messagesEl.appendChild(node);
+  }
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return node;
+}
+
+function finishToolEvent(node, event) {
+  if (!node) {
+    node = appendToolEvent(event);
+  }
+  node.className = `tool-event ${event.ok ? "ok" : "failed"}`;
+  node.innerHTML = `
+    <div class="tool-event-head">
+      <span>${escapeHtml(event.tool || "tool")}</span>
+      <strong>${escapeHtml(event.title || "工具完成")}</strong>
+      <em>${event.ok ? "完成" : "失败"}</em>
+    </div>
+    <pre>${escapeHtml(shortText(event.output || "", 1800))}</pre>
+  `;
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
 function roleLabel(role) {
   return {
     user: "你",
@@ -334,6 +374,9 @@ form.addEventListener("submit", async (event) => {
       content,
       created_at: new Date().toISOString(),
     };
+    if (messagesEl.querySelector(".empty-state")) {
+      messagesEl.innerHTML = "";
+    }
     appendMessage(optimisticUser);
     assistantNode = appendMessage({
       id: `local_assistant_${Date.now()}`,
@@ -346,7 +389,11 @@ form.addEventListener("submit", async (event) => {
     autoResizeTextarea();
     const ok = await streamAssistant(sessionId, content, assistantNode);
     streamStateEl.textContent = ok ? "回复完成" : "请求失败";
-    await Promise.all([loadSessions(), loadHealth()]);
+    await Promise.all([
+      loadSessions({ refreshMessages: false }),
+      loadWorkspaceStatus(),
+      loadHealth(),
+    ]);
   } catch (error) {
     const message = error instanceof Error ? error.message : "请求失败";
     if (assistantNode) {
@@ -384,6 +431,7 @@ async function streamAssistant(sessionId, content, assistantNode) {
   let buffer = "";
   let assistantText = "";
   let ok = true;
+  let activeToolNode = null;
 
   while (true) {
     const { value, done } = await reader.read();
@@ -391,26 +439,47 @@ async function streamAssistant(sessionId, content, assistantNode) {
       break;
     }
     buffer += decoder.decode(value, { stream: true });
-    const result = consumeStreamLines(buffer, assistantNode, (delta) => {
-      assistantText += delta;
-      updateMessage(assistantNode, assistantText);
-      streamStateEl.textContent = "Nova 正在输出";
+    const result = consumeStreamLines(buffer, assistantNode, {
+      onDelta: (delta) => {
+        assistantText += delta;
+        updateMessage(assistantNode, assistantText);
+        streamStateEl.textContent = "Nova 正在输出";
+      },
+      onToolStart: (event) => {
+        streamStateEl.textContent = `工具执行：${event.tool}`;
+        activeToolNode = appendToolEvent(event, assistantNode);
+      },
+      onToolDone: (event) => {
+        finishToolEvent(activeToolNode, event);
+        activeToolNode = null;
+        streamStateEl.textContent = event.ok ? "工具完成，继续推理" : "工具失败，继续处理";
+      },
     });
     buffer = result.rest;
     ok = ok && result.ok;
   }
 
   if (buffer.trim()) {
-    const result = consumeStreamLines(`${buffer}\n`, assistantNode, (delta) => {
-      assistantText += delta;
-      updateMessage(assistantNode, assistantText);
+    const result = consumeStreamLines(`${buffer}\n`, assistantNode, {
+      onDelta: (delta) => {
+        assistantText += delta;
+        updateMessage(assistantNode, assistantText);
+      },
+      onToolStart: (event) => {
+        activeToolNode = appendToolEvent(event, assistantNode);
+      },
+      onToolDone: (event) => {
+        finishToolEvent(activeToolNode, event);
+        activeToolNode = null;
+        streamStateEl.textContent = event.ok ? "工具完成，继续推理" : "工具失败，继续处理";
+      },
     });
     ok = ok && result.ok;
   }
   return ok;
 }
 
-function consumeStreamLines(buffer, assistantNode, onDelta) {
+function consumeStreamLines(buffer, assistantNode, handlers) {
   const lines = buffer.split("\n");
   const rest = lines.pop() || "";
   let ok = true;
@@ -426,7 +495,13 @@ function consumeStreamLines(buffer, assistantNode, onDelta) {
       continue;
     }
     if (event.type === "assistant_delta") {
-      onDelta(event.delta || "");
+      handlers.onDelta(event.delta || "");
+    }
+    if (event.type === "tool_start") {
+      handlers.onToolStart?.(event);
+    }
+    if (event.type === "tool_done") {
+      handlers.onToolDone?.(event);
     }
     if (event.type === "assistant_done") {
       assistantNode.classList.remove("streaming");

@@ -83,10 +83,25 @@ class ApiTest(unittest.TestCase):
         self.assertIn("未配置 BIGMODEL_API_KEY", body)
 
     def test_stream_success_events(self) -> None:
-        async def fake_stream(messages):
-            # 用假流验证网关事件顺序，不依赖真实模型和外网。
-            yield "你"
-            yield "好"
+        async def fake_agent_stream(messages):
+            # 用假 Agent 流验证网关事件顺序，不依赖真实模型和外网。
+            yield {
+                "type": "tool_start",
+                "tool": "read_file",
+                "title": "读取 README.md",
+                "arguments": {"path": "README.md"},
+            }
+            yield {
+                "type": "tool_done",
+                "tool": "read_file",
+                "ok": True,
+                "title": "读取 README.md",
+                "output": "Nova",
+                "data": {"path": "README.md"},
+            }
+            yield {"type": "assistant_delta", "delta": "你"}
+            yield {"type": "assistant_delta", "delta": "好"}
+            yield {"type": "assistant_done_content", "content": "你好"}
 
         session_response = self.client.post(
             "/api/chat/sessions",
@@ -94,7 +109,7 @@ class ApiTest(unittest.TestCase):
         )
         session = session_response.json()
 
-        with patch.object(app_module.provider, "stream", fake_stream):
+        with patch.object(app_module.agent_runtime, "stream", fake_agent_stream):
             with self.client.stream(
                 "POST",
                 f"/api/chat/sessions/{session['id']}/stream",
@@ -104,6 +119,8 @@ class ApiTest(unittest.TestCase):
                 body = "".join(response.iter_text())
 
         self.assertIn("user_message", body)
+        self.assertIn("tool_start", body)
+        self.assertIn("tool_done", body)
         self.assertIn("assistant_delta", body)
         self.assertIn("assistant_done", body)
         self.assertIn("你好", body)

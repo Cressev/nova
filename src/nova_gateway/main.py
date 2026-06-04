@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
+from .agent_runtime import CodexLikeAgentRuntime
 from .models import (
     ChatMessage,
     ChatMessageCreate,
@@ -37,6 +38,10 @@ settings = load_settings()
 store = TaskStore(settings.state_dir)
 runtime = DemoAgentRuntime(store=store, project_root=settings.project_root)
 provider = BigModelProvider()
+agent_runtime = CodexLikeAgentRuntime(
+    provider=provider,
+    project_root=settings.project_root,
+)
 
 app = FastAPI(title="Nova Gateway", version=__version__)
 app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
@@ -278,23 +283,18 @@ async def stream_chat_message(
             )
         )
 
-        messages = [
-            ChatMessage(
-                session_id=session_id,
-                role=ChatRole.SYSTEM,
-                content=(
-                    "你是 Nova，一个本地优先的个人开发 Agent。"
-                    "请用中文回答，保持直接、务实，并优先帮助用户推进软件开发任务。"
-                ),
-            ),
-            *store.list_chat_messages(session_id),
-        ]
-
         answer_parts: list[str] = []
         try:
-            async for delta in provider.stream(messages):
-                answer_parts.append(delta)
-                yield _ndjson({"type": "assistant_delta", "delta": delta})
+            async for event in agent_runtime.stream(store.list_chat_messages(session_id)):
+                if event["type"] == "assistant_delta":
+                    answer_parts.append(event["delta"])
+                    yield _ndjson(event)
+                    continue
+                if event["type"] == "assistant_done_content":
+                    if not answer_parts and event.get("content"):
+                        answer_parts.append(event["content"])
+                    continue
+                yield _ndjson(event)
 
             assistant_message = ChatMessage(
                 session_id=session_id,

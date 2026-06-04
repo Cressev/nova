@@ -522,6 +522,89 @@ code {
   font-size: 12px;
 }
 
+.tool-event {
+  display: grid;
+  gap: 8px;
+  width: min(720px, 92%);
+  justify-self: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(18, 22, 20, 0.86);
+  animation: message-in 180ms ease both;
+}
+
+.tool-event.running {
+  border-color: rgba(115, 201, 244, 0.38);
+  box-shadow: 0 0 0 1px rgba(115, 201, 244, 0.08);
+}
+
+.tool-event.ok {
+  border-color: rgba(66, 222, 153, 0.34);
+}
+
+.tool-event.failed {
+  border-color: rgba(255, 107, 97, 0.46);
+  background: rgba(255, 107, 97, 0.1);
+}
+
+.tool-event-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-event-head span {
+  min-width: 64px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 7px;
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.tool-event-head strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-event-head em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.tool-event.ok .tool-event-head em {
+  color: #9af0c7;
+}
+
+.tool-event.failed .tool-event-head em {
+  color: #ffaaa4;
+}
+
+.tool-event pre {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--muted);
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .composer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -814,6 +897,19 @@ textarea::placeholder {
 
   .message {
     max-width: 100%;
+  }
+
+  .tool-event {
+    width: 100%;
+  }
+
+  .tool-event-head {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .tool-event-head span {
+    width: fit-content;
   }
 
   .inspector {

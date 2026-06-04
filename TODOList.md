@@ -638,6 +638,41 @@ git初始化，并推送到远程仓库
 
 ------ todo-list end at 2026/06/04/15:36:01 -----
 
+------ todo-list begin at 2026/06/04/16:31:12 -----
+
+用户请求：
+codex cli 的源码应该开源了，你下载并复刻其agent能力，并继续完成后续开发，希望使用体感完全一致
+
+制定清单：
+- [x] 1. 获取和研究 Codex 开源源码
+  - [x] 1.1 下载 `openai/codex` 到 `references/upstream/openai-codex/`
+  - [x] 1.2 确认上游许可证 Apache-2.0 和 clone commit `ad2012d`
+  - [x] 1.3 将 `references/upstream/` 加入 `.gitignore`
+  - [x] 1.4 阅读 turn loop、tools registry、shell/apply_patch handler 和 app-server event schema
+- [x] 2. 实现第一版 Codex-like Agent Runtime
+  - [x] 2.1 新增 `CodexLikeAgentRuntime`
+  - [x] 2.2 新增工作区工具注册表 `WorkspaceTools`
+  - [x] 2.3 支持 `read_file`、`list_files`、`search_text`、`shell_command`、`replace_in_file`、`create_file`、`git_status`
+  - [x] 2.4 增加工作区路径保护和 shell 白名单
+  - [x] 2.5 将 `/api/chat/sessions/{session_id}/stream` 改为 Agent 工具循环
+- [x] 3. 实现 Codex-like 前端体感
+  - [x] 3.1 工具开始/完成事件用卡片展示
+  - [x] 3.2 工具卡片排在最终回答前
+  - [x] 3.3 当前轮完成后保留工具卡片
+  - [x] 3.4 修复新线程空状态和第一条消息同屏的问题
+- [x] 4. 验证
+  - [x] 4.1 Python 单元测试通过，13 tests
+  - [x] 4.2 `node --check static/app.js` 通过
+  - [x] 4.3 `GET /api/health` 返回 `ok=true`
+  - [x] 4.4 `GET /api/provider` 返回 `configured=true`
+  - [x] 4.5 Playwright 真实页面验证工具调用卡片和最终回答
+
+执行问题记录：
+- GLM-4.7 第一次真实验证时输出了未闭合的 `<tool_call>{...}`，旧解析器未识别，导致工具标签显示成普通回答；已改成按 JSON 括号配平的容错解析，并补充单元测试。
+- 前端首次实现时工具卡片会被流式完成后的会话刷新清掉；已改成当前轮不重载消息区，并把工具卡片插入到最终回答前。
+
+------ todo-list end at 2026/06/04/16:31:12 -----
+
 ------ todo-list begin at 2026/06/03/15:32:59 -----
 
 用户请求：
