@@ -49,13 +49,6 @@ class CodexLikeAgentRuntime:
             async for event in self._handle_builtin_command(latest_user):
                 yield event
             return
-        direct_response = self._direct_response_from_user(latest_user)
-        if direct_response:
-            yield {"type": "agent_status", "status": "识别到无需工具的边界问题"}
-            for chunk in self._chunk_text(direct_response, 36):
-                yield {"type": "assistant_delta", "delta": chunk}
-            yield {"type": "assistant_done_content", "content": direct_response}
-            return
         direct_tool_calls = self._direct_tool_calls_from_user(latest_user)
         if direct_tool_calls:
             yield {"type": "agent_status", "status": "识别到明确工具意图"}
@@ -278,12 +271,15 @@ class CodexLikeAgentRuntime:
         return [text[index : index + size] for index in range(0, len(text), size)] or [""]
 
     def _answer_from_tool_results(self, result_json_items: list[str]) -> str:
+        latest_failed: dict | None = None
         for item in reversed(result_json_items):
             try:
                 result = json.loads(item)
             except json.JSONDecodeError:
                 continue
             if not result.get("ok", False):
+                if latest_failed is None:
+                    latest_failed = result
                 continue
             tool = result.get("tool", "工具")
             title = result.get("title") or tool
@@ -299,6 +295,11 @@ class CodexLikeAgentRuntime:
             if tool in {"git_status", "git_diff", "shell_command"}:
                 return f"{title}：\n{self._limit_lines(output, 120)}"
             return f"{title} 已完成，结果如下：\n{self._limit_lines(output, 120)}"
+        if latest_failed is not None:
+            tool = latest_failed.get("tool", "工具")
+            title = latest_failed.get("title") or f"{tool} 执行失败"
+            output = str(latest_failed.get("output") or latest_failed.get("error") or "").strip()
+            return f"{title}：\n{self._limit_lines(output or '工具执行失败，但没有返回详细输出。', 120)}"
         return "工具已执行，但没有得到可展示的有效结果。请换一种更具体的请求再试。"
 
     def _limit_lines(self, text: str, max_lines: int) -> str:
@@ -313,6 +314,18 @@ class CodexLikeAgentRuntime:
 
     def _direct_tool_calls_from_user(self, content: str) -> list[dict]:
         normalized = content.strip().lower()
+        wifi_password_terms = ["wifi密码", "wi-fi密码", "wifi 密码", "无线密码", "wifi password"]
+        if any(term in normalized for term in wifi_password_terms):
+            return [
+                {
+                    "tool": "shell_command",
+                    "arguments": {
+                        "command": self._wifi_password_command(),
+                        "workdir": ".",
+                        "timeout_ms": 12000,
+                    },
+                }
+            ]
         shell_intents = [
             "命令行工具",
             "调用命令",
@@ -340,16 +353,16 @@ class CodexLikeAgentRuntime:
             return [{"tool": "list_files", "arguments": {"path": ".", "limit": 120}}]
         return []
 
-    def _direct_response_from_user(self, content: str) -> str | None:
-        normalized = content.strip().lower()
-        secret_terms = ["wifi密码", "wi-fi密码", "wifi 密码", "无线密码", "密码是多少", "password"]
-        if any(term in normalized for term in secret_terms):
-            return (
-                "我不能帮你获取或破解 WiFi 密码、账号密码、密钥这类凭据。"
-                "如果这是你自己的网络，可以在路由器管理页、系统已保存网络设置，"
-                "或运营商/设备标签中查看；也可以重置路由器后重新设置密码。"
-            )
-        return None
+    def _wifi_password_command(self) -> str:
+        return (
+            "powershell.exe -NoProfile -Command "
+            "'$OutputEncoding=[Console]::OutputEncoding=[Text.Encoding]::UTF8; "
+            "$line=(netsh wlan show interfaces | Select-String \"^\\s*SSID\\s*: \" | Select-Object -First 1); "
+            "if (-not $line) { Write-Output \"未检测到活动 WiFi 接口\"; exit 1 }; "
+            "$ssid=$line.ToString().Split(\":\",2)[1].Trim(); "
+            "Write-Output (\"当前 WiFi：\" + $ssid); "
+            "netsh wlan show profile name=\"$ssid\" key=clear'"
+        )
 
     async def _run_tool_calls(self, tool_calls: list[dict]) -> AsyncIterator[dict]:
         normalized = [

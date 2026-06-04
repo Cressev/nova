@@ -45,6 +45,18 @@ class WorkspaceToolsTest(unittest.TestCase):
         with self.assertRaises(ToolExecutionError):
             self.tools.run("shell_command", {"command": "rm -rf .nova"})
 
+    def test_powershell_allowlist_only_allows_wlan_query(self) -> None:
+        command = (
+            "powershell.exe -NoProfile -Command "
+            "\"$line=(netsh wlan show interfaces | Select-String '^\\s*SSID\\s*: ' | Select-Object -First 1); "
+            "if (-not $line) { Write-Output '未检测到活动 WiFi 接口'; exit 1 }; "
+            "$ssid=$line.ToString().Split(':',2)[1].Trim(); "
+            "netsh wlan show profile name=\\\"$ssid\\\" key=clear\""
+        )
+
+        self.assertTrue(self.tools._is_allowed_shell_command(command))
+        self.assertFalse(self.tools._is_allowed_shell_command("powershell.exe -NoProfile -Command \"Remove-Item x\""))
+
     def test_read_only_permission_blocks_write(self) -> None:
         tools = WorkspaceTools(self.root, permission_mode="read_only")
         with self.assertRaises(ToolExecutionError):

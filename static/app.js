@@ -4,6 +4,7 @@ const state = {
   sending: false,
   collapsedProjects: new Set(),
   workspaceCandidates: [],
+  workspaceSuggestionIndex: -1,
   messagesRequestId: 0,
 };
 
@@ -715,7 +716,36 @@ workspaceInputEl.addEventListener("focus", () => {
 });
 
 workspaceInputEl.addEventListener("input", () => {
+  state.workspaceSuggestionIndex = -1;
   scheduleWorkspaceSuggestions(160);
+});
+
+workspaceInputEl.addEventListener("keydown", async (event) => {
+  const suggestions = Array.from(workspaceSuggestionsEl.querySelectorAll("button"));
+  if (event.key === "ArrowDown" && suggestions.length > 0) {
+    event.preventDefault();
+    state.workspaceSuggestionIndex = Math.min(state.workspaceSuggestionIndex + 1, suggestions.length - 1);
+    renderWorkspaceSuggestionActive();
+    return;
+  }
+  if (event.key === "ArrowUp" && suggestions.length > 0) {
+    event.preventDefault();
+    state.workspaceSuggestionIndex = Math.max(state.workspaceSuggestionIndex - 1, 0);
+    renderWorkspaceSuggestionActive();
+    return;
+  }
+  if ((event.key === "Enter" || event.key === "Tab") && !workspaceSuggestionsEl.hidden && suggestions.length > 0) {
+    const index = state.workspaceSuggestionIndex >= 0 ? state.workspaceSuggestionIndex : 0;
+    const path = suggestions[index]?.dataset.path;
+    if (path) {
+      event.preventDefault();
+      workspaceInputEl.value = path;
+      workspaceSuggestionsEl.hidden = true;
+      if (event.key === "Enter") {
+        await switchWorkspace(path);
+      }
+    }
+  }
 });
 
 workspaceInputEl.addEventListener("dblclick", openWorkspaceDialog);
@@ -790,6 +820,7 @@ function renderWorkspaceSuggestions() {
   for (const path of candidates) {
     const item = document.createElement("button");
     item.type = "button";
+    item.dataset.path = path;
     item.innerHTML = `
       <strong>${escapeHtml(projectName(path))}</strong>
       <span>${escapeHtml(path)}</span>
@@ -801,7 +832,17 @@ function renderWorkspaceSuggestions() {
     });
     workspaceSuggestionsEl.appendChild(item);
   }
+  state.workspaceSuggestionIndex = Math.min(state.workspaceSuggestionIndex, candidates.length - 1);
+  renderWorkspaceSuggestionActive();
   workspaceSuggestionsEl.hidden = false;
+}
+
+function renderWorkspaceSuggestionActive() {
+  const suggestions = Array.from(workspaceSuggestionsEl.querySelectorAll("button"));
+  suggestions.forEach((item, index) => {
+    item.classList.toggle("active", index === state.workspaceSuggestionIndex);
+  });
+  suggestions[state.workspaceSuggestionIndex]?.scrollIntoView({ block: "nearest" });
 }
 
 async function switchWorkspace(path) {

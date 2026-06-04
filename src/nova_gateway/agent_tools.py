@@ -244,6 +244,7 @@ class WorkspaceTools:
             cwd=workdir,
             shell=True,
             text=True,
+            errors="replace",
             capture_output=True,
             timeout=timeout,
         )
@@ -409,6 +410,8 @@ class WorkspaceTools:
             return False
         if first_token in {"rm", "sudo", "chmod", "chown", "mkfs", "dd"}:
             return False
+        if first_token.lower() in {"powershell.exe", "powershell", "pwsh", "pwsh.exe"}:
+            return self._is_allowed_powershell_command(lowered)
         allowed_prefixes = (
             "pwd",
             "ls",
@@ -426,6 +429,13 @@ class WorkspaceTools:
             "curl -s http://127.0.0.1",
         )
         return lowered.startswith(allowed_prefixes)
+
+    def _is_allowed_powershell_command(self, lowered: str) -> bool:
+        return (
+            "netsh wlan show" in lowered
+            and " key=clear" in lowered
+            and not any(token in lowered for token in ["remove-", "set-", "new-", "invoke-", "iex", "downloadstring"])
+        )
 
     def _check_permission(self, name: str) -> None:
         spec = TOOL_SPECS.get(name)

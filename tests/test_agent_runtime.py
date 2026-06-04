@@ -122,13 +122,13 @@ class AgentRuntimeTest(unittest.TestCase):
             [{"tool": "shell_command", "arguments": {"command": "pwd", "workdir": ".", "timeout_ms": 5000}}],
         )
 
-    def test_secret_request_returns_direct_boundary_response_without_tools(self) -> None:
-        text = self.runtime._direct_response_from_user("我的wifi密码是多少")
+    def test_wifi_password_request_routes_to_shell_tool(self) -> None:
+        calls = self.runtime._direct_tool_calls_from_user("我的wifi密码是多少")
 
-        self.assertIsNotNone(text)
-        self.assertIn("不能帮你获取或破解", text or "")
+        self.assertEqual(calls[0]["tool"], "shell_command")
+        self.assertIn("netsh wlan show", calls[0]["arguments"]["command"])
 
-    def test_secret_request_stream_does_not_call_tools(self) -> None:
+    def test_wifi_password_request_stream_calls_shell_tool(self) -> None:
         from nova_gateway.models import ChatMessage, ChatRole
 
         async def collect_events() -> list[dict]:
@@ -141,8 +141,7 @@ class AgentRuntimeTest(unittest.TestCase):
 
         events = asyncio.run(collect_events())
 
-        self.assertFalse(any(event["type"].startswith("tool_") for event in events))
-        self.assertIn("不能帮你获取或破解", "".join(event.get("delta", "") for event in events))
+        self.assertTrue(any(event["type"] == "tool_start" and event["tool"] == "shell_command" for event in events))
 
     def test_tool_events_have_stable_call_id(self) -> None:
         async def collect_events() -> list[dict]:

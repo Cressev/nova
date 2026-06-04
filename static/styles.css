@@ -248,8 +248,10 @@ button {
   text-align: left;
 }
 
-.workspace-suggestions button:hover {
+.workspace-suggestions button:hover,
+.workspace-suggestions button.active {
   border-color: rgba(115, 201, 244, 0.42);
+  background: rgba(115, 201, 244, 0.1);
 }
 
 .workspace-suggestions strong,
