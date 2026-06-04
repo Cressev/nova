@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 import json
+import os
 import shlex
 import subprocess
 from dataclasses import dataclass
@@ -167,13 +168,23 @@ class WorkspaceTools:
         if not root.exists():
             raise ToolExecutionError(f"路径不存在：{self._display(root)}")
         files: list[str] = []
-        for path in root.rglob("*"):
+        for current_root, dirnames, filenames in os.walk(root):
+            current = Path(current_root)
+            # os.walk 支持原地剪枝，避免进入 .git、上游源码缓存和输出目录这类大目录。
+            dirnames[:] = [
+                dirname
+                for dirname in dirnames
+                if not self._is_ignored(current / dirname)
+            ]
+            for filename in filenames:
+                if len(files) >= limit:
+                    break
+                path = current / filename
+                if self._is_ignored(path):
+                    continue
+                files.append(self._display(path))
             if len(files) >= limit:
                 break
-            if self._is_ignored(path):
-                continue
-            if path.is_file():
-                files.append(self._display(path))
         return ToolResult(
             tool="list_files",
             title=f"列出 {self._display(root)}",

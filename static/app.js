@@ -402,12 +402,17 @@ function appendToolEvent(event, beforeNode = null) {
   const node = document.createElement("article");
   node.className = "tool-event running";
   node.dataset.tool = event.tool || "";
+  node.dataset.arguments = JSON.stringify(event.arguments || {}, null, 2);
   node.innerHTML = `
     <div class="tool-event-head">
       <span>${escapeHtml(event.tool || "tool")}</span>
       <strong>${escapeHtml(event.title || "工具执行中")}</strong>
+      <em>${event.parallel ? "并行" : "运行中"}</em>
     </div>
-    <pre>${escapeHtml(JSON.stringify(event.arguments || {}, null, 2))}</pre>
+    <details open>
+      <summary>调用参数</summary>
+      <pre>${escapeHtml(node.dataset.arguments)}</pre>
+    </details>
   `;
   if (beforeNode?.parentElement === messagesEl) {
     messagesEl.insertBefore(node, beforeNode);
@@ -423,13 +428,21 @@ function finishToolEvent(node, event) {
     node = appendToolEvent(event);
   }
   node.className = `tool-event ${event.ok ? "ok" : "failed"}`;
+  const args = node.dataset.arguments || "{}";
   node.innerHTML = `
     <div class="tool-event-head">
       <span>${escapeHtml(event.tool || "tool")}</span>
       <strong>${escapeHtml(event.title || "工具完成")}</strong>
       <em>${event.ok ? "完成" : "失败"}</em>
     </div>
-    <pre>${escapeHtml(shortText(event.output || "", 1800))}</pre>
+    <details>
+      <summary>调用参数</summary>
+      <pre>${escapeHtml(args)}</pre>
+    </details>
+    <details open>
+      <summary>工具结果</summary>
+      <pre>${escapeHtml(shortText(event.output || "", 4000))}</pre>
+    </details>
   `;
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
@@ -694,12 +707,14 @@ messageEl.addEventListener("keydown", (event) => {
     hideCommandPalette();
     return;
   }
-  if (!commandPaletteEl.hidden && event.key === "Enter" && !event.shiftKey) {
+  if (!commandPaletteEl.hidden && event.key === "Tab") {
     event.preventDefault();
     fillCommand(commandMatches[0]);
     return;
   }
-  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    hideCommandPalette();
     form.requestSubmit();
   }
 });
@@ -734,7 +749,7 @@ function updateCommandPalette() {
   commandPaletteEl.innerHTML = "";
   const header = document.createElement("div");
   header.className = "command-palette-title";
-  header.innerHTML = "<strong>内置指令</strong><span>Enter 选择，Ctrl+Enter 发送</span>";
+  header.innerHTML = "<strong>内置指令</strong><span>Tab 补全，Enter 发送</span>";
   commandPaletteEl.appendChild(header);
   for (const command of matches) {
     const item = document.createElement("button");

@@ -86,6 +86,21 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertNotIn("开发状态不应注入", context)
         self.assertNotIn("进度不应注入", context)
 
+    def test_answer_from_tool_results_uses_latest_successful_output(self) -> None:
+        text = self.runtime._answer_from_tool_results(
+            [
+                '{"tool":"list_files","title":"列出 .","ok":true,"output":"README.md\\nsrc/main.py","data":{}}'
+            ]
+        )
+
+        self.assertIn("已查看当前文件目录", text)
+        self.assertIn("README.md", text)
+
+    def test_direct_directory_intent_routes_to_list_files(self) -> None:
+        calls = self.runtime._direct_tool_calls_from_user("查看当前文件目录")
+
+        self.assertEqual(calls, [{"tool": "list_files", "arguments": {"path": ".", "limit": 120}}])
+
 
 if __name__ == "__main__":
     unittest.main()

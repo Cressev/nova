@@ -626,6 +626,19 @@ code {
   color: #ffaaa4;
 }
 
+.tool-event details {
+  display: grid;
+  gap: 6px;
+}
+
+.tool-event summary {
+  width: fit-content;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 850;
+}
+
 .tool-event pre {
   max-height: 220px;
   margin: 0;

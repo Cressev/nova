@@ -48,6 +48,20 @@ class CodexLikeAgentRuntime:
             async for event in self._handle_builtin_command(latest_user):
                 yield event
             return
+        direct_tool_calls = self._direct_tool_calls_from_user(latest_user)
+        if direct_tool_calls:
+            yield {"type": "agent_status", "status": "识别到明确工具意图"}
+            tool_results: list[str] = []
+            async for event in self._run_tool_calls(direct_tool_calls):
+                if event["type"] == "tool_result_json":
+                    tool_results.append(event["result_json"])
+                    continue
+                yield event
+            text = self._answer_from_tool_results(tool_results)
+            for chunk in self._chunk_text(text, 36):
+                yield {"type": "assistant_delta", "delta": chunk}
+            yield {"type": "assistant_done_content", "content": text}
+            return
 
         working_messages = [
             ChatMessage(
@@ -58,6 +72,7 @@ class CodexLikeAgentRuntime:
             *messages,
         ]
         used_tools = False
+        all_tool_results: list[str] = []
 
         for _round in range(self.max_tool_rounds):
             yield {"type": "agent_status", "status": f"模型决策中，第 {_round + 1} 轮"}
@@ -74,6 +89,7 @@ class CodexLikeAgentRuntime:
             async for event in self._run_tool_calls(tool_calls):
                 if event["type"] == "tool_result_json":
                     tool_results.append(event["result_json"])
+                    all_tool_results.append(event["result_json"])
                     continue
                 yield event
 
@@ -93,12 +109,11 @@ class CodexLikeAgentRuntime:
             )
 
         if used_tools:
-            yield {"type": "agent_status", "status": "工具轮次已用完，生成总结"}
-            async for event in self._stream_final(
-                working_messages,
-                "工具轮次已用完，请基于已有工具结果给出最终答复。",
-            ):
-                yield event
+            yield {"type": "agent_status", "status": "基于最近工具结果生成回答"}
+            text = self._answer_from_tool_results(all_tool_results)
+            for chunk in self._chunk_text(text, 36):
+                yield {"type": "assistant_delta", "delta": chunk}
+            yield {"type": "assistant_done_content", "content": text}
 
     async def _stream_final(
         self,
@@ -120,9 +135,10 @@ class CodexLikeAgentRuntime:
             parts.append(delta)
             yield {"type": "assistant_delta", "delta": delta}
 
-        if not emitted:
-            text = self._strip_final_tags(fallback)
-            parts.append(text)
+        text = "".join(parts)
+        if not emitted or not text.strip():
+            text = self._strip_final_tags(fallback) or "模型没有返回有效内容，请换一种更具体的说法再试。"
+            parts = [text]
             for chunk in self._chunk_text(text):
                 yield {"type": "assistant_delta", "delta": chunk}
         yield {"type": "assistant_done_content", "content": "".join(parts)}
@@ -212,9 +228,55 @@ class CodexLikeAgentRuntime:
     def _chunk_text(self, text: str, size: int = 24) -> list[str]:
         return [text[index : index + size] for index in range(0, len(text), size)] or [""]
 
+    def _answer_from_tool_results(self, result_json_items: list[str]) -> str:
+        for item in reversed(result_json_items):
+            try:
+                result = json.loads(item)
+            except json.JSONDecodeError:
+                continue
+            if not result.get("ok", False):
+                continue
+            tool = result.get("tool", "工具")
+            title = result.get("title") or tool
+            output = str(result.get("output") or "").strip()
+            if not output:
+                continue
+            if tool == "list_files":
+                return f"已查看当前文件目录。结果如下：\n{self._limit_lines(output, 120)}"
+            if tool == "read_file":
+                return f"已读取文件：{title}\n\n{self._limit_lines(output, 120)}"
+            if tool == "search_text":
+                return f"已完成搜索：{title}\n\n{self._limit_lines(output, 120)}"
+            if tool in {"git_status", "git_diff", "shell_command"}:
+                return f"{title}：\n{self._limit_lines(output, 120)}"
+            return f"{title} 已完成，结果如下：\n{self._limit_lines(output, 120)}"
+        return "工具已执行，但没有得到可展示的有效结果。请换一种更具体的请求再试。"
+
+    def _limit_lines(self, text: str, max_lines: int) -> str:
+        lines = text.splitlines()
+        if len(lines) <= max_lines:
+            return text
+        return "\n".join(lines[:max_lines]) + f"\n...[已省略 {len(lines) - max_lines} 行]"
+
     def _tool_title(self, tool_name: str, arguments: dict) -> str:
         target = arguments.get("path") or arguments.get("query") or arguments.get("command") or ""
         return f"{tool_name} {target}".strip()
+
+    def _direct_tool_calls_from_user(self, content: str) -> list[dict]:
+        normalized = content.strip().lower()
+        directory_intents = [
+            "查看当前文件目录",
+            "查看当前目录",
+            "列出当前目录",
+            "列出文件",
+            "文件目录",
+            "当前目录",
+            "list files",
+            "ls",
+        ]
+        if any(intent in normalized for intent in directory_intents):
+            return [{"tool": "list_files", "arguments": {"path": ".", "limit": 120}}]
+        return []
 
     async def _run_tool_calls(self, tool_calls: list[dict]) -> AsyncIterator[dict]:
         normalized = [item for item in (self._normalize_tool_call(call) for call in tool_calls) if item[0]]

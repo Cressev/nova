@@ -30,6 +30,15 @@ class WorkspaceToolsTest(unittest.TestCase):
         with self.assertRaises(ToolExecutionError):
             self.tools.run("list_files", {"path": ".git"})
 
+    def test_list_files_prunes_protected_directories(self) -> None:
+        (self.root / ".git").mkdir()
+        (self.root / ".git" / "hidden.txt").write_text("hidden", encoding="utf-8")
+
+        result = self.tools.run("list_files", {"path": ".", "limit": 20})
+
+        self.assertIn("README.md", result.output)
+        self.assertNotIn(".git/hidden.txt", result.output)
+
     def test_shell_allowlist_and_blocklist(self) -> None:
         ok = self.tools.run("shell_command", {"command": "pwd"})
         self.assertTrue(ok.ok)
