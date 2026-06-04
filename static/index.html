@@ -7,41 +7,46 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <main class="shell">
-      <section class="workspace">
-        <header class="topbar">
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">N</div>
           <div>
             <h1>Nova</h1>
-            <p>本地优先的个人开发 Agent 工作台</p>
+            <p>Local Agent</p>
           </div>
-          <span id="health" class="status">检查中</span>
+        </div>
+
+        <button id="new-chat" class="new-chat" type="button">新对话</button>
+
+        <div class="section-label">最近对话</div>
+        <nav id="session-list" class="session-list"></nav>
+      </aside>
+
+      <section class="main-panel">
+        <header class="chat-header">
+          <div>
+            <div class="eyebrow">GLM-4.7</div>
+            <h2 id="chat-title">Nova Chat</h2>
+          </div>
+          <div class="header-actions">
+            <span id="provider" class="pill">模型检查中</span>
+            <span id="health" class="pill">网关检查中</span>
+          </div>
         </header>
 
-        <section class="layout">
-          <aside class="panel">
-            <div class="panel-title">对话</div>
-            <button id="new-chat" class="new-chat" type="button">新建对话</button>
-            <div id="session-list" class="task-list"></div>
-          </aside>
+        <section id="messages" class="messages"></section>
 
-          <section class="panel chat-panel">
-            <div class="panel-title">
-              <span>Nova Chat</span>
-              <span id="provider" class="provider">GLM-4.7</span>
-            </div>
-            <div id="messages" class="messages"></div>
-            <form id="chat-form" class="composer">
-              <textarea
-                id="message"
-                name="message"
-                rows="3"
-                placeholder="直接和 Nova 对话，例如：帮我看一下这个项目下一步先做什么"
-                required
-              ></textarea>
-              <button type="submit">发送</button>
-            </form>
-          </section>
-        </section>
+        <form id="chat-form" class="composer">
+          <textarea
+            id="message"
+            name="message"
+            rows="1"
+            placeholder="和 Nova 对话，让它帮你读代码、拆任务、解释实现..."
+            required
+          ></textarea>
+          <button id="send-button" type="submit">发送</button>
+        </form>
       </section>
     </main>
     <script src="/static/app.js"></script>
