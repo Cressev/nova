@@ -5,7 +5,7 @@ import json
 from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
@@ -38,6 +38,11 @@ app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 @app.get("/", include_in_schema=False)
 async def index() -> FileResponse:
     return FileResponse(settings.static_dir / "index.html")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> Response:
+    return Response(status_code=204)
 
 
 @app.get("/api/health", response_model=Health)

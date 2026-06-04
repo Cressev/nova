@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from nova_gateway import main as app_module
 from nova_gateway.main import app
 
 
@@ -16,6 +17,10 @@ class ApiTest(unittest.TestCase):
         response = self.client.get("/api/health")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["ok"])
+
+    def test_favicon(self) -> None:
+        response = self.client.get("/favicon.ico")
+        self.assertEqual(response.status_code, 204)
 
     def test_create_task(self) -> None:
         response = self.client.post("/api/tasks", json={"prompt": "测试任务"})
@@ -65,6 +70,32 @@ class ApiTest(unittest.TestCase):
                 body = "".join(response.iter_text())
         self.assertIn("user_message", body)
         self.assertIn("未配置 BIGMODEL_API_KEY", body)
+
+    def test_stream_success_events(self) -> None:
+        async def fake_stream(messages):
+            # 用假流验证网关事件顺序，不依赖真实模型和外网。
+            yield "你"
+            yield "好"
+
+        session_response = self.client.post(
+            "/api/chat/sessions",
+            json={"title": "流式成功测试"},
+        )
+        session = session_response.json()
+
+        with patch.object(app_module.provider, "stream", fake_stream):
+            with self.client.stream(
+                "POST",
+                f"/api/chat/sessions/{session['id']}/stream",
+                json={"content": "你好"},
+            ) as response:
+                self.assertEqual(response.status_code, 200)
+                body = "".join(response.iter_text())
+
+        self.assertIn("user_message", body)
+        self.assertIn("assistant_delta", body)
+        self.assertIn("assistant_done", body)
+        self.assertIn("你好", body)
 
 
 if __name__ == "__main__":

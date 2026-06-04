@@ -14,11 +14,14 @@
           <div class="brand-mark">N</div>
           <div>
             <h1>Nova</h1>
-            <p>Local Agent</p>
+            <p>个人开发 Agent</p>
           </div>
         </div>
 
-        <button id="new-chat" class="new-chat" type="button">新对话</button>
+        <button id="new-chat" class="new-chat" type="button">
+          <span>+</span>
+          新对话
+        </button>
 
         <div class="section-label">最近对话</div>
         <nav id="session-list" class="session-list"></nav>
@@ -27,7 +30,7 @@
       <section class="main-panel">
         <header class="chat-header">
           <div>
-            <div class="eyebrow">GLM-4.7</div>
+            <div class="eyebrow">GLM-4.7 / LOCAL GATEWAY</div>
             <h2 id="chat-title">Nova Chat</h2>
           </div>
           <div class="header-actions">
@@ -39,6 +42,9 @@
         <section id="messages" class="messages"></section>
 
         <form id="chat-form" class="composer">
+          <div class="composer-status">
+            <span id="stream-state">准备就绪</span>
+          </div>
           <textarea
             id="message"
             name="message"
@@ -46,7 +52,10 @@
             placeholder="和 Nova 对话，让它帮你读代码、拆任务、解释实现..."
             required
           ></textarea>
-          <button id="send-button" type="submit">发送</button>
+          <button id="send-button" type="submit">
+            <span class="send-label">发送</span>
+            <span class="send-icon">→</span>
+          </button>
         </form>
       </section>
     </main>

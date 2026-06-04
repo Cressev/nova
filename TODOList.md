@@ -189,6 +189,44 @@
 
 ------ todo-list end at 2026/06/03/15:33:53 -----
 
+------ todo-list begin at 2026/06/04/15:43:52 -----
+
+用户请求：
+补充处理同一请求：流式对话体验仍需更可靠，UI 需要继续参考本地设计 skill 改好看，并完成启动验证。
+
+制定清单：
+- [x] 1. 确认本地 UI/design skill
+  - [x] 1.1 确认 `figma-generate-design`、`figma-implement-design`、`figma-create-design-system-rules`、`figma-use` 已在本地
+  - [x] 1.2 读取 `figma-implement-design` 的实现验证原则
+  - [x] 1.3 读取 `playwright` 的真实浏览器验证流程
+- [x] 2. 二次补强流式前端
+  - [x] 2.1 发送后立即显示用户消息
+  - [x] 2.2 立即创建 Nova 生成中气泡
+  - [x] 2.3 按 `assistant_delta` 增量更新内容
+  - [x] 2.4 流式完成后更新消息元信息
+  - [x] 2.5 网络或模型异常直接显示在对话里
+  - [x] 2.6 输入框发送后清空并支持自适应高度
+- [x] 3. 二次改造 UI
+  - [x] 3.1 重做暗色 Agent 工作台视觉系统
+  - [x] 3.2 增加消息入场动效和流式光标
+  - [x] 3.3 优化状态胶囊、会话列表、输入区和按钮层次
+  - [x] 3.4 避免单一蓝紫配色和纯装饰背景
+- [x] 4. 补充后端与接口测试
+  - [x] 4.1 增加 `/favicon.ico` 测试
+  - [x] 4.2 增加流式成功事件测试
+  - [x] 4.3 运行完整单元测试
+- [x] 5. 启动和浏览器验证
+  - [x] 5.1 重启本地服务并保留 `BIGMODEL_API_KEY` 运行时配置
+  - [x] 5.2 验证 `/api/health`、`/api/provider` 和 `/favicon.ico`
+  - [x] 5.3 使用 Playwright 打开页面、真实发送消息、截图
+  - [x] 5.4 检查控制台错误和网络请求
+  - [x] 5.5 密钥片段扫描无命中
+
+执行问题记录：
+8765 上的旧服务未加载 favicon 路由，已从旧进程环境中转移运行时 key 后重启服务；key 未输出、未写入文件、未提交。并行截到一张发送瞬间图输入框仍有内容，已补充最终完成态截图：`output/playwright/nova-chat-ui-after-stream.png`。
+
+------ todo-list end at 2026/06/04/15:43:52 -----
+
 ------ todo-list begin at 2026/06/03/15:49:20 -----
 
 用户请求：

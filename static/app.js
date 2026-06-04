@@ -10,6 +10,7 @@ const newChatEl = document.querySelector("#new-chat");
 const form = document.querySelector("#chat-form");
 const messageEl = document.querySelector("#message");
 const sendButtonEl = document.querySelector("#send-button");
+const streamStateEl = document.querySelector("#stream-state");
 const sessionListEl = document.querySelector("#session-list");
 const messagesEl = document.querySelector("#messages");
 const chatTitleEl = document.querySelector("#chat-title");
@@ -99,11 +100,11 @@ function renderEmptyState() {
   messagesEl.innerHTML = `
     <div class="empty-state">
       <h3>开始和 Nova 对话</h3>
-      <p>Nova 已经接入本地网关。你可以直接让它解释代码、拆解需求、制定实现步骤，后续会继续接入文件工具和审批流。</p>
+      <p>Nova 已接入本地网关和 GLM-4.7。先把对话跑顺，再逐步接入文件工具、审批和执行轨迹。</p>
       <div class="quick-actions">
-        <button type="button" data-prompt="帮我总结一下这个项目现在做到哪一步">总结项目状态</button>
+        <button type="button" data-prompt="帮我总结一下这个项目现在做到哪一步">总结状态</button>
         <button type="button" data-prompt="下一步应该先实现哪个功能，为什么">规划下一步</button>
-        <button type="button" data-prompt="解释一下 Nova 当前的后端结构">解释后端结构</button>
+        <button type="button" data-prompt="解释一下 Nova 当前的后端结构">解释后端</button>
       </div>
     </div>
   `;
@@ -151,6 +152,13 @@ function appendMessage(message) {
 function updateMessage(node, content) {
   node.querySelector(".message-content").innerHTML = escapeHtml(content);
   messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function updateMessageMeta(node, message) {
+  node.dataset.messageId = message.id || "";
+  node.querySelector(".message-time").textContent = message.created_at
+    ? formatTime(message.created_at)
+    : "生成中";
 }
 
 function roleLabel(role) {
@@ -202,8 +210,10 @@ form.addEventListener("submit", async (event) => {
   }
   state.sending = true;
   sendButtonEl.disabled = true;
-  sendButtonEl.textContent = "发送中";
+  sendButtonEl.querySelector(".send-label").textContent = "生成中";
+  streamStateEl.textContent = "正在连接模型";
 
+  let assistantNode = null;
   try {
     const sessionId = await ensureSession();
     const optimisticUser = {
@@ -213,19 +223,36 @@ form.addEventListener("submit", async (event) => {
       created_at: new Date().toISOString(),
     };
     appendMessage(optimisticUser);
-    const assistantNode = appendMessage({
+    assistantNode = appendMessage({
       id: `local_assistant_${Date.now()}`,
       role: "assistant",
       content: "",
       created_at: null,
     });
+    assistantNode.classList.add("streaming");
     messageEl.value = "";
-    await streamAssistant(sessionId, content, assistantNode);
+    autoResizeTextarea();
+    const ok = await streamAssistant(sessionId, content, assistantNode);
+    streamStateEl.textContent = ok ? "回复完成" : "请求失败";
     await Promise.all([loadSessions(), loadHealth()]);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "请求失败";
+    if (assistantNode) {
+      assistantNode.className = "message error";
+      updateMessage(assistantNode, `请求失败：${message}`);
+    } else {
+      appendMessage({
+        id: `local_error_${Date.now()}`,
+        role: "error",
+        content: `请求失败：${message}`,
+        created_at: new Date().toISOString(),
+      });
+    }
+    streamStateEl.textContent = "请求失败";
   } finally {
     state.sending = false;
     sendButtonEl.disabled = false;
-    sendButtonEl.textContent = "发送";
+    sendButtonEl.querySelector(".send-label").textContent = "发送";
     messageEl.focus();
   }
 });
@@ -244,6 +271,7 @@ async function streamAssistant(sessionId, content, assistantNode) {
   const decoder = new TextDecoder();
   let buffer = "";
   let assistantText = "";
+  let ok = true;
 
   while (true) {
     const { value, done } = await reader.read();
@@ -251,24 +279,62 @@ async function streamAssistant(sessionId, content, assistantNode) {
       break;
     }
     buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
+    const result = consumeStreamLines(buffer, assistantNode, (delta) => {
+      assistantText += delta;
+      updateMessage(assistantNode, assistantText);
+      streamStateEl.textContent = "Nova 正在输出";
+    });
+    buffer = result.rest;
+    ok = ok && result.ok;
+  }
 
-    for (const line of lines) {
-      if (!line.trim()) {
-        continue;
-      }
-      const event = JSON.parse(line);
-      if (event.type === "assistant_delta") {
-        assistantText += event.delta;
-        updateMessage(assistantNode, assistantText);
-      }
-      if (event.type === "error") {
-        assistantNode.className = "message error";
+  if (buffer.trim()) {
+    const result = consumeStreamLines(`${buffer}\n`, assistantNode, (delta) => {
+      assistantText += delta;
+      updateMessage(assistantNode, assistantText);
+    });
+    ok = ok && result.ok;
+  }
+  return ok;
+}
+
+function consumeStreamLines(buffer, assistantNode, onDelta) {
+  const lines = buffer.split("\n");
+  const rest = lines.pop() || "";
+  let ok = true;
+
+  for (const line of lines) {
+    if (!line.trim()) {
+      continue;
+    }
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (event.type === "assistant_delta") {
+      onDelta(event.delta || "");
+    }
+    if (event.type === "assistant_done") {
+      assistantNode.classList.remove("streaming");
+      if (event.message?.content) {
         updateMessage(assistantNode, event.message.content);
+      }
+      if (event.message) {
+        updateMessageMeta(assistantNode, event.message);
+      }
+    }
+    if (event.type === "error") {
+      ok = false;
+      assistantNode.className = "message error";
+      updateMessage(assistantNode, event.message?.content || "模型调用失败");
+      if (event.message) {
+        updateMessageMeta(assistantNode, event.message);
       }
     }
   }
+  return { rest, ok };
 }
 
 messageEl.addEventListener("keydown", (event) => {
@@ -276,6 +342,14 @@ messageEl.addEventListener("keydown", (event) => {
     form.requestSubmit();
   }
 });
+
+messageEl.addEventListener("input", autoResizeTextarea);
+
+function autoResizeTextarea() {
+  // 输入区随内容长高，但限制最大高度，避免挤掉对话窗口。
+  messageEl.style.height = "auto";
+  messageEl.style.height = `${Math.min(messageEl.scrollHeight, 180)}px`;
+}
 
 loadHealth();
 loadSessions();
