@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -112,6 +113,22 @@ class AgentRuntimeTest(unittest.TestCase):
         calls = self.runtime._direct_tool_calls_from_user("查看当前文档目录")
 
         self.assertEqual(calls, [{"tool": "list_files", "arguments": {"path": "产品研发文档集", "limit": 120}}])
+
+    def test_tool_events_have_stable_call_id(self) -> None:
+        async def collect_events() -> list[dict]:
+            return [
+                event
+                async for event in self.runtime._run_tool_calls(
+                    [{"tool": "list_files", "arguments": {"path": ".", "limit": 5}}]
+                )
+            ]
+
+        events = asyncio.run(collect_events())
+        start = next(event for event in events if event["type"] == "tool_start")
+        done = next(event for event in events if event["type"] == "tool_done")
+
+        self.assertTrue(start["call_id"].startswith("tool_"))
+        self.assertEqual(start["call_id"], done["call_id"])
 
 
 if __name__ == "__main__":

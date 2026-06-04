@@ -13,6 +13,7 @@ from . import __version__
 from .agent_runtime import CodexLikeAgentRuntime
 from .agent_tools import WorkspaceTools
 from .models import (
+    ChatEvent,
     ChatMessage,
     ChatMessageCreate,
     ChatRole,
@@ -251,6 +252,19 @@ async def list_chat_messages(session_id: str) -> list[ChatMessage]:
     return store.list_chat_messages(session_id)
 
 
+@app.get("/api/chat/sessions/{session_id}/timeline")
+async def list_chat_timeline(session_id: str) -> dict:
+    if _get_current_chat_session(session_id) is None:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    items: list[dict] = []
+    for message in store.list_chat_messages(session_id):
+        items.append({"kind": "message", "created_at": message.created_at, "item": message.model_dump(mode="json")})
+    for event in store.list_chat_events(session_id):
+        items.append({"kind": "event", "created_at": event.created_at, "item": event.model_dump(mode="json")})
+    items.sort(key=lambda item: item["created_at"])
+    return {"items": [{"kind": item["kind"], "item": item["item"]} for item in items]}
+
+
 @app.post("/api/chat/sessions/{session_id}/messages", response_model=ChatMessage)
 async def create_chat_message(session_id: str, payload: ChatMessageCreate) -> ChatMessage:
     session = _get_current_chat_session(session_id)
@@ -370,6 +384,7 @@ async def stream_chat_message(
         answer_parts: list[str] = []
         try:
             async for event in _agent_runtime().stream(store.list_chat_messages(session_id)):
+                _persist_chat_event(session_id, event)
                 if event["type"] == "assistant_delta":
                     answer_parts.append(event["delta"])
                     yield _ndjson(event)
@@ -450,6 +465,47 @@ def _get_current_chat_session(session_id: str) -> ChatSession | None:
     if session.workspace != str(workspace_manager.current_root):
         return None
     return session
+
+
+def _persist_chat_event(session_id: str, event: dict) -> None:
+    event_type = event.get("type")
+    if event_type == "tool_start":
+        store.upsert_chat_event(
+            ChatEvent(
+                id=str(event.get("call_id") or new_id("tool")),
+                session_id=session_id,
+                type="tool",
+                status="running",
+                title=str(event.get("title") or event.get("tool") or "工具执行中"),
+                tool=str(event.get("tool") or "tool"),
+                arguments=event.get("arguments") if isinstance(event.get("arguments"), dict) else {},
+                parallel=bool(event.get("parallel", False)),
+            )
+        )
+        return
+    if event_type == "tool_done":
+        store.upsert_chat_event(
+            ChatEvent(
+                id=str(event.get("call_id") or new_id("tool")),
+                session_id=session_id,
+                type="tool",
+                status="ok" if event.get("ok", False) else "failed",
+                title=str(event.get("title") or event.get("tool") or "工具完成"),
+                tool=str(event.get("tool") or "tool"),
+                output=str(event.get("output") or ""),
+                data=event.get("data") if isinstance(event.get("data"), dict) else {},
+            )
+        )
+        return
+    if event_type == "agent_status":
+        store.upsert_chat_event(
+            ChatEvent(
+                session_id=session_id,
+                type="status",
+                status="ok",
+                title=str(event.get("status") or "运行中"),
+            )
+        )
 
 
 def _ndjson(payload: dict) -> str:

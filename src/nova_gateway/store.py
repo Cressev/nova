@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from threading import Lock
 
-from .models import ChatMessage, ChatSession, Task, TaskStatus, TimelineEvent, utc_now
+from .models import ChatEvent, ChatMessage, ChatSession, Task, TaskStatus, TimelineEvent, utc_now
 from .trace import TraceRecorder
 
 
@@ -20,6 +20,7 @@ class TaskStore:
         self._events: dict[str, list[TimelineEvent]] = {}
         self._chat_sessions: dict[str, ChatSession] = {}
         self._chat_messages: dict[str, list[ChatMessage]] = {}
+        self._chat_events: dict[str, list[ChatEvent]] = {}
         self._load()
 
     def _load(self) -> None:
@@ -39,6 +40,10 @@ class TaskStore:
             self._chat_messages = {
                 session_id: [ChatMessage.model_validate(item) for item in messages]
                 for session_id, messages in chat_payload.get("messages", {}).items()
+            }
+            self._chat_events = {
+                session_id: [ChatEvent.model_validate(item) for item in events]
+                for session_id, events in chat_payload.get("events", {}).items()
             }
 
     def _save(self) -> None:
@@ -71,6 +76,10 @@ class TaskStore:
             "messages": {
                 session_id: [message.model_dump(mode="json") for message in messages]
                 for session_id, messages in self._chat_messages.items()
+            },
+            "events": {
+                session_id: [event.model_dump(mode="json") for event in events]
+                for session_id, events in self._chat_events.items()
             },
         }
         self.chat_file.write_text(
@@ -139,6 +148,7 @@ class TaskStore:
         with self._lock:
             self._chat_sessions[session.id] = session
             self._chat_messages.setdefault(session.id, [])
+            self._chat_events.setdefault(session.id, [])
             self._save_chats()
             return session
 
@@ -167,6 +177,7 @@ class TaskStore:
                 return False
             del self._chat_sessions[session_id]
             self._chat_messages.pop(session_id, None)
+            self._chat_events.pop(session_id, None)
             self._save_chats()
             return True
 
@@ -186,3 +197,39 @@ class TaskStore:
     def list_chat_messages(self, session_id: str) -> list[ChatMessage]:
         with self._lock:
             return list(self._chat_messages.get(session_id, []))
+
+    def upsert_chat_event(self, event: ChatEvent) -> ChatEvent:
+        with self._lock:
+            if event.session_id not in self._chat_sessions:
+                raise KeyError(event.session_id)
+            events = self._chat_events.setdefault(event.session_id, [])
+            for index, existing in enumerate(events):
+                if existing.id == event.id:
+                    # Codex 的同一个 tool item 会先 started 后 completed；完成事件要保留开始事件里的参数。
+                    merged = existing.model_copy(
+                        update={
+                            "type": event.type,
+                            "status": event.status,
+                            "title": event.title or existing.title,
+                            "tool": event.tool or existing.tool,
+                            "arguments": event.arguments or existing.arguments,
+                            "output": event.output if event.output is not None else existing.output,
+                            "data": event.data or existing.data,
+                            "parallel": event.parallel or existing.parallel,
+                            "updated_at": utc_now(),
+                        }
+                    )
+                    events[index] = merged
+                    self._save_chats()
+                    return merged
+            events.append(event)
+            session = self._chat_sessions[event.session_id]
+            self._chat_sessions[event.session_id] = session.model_copy(
+                update={"updated_at": utc_now()}
+            )
+            self._save_chats()
+            return event
+
+    def list_chat_events(self, session_id: str) -> list[ChatEvent]:
+        with self._lock:
+            return list(self._chat_events.get(session_id, []))

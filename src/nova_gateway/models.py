@@ -58,6 +58,21 @@ class ChatMessage(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
 
 
+class ChatEvent(BaseModel):
+    id: str = Field(default_factory=lambda: new_id("evt"))
+    session_id: str
+    type: str
+    status: str = "ok"
+    title: str
+    tool: str | None = None
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    output: str | None = None
+    data: dict[str, Any] = Field(default_factory=dict)
+    parallel: bool = False
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class TaskCreate(BaseModel):
     prompt: str = Field(min_length=1, max_length=8000)
     workspace: str | None = None

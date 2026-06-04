@@ -386,19 +386,77 @@ async function loadMessages() {
     renderEmptyState();
     return;
   }
-  const messages = await api(`/api/chat/sessions/${state.selectedSessionId}/messages`);
+  const timeline = await api(`/api/chat/sessions/${state.selectedSessionId}/timeline`);
+  const items = timeline.items || [];
 
-  if (messages.length === 0) {
+  if (items.length === 0) {
     renderEmptyState();
     return;
   }
 
   messagesEl.innerHTML = "";
-  for (let index = 0; index < messages.length; index += 1) {
-    const message = messages[index];
-    appendMessage(message, { showDivider: message.role === "user" && index > 0 });
+  let userMessageCount = 0;
+  for (const entry of items) {
+    if (entry.kind === "message") {
+      const message = entry.item;
+      appendMessage(message, { showDivider: message.role === "user" && userMessageCount > 0 });
+      if (message.role === "user") {
+        userMessageCount += 1;
+      }
+      continue;
+    }
+    if (entry.kind === "event") {
+      appendStoredEvent(entry.item);
+    }
   }
   scrollMessagesToBottom();
+}
+
+function appendStoredEvent(event) {
+  if (event.type === "tool") {
+    const node = appendToolEvent(
+      {
+        call_id: event.id,
+        tool: event.tool,
+        arguments: event.arguments || {},
+        title: event.title,
+        parallel: event.parallel,
+      },
+      null,
+      { autoscroll: false },
+    );
+    finishToolEvent(
+      node,
+      {
+        call_id: event.id,
+        tool: event.tool,
+        ok: event.status === "ok",
+        title: event.title,
+        output: event.output || "",
+        data: event.data || {},
+      },
+      { autoscroll: false },
+    );
+    return;
+  }
+  if (event.type === "status") {
+    appendStatusEvent(event.title, { autoscroll: false });
+  }
+}
+
+function appendStatusEvent(text, options = {}) {
+  const node = document.createElement("div");
+  node.className = "agent-status";
+  node.textContent = text;
+  if (options.beforeNode?.parentElement === messagesEl) {
+    messagesEl.insertBefore(node, options.beforeNode);
+  } else {
+    messagesEl.appendChild(node);
+  }
+  if (options.autoscroll !== false) {
+    scrollMessagesToBottom();
+  }
+  return node;
 }
 
 function appendTurnDivider(message) {
@@ -451,9 +509,10 @@ function updateMessageMeta(node, message) {
     : "生成中";
 }
 
-function appendToolEvent(event, beforeNode = null) {
+function appendToolEvent(event, beforeNode = null, options = {}) {
   const node = document.createElement("article");
   node.className = "tool-event running";
+  node.dataset.callId = event.call_id || "";
   node.dataset.tool = event.tool || "";
   node.dataset.arguments = JSON.stringify(event.arguments || {}, null, 2);
   node.innerHTML = `
@@ -472,11 +531,13 @@ function appendToolEvent(event, beforeNode = null) {
   } else {
     messagesEl.appendChild(node);
   }
-  scrollMessagesToBottom();
+  if (options.autoscroll !== false) {
+    scrollMessagesToBottom();
+  }
   return node;
 }
 
-function finishToolEvent(node, event) {
+function finishToolEvent(node, event, options = {}) {
   if (!node) {
     node = appendToolEvent(event);
   }
@@ -497,7 +558,9 @@ function finishToolEvent(node, event) {
       <pre>${escapeHtml(shortText(event.output || "", 4000))}</pre>
     </details>
   `;
-  scrollMessagesToBottom();
+  if (options.autoscroll !== false) {
+    scrollMessagesToBottom();
+  }
 }
 
 function roleLabel(role) {
@@ -681,7 +744,7 @@ async function streamAssistant(sessionId, content, assistantNode) {
   let buffer = "";
   let assistantText = "";
   let ok = true;
-  let activeToolNode = null;
+  const activeToolNodes = new Map();
 
   while (true) {
     const { value, done } = await reader.read();
@@ -697,15 +760,18 @@ async function streamAssistant(sessionId, content, assistantNode) {
       },
       onToolStart: (event) => {
         streamStateEl.textContent = `工具执行：${event.tool}`;
-        activeToolNode = appendToolEvent(event, assistantNode);
+        const node = appendToolEvent(event, assistantNode);
+        activeToolNodes.set(event.call_id || event.tool || "tool", node);
       },
       onToolDone: (event) => {
-        finishToolEvent(activeToolNode, event);
-        activeToolNode = null;
+        const key = event.call_id || event.tool || "tool";
+        finishToolEvent(activeToolNodes.get(key), event);
+        activeToolNodes.delete(key);
         streamStateEl.textContent = event.ok ? "工具完成，继续推理" : "工具失败，继续处理";
       },
       onStatus: (event) => {
         streamStateEl.textContent = event.status || "运行中";
+        appendStatusEvent(event.status || "运行中", { beforeNode: assistantNode });
       },
     });
     buffer = result.rest;
@@ -719,15 +785,18 @@ async function streamAssistant(sessionId, content, assistantNode) {
         updateMessage(assistantNode, assistantText);
       },
       onToolStart: (event) => {
-        activeToolNode = appendToolEvent(event, assistantNode);
+        const node = appendToolEvent(event, assistantNode);
+        activeToolNodes.set(event.call_id || event.tool || "tool", node);
       },
       onToolDone: (event) => {
-        finishToolEvent(activeToolNode, event);
-        activeToolNode = null;
+        const key = event.call_id || event.tool || "tool";
+        finishToolEvent(activeToolNodes.get(key), event);
+        activeToolNodes.delete(key);
         streamStateEl.textContent = event.ok ? "工具完成，继续推理" : "工具失败，继续处理";
       },
       onStatus: (event) => {
         streamStateEl.textContent = event.status || "运行中";
+        appendStatusEvent(event.status || "运行中", { beforeNode: assistantNode });
       },
     });
     ok = ok && result.ok;

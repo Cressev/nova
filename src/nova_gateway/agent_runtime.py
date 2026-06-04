@@ -6,6 +6,7 @@ import re
 import subprocess
 from collections.abc import AsyncIterator
 from pathlib import Path
+from uuid import uuid4
 
 from .agent_tools import ToolExecutionError, WorkspaceTools, tool_result_as_json
 from .memory import ProjectMemory
@@ -306,7 +307,11 @@ class CodexLikeAgentRuntime:
         return []
 
     async def _run_tool_calls(self, tool_calls: list[dict]) -> AsyncIterator[dict]:
-        normalized = [item for item in (self._normalize_tool_call(call) for call in tool_calls) if item[0]]
+        normalized = [
+            (f"tool_{uuid4().hex[:12]}", name, arguments)
+            for name, arguments in (self._normalize_tool_call(call) for call in tool_calls)
+            if name
+        ]
         skipped = len(tool_calls) - len(normalized)
         if skipped:
             # 模型偶尔会输出空工具名或半截 JSON；跳过而不是在 UI 上刷一屏“未知工具”。
@@ -320,45 +325,48 @@ class CodexLikeAgentRuntime:
                 ),
             }
             return
-        parallel = len(normalized) > 1 and all(self.tools.supports_parallel(name) for name, _args in normalized)
+        parallel = len(normalized) > 1 and all(self.tools.supports_parallel(name) for _id, name, _args in normalized)
 
         if parallel:
             yield {"type": "agent_status", "status": f"并行执行 {len(normalized)} 个只读工具"}
-            for name, arguments in normalized:
+            for call_id, name, arguments in normalized:
                 yield {
                     "type": "tool_start",
+                    "call_id": call_id,
                     "tool": name,
                     "arguments": arguments,
                     "title": self._tool_title(name, arguments),
                     "parallel": True,
                 }
             results = await asyncio.gather(
-                *(asyncio.to_thread(self._run_one_tool, name, args) for name, args in normalized)
+                *(asyncio.to_thread(self._run_one_tool, call_id, name, args) for call_id, name, args in normalized)
             )
             for event, result_json in results:
                 yield event
                 yield {"type": "tool_result_json", "result_json": result_json}
             return
 
-        for name, arguments in normalized:
+        for call_id, name, arguments in normalized:
             yield {
                 "type": "tool_start",
+                "call_id": call_id,
                 "tool": name,
                 "arguments": arguments,
                 "title": self._tool_title(name, arguments),
                 "parallel": False,
             }
-            event, result_json = self._run_one_tool(name, arguments)
+            event, result_json = self._run_one_tool(call_id, name, arguments)
             yield event
             yield {"type": "tool_result_json", "result_json": result_json}
 
-    def _run_one_tool(self, tool_name: str, arguments: dict) -> tuple[dict, str]:
+    def _run_one_tool(self, call_id: str, tool_name: str, arguments: dict) -> tuple[dict, str]:
         try:
             result = self.tools.run(tool_name, arguments)
             result_json = tool_result_as_json(result)
             return (
                 {
                     "type": "tool_done",
+                    "call_id": call_id,
                     "tool": tool_name,
                     "ok": result.ok,
                     "title": result.title,
@@ -375,6 +383,7 @@ class CodexLikeAgentRuntime:
             return (
                 {
                     "type": "tool_done",
+                    "call_id": call_id,
                     "tool": tool_name,
                     "ok": False,
                     "title": f"{tool_name} 执行失败",

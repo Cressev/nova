@@ -133,12 +133,14 @@ class ApiTest(unittest.TestCase):
             # 用假 Agent 流验证网关事件顺序，不依赖真实模型和外网。
             yield {
                 "type": "tool_start",
+                "call_id": "tool_test_readme",
                 "tool": "read_file",
                 "title": "读取 README.md",
                 "arguments": {"path": "README.md"},
             }
             yield {
                 "type": "tool_done",
+                "call_id": "tool_test_readme",
                 "tool": "read_file",
                 "ok": True,
                 "title": "读取 README.md",
@@ -173,6 +175,20 @@ class ApiTest(unittest.TestCase):
         self.assertIn("assistant_delta", body)
         self.assertIn("assistant_done", body)
         self.assertIn("你好", body)
+
+        timeline = self.client.get(f"/api/chat/sessions/{session['id']}/timeline")
+        self.assertEqual(timeline.status_code, 200)
+        items = timeline.json()["items"]
+        tool_events = [
+            item["item"]
+            for item in items
+            if item["kind"] == "event" and item["item"]["type"] == "tool"
+        ]
+        self.assertEqual(len(tool_events), 1)
+        self.assertEqual(tool_events[0]["tool"], "read_file")
+        self.assertEqual(tool_events[0]["arguments"], {"path": "README.md"})
+        self.assertEqual(tool_events[0]["output"], "Nova")
+        self.assertEqual(tool_events[0]["status"], "ok")
 
 
 if __name__ == "__main__":
