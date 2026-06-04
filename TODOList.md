@@ -189,6 +189,53 @@
 
 ------ todo-list end at 2026/06/03/15:33:53 -----
 
+------ todo-list begin at 2026/06/04/16:04:03 -----
+
+用户请求：
+你要学习codex app的设计理念，你照着codex app 先调研写一份功能开发文档，还是属于v1.0版本，然后开始实现，要1：1复刻codex
+
+制定清单：
+- [x] 1. 调研 Codex App 官方资料
+  - [x] 1.1 使用 openai-docs skill 拉取 Codex 官方手册
+  - [x] 1.2 阅读 Codex App commands/features/settings
+  - [x] 1.3 阅读 in-app browser、review、appshots、approvals & security
+  - [x] 1.4 明确“1:1”边界：功能结构和交互模式对齐，品牌与专有视觉不复制
+- [x] 2. 写 v1.0 功能开发文档
+  - [x] 2.1 创建 `产品研发文档集/v1.0/20260604_Codex_App风格功能开发文档.md`
+  - [x] 2.2 更新 `产品研发文档集/v1.0/README.md`
+  - [x] 2.3 同步为飞书新版文档
+  - [x] 2.4 使用 bot 私信通知用户
+- [x] 3. 实现 Codex-style 工作台
+  - [x] 3.1 前端升级为三栏布局
+  - [x] 3.2 左侧增加项目、运行模式、线程列表和 Skills 提示
+  - [x] 3.3 中间保留流式对话和计划提示
+  - [x] 3.4 右侧增加 Workspace、Review、Run、Permissions、Browser 面板
+  - [x] 3.5 固定桌面三栏内部滚动，移动端纵向堆叠
+- [x] 4. 补充后端工作区接口
+  - [x] 4.1 新增 workspace status 数据模型
+  - [x] 4.2 新增 `GET /api/workspace/status`
+  - [x] 4.3 只读解析 Git 分支和未提交变更
+  - [x] 4.4 中文路径使用 `core.quotepath=false`
+- [x] 5. 验证
+  - [x] 5.1 单元测试通过
+  - [x] 5.2 重启本地服务并保留运行时模型 key
+  - [x] 5.3 验证 `/api/health`、`/api/provider`、`/api/workspace/status`
+  - [x] 5.4 Playwright 打开页面、真实发送消息、截图
+  - [x] 5.5 控制台错误为 0
+
+执行问题记录：
+- Codex App 的品牌、商标、专有图标、精确视觉外观不能直接复制；本轮实现为“功能结构和交互模式对齐，Nova 原创视觉”。
+- 飞书搜索缺少 `search:docs:read` scope，改用此前记录的 v1.0 文件夹 token `Nl8ZfmFOOlfNpLdyKtWcr0UYncc` 直接创建文档。
+- `lark-cli docs +create` 当前版本实际使用 `--parent-token`、`--content` 和 `--doc-format markdown`，不是旧参数 `--folder-token`、`--markdown`。
+
+交付：
+- 本地文档：`产品研发文档集/v1.0/20260604_Codex_App风格功能开发文档.md`
+- 飞书文档：`https://jcnu7fvwv6c8.feishu.cn/docx/ErprdC3kro4XFhxNObwcDwu7nzh`
+- 私信消息 ID：`om_x100b6d27586a9c88c4942d2b6ae1113`
+- 网站：`http://127.0.0.1:8765`
+
+------ todo-list end at 2026/06/04/16:04:03 -----
+
 ------ todo-list begin at 2026/06/04/15:43:52 -----
 
 用户请求：

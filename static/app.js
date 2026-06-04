@@ -14,6 +14,17 @@ const streamStateEl = document.querySelector("#stream-state");
 const sessionListEl = document.querySelector("#session-list");
 const messagesEl = document.querySelector("#messages");
 const chatTitleEl = document.querySelector("#chat-title");
+const projectNameEl = document.querySelector("#project-name");
+const projectRootEl = document.querySelector("#project-root");
+const workspacePathEl = document.querySelector("#workspace-path");
+const gitBranchEl = document.querySelector("#git-branch");
+const dirtyCountEl = document.querySelector("#dirty-count");
+const gitFilesEl = document.querySelector("#git-files");
+const modeListEl = document.querySelector("#mode-list");
+const modePillEl = document.querySelector("#mode-pill");
+const permissionsListEl = document.querySelector("#permissions-list");
+const testCommandEl = document.querySelector("#test-command");
+const serveCommandEl = document.querySelector("#serve-command");
 
 async function api(path, options = {}) {
   // 统一处理 API 错误，调用方只关注业务逻辑。
@@ -36,6 +47,11 @@ function shortText(text, max = 64) {
   return text.length > max ? `${text.slice(0, max)}...` : text;
 }
 
+function projectName(path) {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  return parts.at(-1) || "Nova";
+}
+
 async function loadHealth() {
   try {
     // 只展示模型是否可用，不把密钥或敏感内容传到前端。
@@ -53,6 +69,92 @@ async function loadHealth() {
     healthEl.textContent = "网关离线";
     healthEl.className = "pill warning";
   }
+}
+
+async function loadWorkspaceStatus() {
+  try {
+    const status = await api("/api/workspace/status");
+    renderWorkspace(status);
+  } catch (error) {
+    workspacePathEl.textContent = "工作区状态读取失败";
+    dirtyCountEl.textContent = "-";
+  }
+}
+
+function renderWorkspace(status) {
+  projectNameEl.textContent = projectName(status.project_root);
+  projectRootEl.textContent = status.project_root;
+  workspacePathEl.textContent = status.project_root;
+  gitBranchEl.textContent = status.git.available ? status.git.branch || "detached" : "no git";
+  dirtyCountEl.textContent = String(status.git.dirty_count);
+
+  const localMode = status.modes.find((mode) => mode.id === "local");
+  modePillEl.textContent = localMode?.enabled ? "本地模式" : "模式未就绪";
+  modePillEl.className = localMode?.enabled ? "pill ready" : "pill warning";
+
+  modeListEl.innerHTML = "";
+  for (const mode of status.modes) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `mode-item ${mode.enabled ? "enabled" : "disabled"} ${mode.id === "local" ? "active" : ""}`;
+    item.disabled = !mode.enabled;
+    item.innerHTML = `
+      <strong>${mode.label}</strong>
+      <span>${mode.description}</span>
+    `;
+    modeListEl.appendChild(item);
+  }
+
+  renderGitFiles(status.git);
+  renderPermissions(status.permissions);
+  bindCommandChip(testCommandEl, status.commands.test, "运行测试");
+  bindCommandChip(serveCommandEl, status.commands.serve, "启动服务");
+}
+
+function renderGitFiles(git) {
+  if (!git.available) {
+    gitFilesEl.innerHTML = '<p class="muted">当前目录不是 Git 仓库。</p>';
+    return;
+  }
+  if (git.files.length === 0) {
+    gitFilesEl.innerHTML = '<p class="muted">工作区干净。</p>';
+    return;
+  }
+  gitFilesEl.innerHTML = "";
+  for (const file of git.files.slice(0, 12)) {
+    const item = document.createElement("div");
+    item.className = "git-file";
+    item.innerHTML = `
+      <span>${escapeHtml(file.status)}</span>
+      <strong title="${escapeHtml(file.path)}">${escapeHtml(file.path)}</strong>
+    `;
+    gitFilesEl.appendChild(item);
+  }
+}
+
+function renderPermissions(permissions) {
+  permissionsListEl.innerHTML = "";
+  const rows = [
+    ["工作区写入", permissions.workspace_write ? "允许" : "只读"],
+    ["网络访问", permissions.network_access ? "允许" : "关闭"],
+    ["审批策略", permissions.approval_policy],
+  ];
+  for (const [label, value] of rows) {
+    const item = document.createElement("div");
+    item.className = "permission-row";
+    item.innerHTML = `<span>${label}</span><strong>${value}</strong>`;
+    permissionsListEl.appendChild(item);
+  }
+}
+
+function bindCommandChip(node, command, label) {
+  node.textContent = label;
+  node.title = command;
+  node.onclick = () => {
+    messageEl.value = `请执行并验证：${command}`;
+    autoResizeTextarea();
+    messageEl.focus();
+  };
 }
 
 async function loadSessions() {
@@ -99,12 +201,12 @@ async function selectSession(sessionId, title) {
 function renderEmptyState() {
   messagesEl.innerHTML = `
     <div class="empty-state">
-      <h3>开始和 Nova 对话</h3>
-      <p>Nova 已接入本地网关和 GLM-4.7。先把对话跑顺，再逐步接入文件工具、审批和执行轨迹。</p>
+      <h3>启动一个开发线程</h3>
+      <p>像使用 Codex 一样，把目标、上下文、约束和验收标准写进同一个 thread。右侧会持续显示项目、Git 和验证状态。</p>
       <div class="quick-actions">
-        <button type="button" data-prompt="帮我总结一下这个项目现在做到哪一步">总结状态</button>
-        <button type="button" data-prompt="下一步应该先实现哪个功能，为什么">规划下一步</button>
-        <button type="button" data-prompt="解释一下 Nova 当前的后端结构">解释后端</button>
+        <button type="button" data-prompt="/plan 帮我把下一个开发任务拆成可执行步骤">/plan</button>
+        <button type="button" data-prompt="/review 检查当前未提交变更">/review</button>
+        <button type="button" data-prompt="/status 总结当前线程、模型和工作区状态">/status</button>
       </div>
     </div>
   `;
@@ -194,12 +296,22 @@ async function ensureSession() {
 newChatEl.addEventListener("click", async () => {
   const session = await api("/api/chat/sessions", {
     method: "POST",
-    body: JSON.stringify({ title: "新对话" }),
+    body: JSON.stringify({ title: "新线程" }),
   });
   state.selectedSessionId = session.id;
   state.selectedSessionTitle = session.title;
   chatTitleEl.textContent = session.title;
   await loadSessions();
+});
+
+document.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-prompt]");
+  if (!target) {
+    return;
+  }
+  messageEl.value = target.dataset.prompt;
+  autoResizeTextarea();
+  messageEl.focus();
 });
 
 form.addEventListener("submit", async (event) => {
@@ -352,4 +464,5 @@ function autoResizeTextarea() {
 }
 
 loadHealth();
+loadWorkspaceStatus();
 loadSessions();

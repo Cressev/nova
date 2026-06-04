@@ -18,13 +18,32 @@
           </div>
         </div>
 
+        <section class="project-card">
+          <span class="section-label">当前项目</span>
+          <strong id="project-name">personal-dev-agent</strong>
+          <small id="project-root">读取工作区中...</small>
+        </section>
+
+        <section class="mode-card">
+          <span class="section-label">运行模式</span>
+          <div id="mode-list" class="mode-list"></div>
+        </section>
+
         <button id="new-chat" class="new-chat" type="button">
           <span>+</span>
-          新对话
+          新线程
         </button>
 
-        <div class="section-label">最近对话</div>
+        <div class="sidebar-row">
+          <span class="section-label">最近线程</span>
+          <button id="thread-search" class="ghost-button" type="button">搜索</button>
+        </div>
         <nav id="session-list" class="session-list"></nav>
+
+        <section class="skills-card">
+          <span class="section-label">Skills</span>
+          <p>输入 <strong>$</strong> 可在对话中调用技能。</p>
+        </section>
       </aside>
 
       <section class="main-panel">
@@ -34,16 +53,26 @@
             <h2 id="chat-title">Nova Chat</h2>
           </div>
           <div class="header-actions">
+            <span id="mode-pill" class="pill">本地模式</span>
             <span id="provider" class="pill">模型检查中</span>
             <span id="health" class="pill">网关检查中</span>
           </div>
         </header>
+
+        <section class="thread-plan">
+          <div>
+            <strong>计划优先</strong>
+            <span>复杂任务先用 <code>/plan</code> 拆解，再切到执行；变更完成后用右侧 Review 检查。</span>
+          </div>
+          <button class="ghost-button" type="button" data-prompt="/status">状态</button>
+        </section>
 
         <section id="messages" class="messages"></section>
 
         <form id="chat-form" class="composer">
           <div class="composer-status">
             <span id="stream-state">准备就绪</span>
+            <span class="composer-hints">/plan /review /status $skill</span>
           </div>
           <textarea
             id="message"
@@ -58,6 +87,58 @@
           </button>
         </form>
       </section>
+
+      <aside class="inspector">
+        <section class="inspector-card">
+          <div class="card-title">
+            <span>Workspace</span>
+            <strong id="git-branch">main</strong>
+          </div>
+          <dl class="metric-list">
+            <div>
+              <dt>项目路径</dt>
+              <dd id="workspace-path">读取中</dd>
+            </div>
+            <div>
+              <dt>变更数量</dt>
+              <dd id="dirty-count">0</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="inspector-card">
+          <div class="card-title">
+            <span>Review</span>
+            <button class="ghost-button" type="button" data-prompt="/review">查看</button>
+          </div>
+          <div id="git-files" class="git-files"></div>
+        </section>
+
+        <section class="inspector-card">
+          <div class="card-title">
+            <span>Run</span>
+            <strong>本地</strong>
+          </div>
+          <button id="test-command" class="command-chip" type="button">测试命令加载中</button>
+          <button id="serve-command" class="command-chip" type="button">启动命令加载中</button>
+        </section>
+
+        <section class="inspector-card">
+          <div class="card-title">
+            <span>Permissions</span>
+            <strong>按需</strong>
+          </div>
+          <div id="permissions-list" class="permissions-list"></div>
+        </section>
+
+        <section class="inspector-card">
+          <div class="card-title">
+            <span>Browser</span>
+            <strong>预览</strong>
+          </div>
+          <p class="muted">后续接入本地预览、截图和页面批注；当前用 Playwright 做验收。</p>
+        </section>
+      </aside>
     </main>
     <script src="/static/app.js"></script>
   </body>

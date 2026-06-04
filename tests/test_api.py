@@ -22,6 +22,17 @@ class ApiTest(unittest.TestCase):
         response = self.client.get("/favicon.ico")
         self.assertEqual(response.status_code, 204)
 
+    def test_workspace_status(self) -> None:
+        response = self.client.get("/api/workspace/status")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("project_root", payload)
+        self.assertIn("git", payload)
+        self.assertIn("modes", payload)
+        self.assertIn("permissions", payload)
+        self.assertIn("commands", payload)
+        self.assertTrue(any(mode["id"] == "local" for mode in payload["modes"]))
+
     def test_create_task(self) -> None:
         response = self.client.post("/api/tasks", json={"prompt": "测试任务"})
         self.assertEqual(response.status_code, 201)

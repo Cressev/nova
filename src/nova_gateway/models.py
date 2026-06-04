@@ -83,3 +83,41 @@ class Health(BaseModel):
     ok: bool
     service: str
     version: str
+
+
+class GitFileStatus(BaseModel):
+    path: str
+    status: str
+
+
+class GitStatus(BaseModel):
+    available: bool
+    branch: str | None = None
+    dirty_count: int = 0
+    files: list[GitFileStatus] = Field(default_factory=list)
+
+
+class WorkspaceMode(BaseModel):
+    id: str
+    label: str
+    enabled: bool
+    description: str
+
+
+class WorkspacePermissions(BaseModel):
+    workspace_write: bool
+    network_access: bool
+    approval_policy: str
+
+
+class WorkspaceCommands(BaseModel):
+    test: str
+    serve: str
+
+
+class WorkspaceStatus(BaseModel):
+    project_root: str
+    git: GitStatus
+    modes: list[WorkspaceMode]
+    permissions: WorkspacePermissions
+    commands: WorkspaceCommands

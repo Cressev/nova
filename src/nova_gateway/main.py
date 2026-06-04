@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, HTTPException
@@ -19,6 +20,12 @@ from .models import (
     Task,
     TaskCreate,
     TimelineEvent,
+    GitFileStatus,
+    GitStatus,
+    WorkspaceCommands,
+    WorkspaceMode,
+    WorkspacePermissions,
+    WorkspaceStatus,
     new_id,
 )
 from .provider import BigModelProvider, ProviderError
@@ -59,6 +66,81 @@ async def provider_status() -> dict:
         "configured": provider.is_configured(),
         "api_key_env": provider.api_key_env,
     }
+
+
+@app.get("/api/workspace/status", response_model=WorkspaceStatus)
+async def workspace_status() -> WorkspaceStatus:
+    return WorkspaceStatus(
+        project_root=str(settings.project_root),
+        git=_read_git_status(),
+        modes=[
+            WorkspaceMode(
+                id="local",
+                label="本地",
+                enabled=True,
+                description="直接在当前项目目录中工作。",
+            ),
+            WorkspaceMode(
+                id="worktree",
+                label="工作树",
+                enabled=False,
+                description="隔离变更，后续版本实现。",
+            ),
+            WorkspaceMode(
+                id="cloud",
+                label="云端",
+                enabled=False,
+                description="远程环境，后续版本实现。",
+            ),
+        ],
+        permissions=WorkspacePermissions(
+            workspace_write=True,
+            network_access=False,
+            approval_policy="按需审批",
+        ),
+        commands=WorkspaceCommands(
+            test="PYTHONPATH=src python3 -m unittest discover -s tests",
+            serve=(
+                "PYTHONPATH=src python3 -m nova_gateway.cli serve "
+                "--host 127.0.0.1 --port 8765"
+            ),
+        ),
+    )
+
+
+def _read_git_status() -> GitStatus:
+    # 这里只读 Git 状态，避免在状态刷新时产生 stage/revert/push 等副作用。
+    try:
+        branch = _git(["branch", "--show-current"]).strip() or None
+        porcelain = _git(["-c", "core.quotepath=false", "status", "--porcelain=v1"])
+    except (OSError, subprocess.CalledProcessError):
+        return GitStatus(available=False)
+
+    files: list[GitFileStatus] = []
+    for line in porcelain.splitlines():
+        if not line:
+            continue
+        status = line[:2].strip() or "?"
+        path = line[3:].strip()
+        files.append(GitFileStatus(path=path, status=status))
+    return GitStatus(
+        available=True,
+        branch=branch,
+        dirty_count=len(files),
+        files=files[:40],
+    )
+
+
+def _git(args: list[str]) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=settings.project_root,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=3,
+    )
+    return result.stdout
 
 
 @app.get("/api/chat/sessions", response_model=list[ChatSession])
