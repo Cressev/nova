@@ -1,0 +1,53 @@
+from __future__ import annotations
+
+import unittest
+from unittest.mock import patch
+
+from fastapi.testclient import TestClient
+
+from nova_gateway.main import app
+
+
+class ApiTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = TestClient(app)
+
+    def test_health(self) -> None:
+        response = self.client.get("/api/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+
+    def test_create_task(self) -> None:
+        response = self.client.post("/api/tasks", json={"prompt": "测试任务"})
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertTrue(payload["id"].startswith("task_"))
+        self.assertEqual(payload["prompt"], "测试任务")
+
+        detail = self.client.get(f"/api/tasks/{payload['id']}")
+        self.assertEqual(detail.status_code, 200)
+
+    def test_chat_session_and_missing_provider_key(self) -> None:
+        session_response = self.client.post(
+            "/api/chat/sessions",
+            json={"title": "测试对话"},
+        )
+        self.assertEqual(session_response.status_code, 201)
+        session = session_response.json()
+
+        with patch.dict("os.environ", {"BIGMODEL_API_KEY": ""}, clear=False):
+            message_response = self.client.post(
+                f"/api/chat/sessions/{session['id']}/messages",
+                json={"content": "你好"},
+            )
+        self.assertEqual(message_response.status_code, 200)
+        message = message_response.json()
+        self.assertIn(message["role"], {"assistant", "error"})
+
+        messages = self.client.get(f"/api/chat/sessions/{session['id']}/messages")
+        self.assertEqual(messages.status_code, 200)
+        self.assertGreaterEqual(len(messages.json()), 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

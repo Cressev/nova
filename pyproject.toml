@@ -1,0 +1,21 @@
+[project]
+name = "nova-gateway"
+version = "0.1.0"
+description = "Nova Web-first local agent gateway MVP"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "httpx>=0.28",
+  "uvicorn>=0.30",
+  "pydantic>=2.0",
+]
+
+[project.scripts]
+nova = "nova_gateway.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nova</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <h1>Nova</h1>
+            <p>本地优先的个人开发 Agent 工作台</p>
+          </div>
+          <span id="health" class="status">检查中</span>
+        </header>
+
+        <section class="layout">
+          <aside class="panel">
+            <div class="panel-title">对话</div>
+            <button id="new-chat" class="new-chat" type="button">新建对话</button>
+            <div id="session-list" class="task-list"></div>
+          </aside>
+
+          <section class="panel chat-panel">
+            <div class="panel-title">
+              <span>Nova Chat</span>
+              <span id="provider" class="provider">GLM-4.7</span>
+            </div>
+            <div id="messages" class="messages"></div>
+            <form id="chat-form" class="composer">
+              <textarea
+                id="message"
+                name="message"
+                rows="3"
+                placeholder="直接和 Nova 对话，例如：帮我看一下这个项目下一步先做什么"
+                required
+              ></textarea>
+              <button type="submit">发送</button>
+            </form>
+          </section>
+        </section>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
