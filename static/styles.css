@@ -248,14 +248,15 @@ button {
 }
 
 .new-chat:hover,
-.composer button:hover,
+.new-chat:hover,
+#send-button:hover,
 .quick-actions button:hover,
 .ghost-button:hover {
   transform: translateY(-1px);
 }
 
 .new-chat:hover,
-.composer button:hover {
+#send-button:hover {
   background: #55e8a8;
 }
 
@@ -691,7 +692,7 @@ textarea::placeholder {
   color: rgba(238, 244, 239, 0.42);
 }
 
-.composer button {
+#send-button {
   display: inline-flex;
   grid-area: button;
   align-items: center;
@@ -710,7 +711,7 @@ textarea::placeholder {
     background 150ms ease;
 }
 
-.composer button:disabled {
+#send-button:disabled {
   cursor: not-allowed;
   transform: none;
   background: rgba(147, 160, 154, 0.45);
@@ -844,9 +845,9 @@ textarea::placeholder {
   right: auto;
   bottom: calc(100% + 8px);
   left: 10px;
-  z-index: 10;
+  z-index: 40;
   display: grid;
-  width: min(430px, calc(100% - 122px));
+  width: min(520px, calc(100% - 132px));
   gap: 3px;
   max-height: 218px;
   overflow: auto;
@@ -881,6 +882,7 @@ textarea::placeholder {
 
 .command-item {
   display: grid;
+  grid-area: auto;
   grid-template-columns: 92px minmax(0, 1fr);
   gap: 8px;
   align-items: center;
@@ -891,6 +893,7 @@ textarea::placeholder {
   background: transparent;
   color: var(--text);
   text-align: left;
+  cursor: pointer;
 }
 
 .command-item:hover {
@@ -1056,7 +1059,7 @@ textarea::placeholder {
     flex-direction: column;
   }
 
-  .composer button {
+  #send-button {
     min-height: 42px;
   }
 

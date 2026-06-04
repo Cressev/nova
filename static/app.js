@@ -347,6 +347,8 @@ function renderEmptyState() {
     button.addEventListener("click", () => {
       messageEl.value = button.dataset.prompt;
       messageEl.focus();
+      autoResizeTextarea();
+      updateCommandPalette();
     });
   }
 }
@@ -728,6 +730,7 @@ function updateCommandPalette() {
     return;
   }
   commandMatches = matches;
+  commandPaletteEl.removeAttribute("hidden");
   commandPaletteEl.innerHTML = "";
   const header = document.createElement("div");
   header.className = "command-palette-title";

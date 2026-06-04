@@ -41,6 +41,24 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertEqual(payload[0]["tool"], "read_file")
         self.assertEqual(payload[1]["tool"], "git_status")
 
+    def test_normalize_tool_call_variants(self) -> None:
+        self.assertEqual(
+            self.runtime._normalize_tool_call({"name": "read_file", "parameters": {"path": "README.md"}}),
+            ("read_file", {"path": "README.md"}),
+        )
+        self.assertEqual(
+            self.runtime._normalize_tool_call(
+                {"function": {"name": "read_file", "arguments": '{"path":"README.md"}'}}
+            ),
+            ("read_file", {"path": "README.md"}),
+        )
+
+    def test_parse_wrapped_tool_calls(self) -> None:
+        payload = self.runtime._parse_tool_calls(
+            '<tool_call>{"tool_calls":[{"name":"git_status","parameters":{}}]}</tool_call>'
+        )
+        self.assertEqual(payload, [{"name": "git_status", "parameters": {}}])
+
     def test_builtin_tools_command(self) -> None:
         text = self.runtime._builtin_response("/tools")
         self.assertIn("read_file", text)

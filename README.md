@@ -14,7 +14,21 @@ Nova 是一款面向个人开发者的本地优先编码 Agent 产品。
 
 ## 当前状态
 
-当前仓库已经进入第一版运行时实现。已完成一个 Web-first MVP 骨架：Python FastAPI 后端、本地静态 Web UI、任务创建接口、任务事件时间线和本地 JSONL trace。
+当前仓库已经进入第一版可运行原型：Python FastAPI 本地网关、Codex-style 三栏 Web 工作台、GLM-4.7 流式对话、工作区工具调用、只读工具并行、全局/项目级 Agent 指令注入、项目目录切换、内置 slash 指令和工具调用可视化。
+
+Nova 不是单纯聊天页。它的目标是做成个人长期使用的本地开发 Agent：能理解当前项目、读文件、查代码、看 Git diff、调用受控 shell、展示工具过程，并逐步补齐审批、工作树、会话隔离和 trace replay。
+
+## 已实现能力
+
+- Web-first 交互：浏览器中直接对话、查看项目、Git、工具、权限和记忆状态。
+- GLM-4.7 Provider：兼容 BigModel OpenAI-style API，密钥只从 `BIGMODEL_API_KEY` 环境变量读取。
+- Codex-like 工具循环：模型决策、工具执行、工具结果回填、最终流式回答。
+- 工作区工具：`read_file`、`list_files`、`search_text`、`git_status`、`git_diff`、`shell_command`、`replace_in_file`、`create_file`、`apply_patch`。
+- 只读工具并行：多个只读工具可并行执行，写入和 shell 不并行。
+- 记忆边界：产品内 Agent 只注入全局 `~/.nova/AGENTS.md` 和当前项目 `AGENTS.md`；Nova 开发过程文件不注入。
+- 项目切换：在允许根目录内切换当前工作区。
+- 内置指令：`/status`、`/tools`、`/permissions`、`/memory`、`/review`、`/plan`、`/help`。
+- 前端可观测：工具开始、完成、失败、模型状态和最终回答都在对话流中展示。
 
 ## 快速启动
 
@@ -43,7 +57,7 @@ PYTHONPATH=src python3 run_nova.py
 http://127.0.0.1:8765
 ```
 
-当前 Web UI 是对话形式。左侧是对话列表，右侧是聊天窗口；模型配置状态会显示在聊天窗口顶部。
+当前 Web UI 是 Codex-style 三栏工作台。左侧是项目和线程，中间是对话流，右侧是 Workspace、Review、Run、Permissions、Tools、Memory、Config。
 
 运行基础测试：
 
@@ -87,3 +101,9 @@ PYTHONPATH=src python3 -m unittest discover -s tests
 - `TODOList.md`：每次请求的持久任务清单和执行状态。
 - `findings/`：稳定发现和长期坑点。
 - `reports/`：用户明确要求的结构化报告。
+
+这些文件服务于 Nova 项目开发过程。产品内开发 Agent 的运行上下文只读取全局 `~/.nova/AGENTS.md` 和当前工作区 `AGENTS.md`。
+
+## 开源协议
+
+MIT License。详见 [LICENSE](LICENSE)。

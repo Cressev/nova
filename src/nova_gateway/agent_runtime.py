@@ -141,6 +141,8 @@ class CodexLikeAgentRuntime:
                 parsed = []
             if isinstance(parsed, list):
                 payloads.extend(item for item in parsed if isinstance(item, dict))
+            elif isinstance(parsed, dict):
+                payloads.extend(self._coerce_tool_call_payload(parsed))
 
         single_payload = self._extract_tool_payload(text)
         if single_payload is not None:
@@ -149,8 +151,13 @@ class CodexLikeAgentRuntime:
             except json.JSONDecodeError:
                 parsed = None
             if isinstance(parsed, dict):
-                payloads.append(parsed)
+                payloads.extend(self._coerce_tool_call_payload(parsed))
         return payloads
+
+    def _coerce_tool_call_payload(self, payload: dict) -> list[dict]:
+        if isinstance(payload.get("tool_calls"), list):
+            return [item for item in payload["tool_calls"] if isinstance(item, dict)]
+        return [payload]
 
     def _extract_tool_payload(self, text: str) -> str | None:
         return self._extract_json_after_marker(text, "<tool_call>", "{")
@@ -210,7 +217,20 @@ class CodexLikeAgentRuntime:
         return f"{tool_name} {target}".strip()
 
     async def _run_tool_calls(self, tool_calls: list[dict]) -> AsyncIterator[dict]:
-        normalized = [self._normalize_tool_call(item) for item in tool_calls]
+        normalized = [item for item in (self._normalize_tool_call(call) for call in tool_calls) if item[0]]
+        skipped = len(tool_calls) - len(normalized)
+        if skipped:
+            # 模型偶尔会输出空工具名或半截 JSON；跳过而不是在 UI 上刷一屏“未知工具”。
+            yield {"type": "agent_status", "status": f"已跳过 {skipped} 个无效工具调用"}
+        if not normalized:
+            yield {
+                "type": "tool_result_json",
+                "result_json": json.dumps(
+                    {"ok": False, "error": "模型输出了无效工具调用，请按工具 schema 重新选择工具。"},
+                    ensure_ascii=False,
+                ),
+            }
+            return
         parallel = len(normalized) > 1 and all(self.tools.supports_parallel(name) for name, _args in normalized)
 
         if parallel:
@@ -276,8 +296,26 @@ class CodexLikeAgentRuntime:
             )
 
     def _normalize_tool_call(self, tool_call: dict) -> tuple[str, dict]:
-        tool_name = str(tool_call.get("tool") or "")
-        arguments = tool_call.get("arguments") or {}
+        function_call = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
+        tool_name = str(
+            tool_call.get("tool")
+            or tool_call.get("name")
+            or function_call.get("name")
+            or ""
+        ).strip()
+        arguments = (
+            tool_call.get("arguments")
+            or tool_call.get("parameters")
+            or tool_call.get("input")
+            or function_call.get("arguments")
+            or {}
+        )
+        if isinstance(arguments, str):
+            try:
+                parsed = json.loads(arguments)
+            except json.JSONDecodeError:
+                parsed = {}
+            arguments = parsed
         return tool_name, arguments if isinstance(arguments, dict) else {}
 
     def _latest_user_content(self, messages: list[ChatMessage]) -> str:
