@@ -189,6 +189,39 @@
 
 ------ todo-list end at 2026/06/03/15:33:53 -----
 
+------ todo-list begin at 2026/06/04/17:13:59 -----
+
+用户请求：
+AGENTS.md、CURRENT.md、PROGRESS.md 的注入边界混乱；需要分清哪些文件给当前开发 Agent 看、哪些文件给产品内开发 Agent 看；仿照 Codex 分全局和项目级；支持切换项目目录；`/` 指令菜单需要做好测试检查。
+
+制定清单：
+- [x] 1. 校正产品内 Agent 记忆注入边界
+  - [x] 1.1 只注入全局 `~/.nova/AGENTS.md`
+  - [x] 1.2 只注入当前工作区 `AGENTS.md`
+  - [x] 1.3 明确 `CURRENT.md`、`PROGRESS.md`、`TODOList.md`、`log.md` 不注入产品内 Agent
+- [x] 2. 增加项目目录切换
+  - [x] 2.1 新增工作区管理器和允许根目录校验
+  - [x] 2.2 新增工作区列表和切换 API
+  - [x] 2.3 前端增加路径输入、候选目录和切换按钮
+- [x] 3. 修复内置指令和前端交互
+  - [x] 3.1 修复 `/memory` 读取旧结构导致异常
+  - [x] 3.2 压缩 `/` 菜单布局
+  - [x] 3.3 增加 Enter 选择指令、Ctrl+Enter 发送
+- [x] 4. 验证和交付
+  - [x] 4.1 单元测试、JS 语法、Python 编译检查
+  - [x] 4.2 API 验证 provider、workspaces、memory
+  - [x] 4.3 API 实测允许目录可切换、范围外目录被拒绝
+  - [x] 4.4 Playwright 验证真实页面和截图
+  - [x] 4.5 密钥泄漏扫描
+  - [x] 4.6 重启本地服务并保留运行时模型配置
+
+执行问题记录：
+- `playwright_cli.sh` 当前没有执行权限，已改用 `bash "$PWCLI"` 调用。
+- 本地 Playwright 缺少 `chrome-for-testing`，已安装浏览器包后继续验证。
+- 当前仍未完成：真实工作树、审批 UI、按项目隔离会话、刷新后持久展示工具事件。
+
+------ todo-list end at 2026/06/04/17:13:59 -----
+
 ------ todo-list begin at 2026/06/04/16:04:03 -----
 
 用户请求：

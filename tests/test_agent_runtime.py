@@ -46,6 +46,28 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertIn("read_file", text)
         self.assertIn("并行", text)
 
+    def test_builtin_memory_command_uses_separated_sources(self) -> None:
+        Path(self.tmpdir.name, "AGENTS.md").write_text("项目指令", encoding="utf-8")
+        Path(self.tmpdir.name, "CURRENT.md").write_text("开发状态", encoding="utf-8")
+
+        text = self.runtime._builtin_response("/memory")
+
+        self.assertIn("注入给开发 Agent", text)
+        self.assertIn("只给 Nova 开发过程", text)
+        self.assertIn("AGENTS.md", text)
+        self.assertIn("CURRENT.md", text)
+
+    def test_memory_context_ignores_development_state_files(self) -> None:
+        Path(self.tmpdir.name, "AGENTS.md").write_text("项目指令", encoding="utf-8")
+        Path(self.tmpdir.name, "CURRENT.md").write_text("开发状态不应注入", encoding="utf-8")
+        Path(self.tmpdir.name, "PROGRESS.md").write_text("进度不应注入", encoding="utf-8")
+
+        context = self.runtime.memory.context()
+
+        self.assertIn("项目指令", context)
+        self.assertNotIn("开发状态不应注入", context)
+        self.assertNotIn("进度不应注入", context)
+
 
 if __name__ == "__main__":
     unittest.main()

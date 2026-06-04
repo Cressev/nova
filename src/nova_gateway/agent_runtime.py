@@ -28,12 +28,13 @@ class CodexLikeAgentRuntime:
         *,
         provider: BigModelProvider,
         project_root: Path,
+        global_agent_file: Path | None = None,
         max_tool_rounds: int = 4,
         permission_mode: str = "workspace_write",
     ) -> None:
         self.provider = provider
         self.tools = WorkspaceTools(project_root, permission_mode=permission_mode)
-        self.memory = ProjectMemory(project_root)
+        self.memory = ProjectMemory(project_root, global_agent_file=global_agent_file)
         self.max_tool_rounds = max_tool_rounds
         self.permission_mode = permission_mode
 
@@ -308,8 +309,27 @@ class CodexLikeAgentRuntime:
             )
         if command == "/memory":
             status = self.memory.status()
-            rows = [f"- {item['path']}：{'存在' if item['exists'] else '缺失'}" for item in status["files"]]
-            return "项目记忆已启用，当前注入文件：\n" + "\n".join(rows)
+            injected_sources = [
+                source
+                for source in [status.get("global"), status.get("project")]
+                if source is not None
+            ]
+            development_sources = status.get("development_state", [])
+            injected_rows = [
+                f"- {item['scope']}：{item['path']}（{'存在' if item['exists'] else '缺失'}）"
+                for item in injected_sources
+            ]
+            ignored_rows = [
+                f"- {item['path']}（{'存在' if item['exists'] else '缺失'}）"
+                for item in development_sources
+            ]
+            return (
+                "项目记忆已启用。\n"
+                "注入给开发 Agent：\n"
+                + "\n".join(injected_rows)
+                + "\n\n只给 Nova 开发过程，不注入产品内 Agent：\n"
+                + "\n".join(ignored_rows)
+            )
         if command == "/status":
             git = self.tools.git_status({}).output
             return f"Nova 本地网关在线。\n权限模式：{self.permission_mode}\nGit 状态：\n{git}"

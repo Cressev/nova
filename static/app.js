@@ -32,6 +32,9 @@ const memoryStateEl = document.querySelector("#memory-state");
 const memoryListEl = document.querySelector("#memory-list");
 const configStateEl = document.querySelector("#config-state");
 const configListEl = document.querySelector("#config-list");
+const workspaceFormEl = document.querySelector("#workspace-form");
+const workspaceInputEl = document.querySelector("#workspace-input");
+const workspaceCandidatesEl = document.querySelector("#workspace-candidates");
 
 const BUILTIN_COMMANDS = [
   { name: "/status", description: "查看网关、权限和 Git 状态" },
@@ -42,6 +45,7 @@ const BUILTIN_COMMANDS = [
   { name: "/plan", description: "先拆解任务再执行" },
   { name: "/help", description: "查看内置指令说明" },
 ];
+let commandMatches = [];
 
 async function api(path, options = {}) {
   // 统一处理 API 错误，调用方只关注业务逻辑。
@@ -90,8 +94,12 @@ async function loadHealth() {
 
 async function loadWorkspaceStatus() {
   try {
-    const status = await api("/api/workspace/status");
+    const [status, workspaces] = await Promise.all([
+      api("/api/workspace/status"),
+      api("/api/workspaces"),
+    ]);
     renderWorkspace(status);
+    renderWorkspacePicker(workspaces);
   } catch (error) {
     workspacePathEl.textContent = "工作区状态读取失败";
     dirtyCountEl.textContent = "-";
@@ -112,6 +120,7 @@ async function loadRuntimePanels() {
 function renderWorkspace(status) {
   projectNameEl.textContent = projectName(status.project_root);
   projectRootEl.textContent = status.project_root;
+  workspaceInputEl.value = status.project_root;
   workspacePathEl.textContent = status.project_root;
   gitBranchEl.textContent = status.git.available ? status.git.branch || "detached" : "no git";
   dirtyCountEl.textContent = String(status.git.dirty_count);
@@ -137,6 +146,15 @@ function renderWorkspace(status) {
   renderPermissions(status.permissions);
   bindCommandChip(testCommandEl, status.commands.test, "运行测试");
   bindCommandChip(serveCommandEl, status.commands.serve, "启动服务");
+}
+
+function renderWorkspacePicker(workspaces) {
+  workspaceCandidatesEl.innerHTML = "";
+  for (const path of workspaces.candidates || []) {
+    const option = document.createElement("option");
+    option.value = path;
+    workspaceCandidatesEl.appendChild(option);
+  }
 }
 
 function renderGitFiles(git) {
@@ -213,15 +231,39 @@ function renderTools(items) {
 function renderMemory(memory) {
   memoryStateEl.textContent = memory.enabled ? "已启用" : "关闭";
   memoryListEl.innerHTML = "";
-  for (const item of memory.files || []) {
+  const globalSource = memory.global ? [memory.global] : [];
+  const projectSource = memory.project ? [memory.project] : [];
+  appendMemoryGroup("给开发 Agent：全局", globalSource);
+  appendMemoryGroup("给开发 Agent：项目", projectSource);
+  appendMemoryGroup("只给 Nova 开发过程", memory.development_state || []);
+}
+
+function appendMemoryGroup(title, items) {
+  const heading = document.createElement("div");
+  heading.className = "memory-heading";
+  heading.textContent = title;
+  memoryListEl.appendChild(heading);
+  for (const item of items) {
     const row = document.createElement("div");
-    row.className = "memory-row";
+    row.className = `memory-row ${item.injected ? "injected" : "ignored"}`;
     row.innerHTML = `
-      <span>${escapeHtml(item.path)}</span>
-      <strong>${item.exists ? "已注入" : "缺失"}</strong>
+      <span title="${escapeHtml(item.path)}">${escapeHtml(shortPath(item.path))}</span>
+      <strong>${memoryLabel(item)}</strong>
     `;
     memoryListEl.appendChild(row);
   }
+}
+
+function memoryLabel(item) {
+  if (!item.exists) {
+    return "缺失";
+  }
+  return item.injected ? "注入" : "不注入";
+}
+
+function shortPath(path) {
+  const parts = String(path || "").split(/[\\/]/).filter(Boolean);
+  return parts.slice(-2).join("/") || path;
 }
 
 function renderKeyValueRows(container, rows) {
@@ -431,6 +473,26 @@ newChatEl.addEventListener("click", async () => {
   await loadSessions();
 });
 
+workspaceFormEl.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const path = workspaceInputEl.value.trim();
+  if (!path) {
+    return;
+  }
+  streamStateEl.textContent = "正在切换项目";
+  try {
+    await api("/api/workspace/select", {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    });
+    await Promise.all([loadWorkspaceStatus(), loadRuntimePanels()]);
+    streamStateEl.textContent = "项目已切换";
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "切换失败";
+    streamStateEl.textContent = `切换失败：${message}`;
+  }
+});
+
 document.addEventListener("click", (event) => {
   const target = event.target.closest("[data-prompt]");
   if (!target) {
@@ -630,6 +692,11 @@ messageEl.addEventListener("keydown", (event) => {
     hideCommandPalette();
     return;
   }
+  if (!commandPaletteEl.hidden && event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    fillCommand(commandMatches[0]);
+    return;
+  }
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
     form.requestSubmit();
   }
@@ -660,7 +727,12 @@ function updateCommandPalette() {
     hideCommandPalette();
     return;
   }
+  commandMatches = matches;
   commandPaletteEl.innerHTML = "";
+  const header = document.createElement("div");
+  header.className = "command-palette-title";
+  header.innerHTML = "<strong>内置指令</strong><span>Enter 选择，Ctrl+Enter 发送</span>";
+  commandPaletteEl.appendChild(header);
   for (const command of matches) {
     const item = document.createElement("button");
     item.type = "button";
@@ -669,19 +741,25 @@ function updateCommandPalette() {
       <strong>${command.name}</strong>
       <span>${command.description}</span>
     `;
-    item.addEventListener("click", () => {
-      messageEl.value = `${command.name} `;
-      autoResizeTextarea();
-      hideCommandPalette();
-      messageEl.focus();
-    });
+    item.addEventListener("click", () => fillCommand(command));
     commandPaletteEl.appendChild(item);
   }
   commandPaletteEl.hidden = false;
 }
 
+function fillCommand(command) {
+  if (!command) {
+    return;
+  }
+  messageEl.value = `${command.name} `;
+  autoResizeTextarea();
+  hideCommandPalette();
+  messageEl.focus();
+}
+
 function hideCommandPalette() {
   commandPaletteEl.hidden = true;
+  commandMatches = [];
 }
 
 loadHealth();

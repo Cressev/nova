@@ -27,6 +27,7 @@ from .models import (
     WorkspaceCommands,
     WorkspaceMode,
     WorkspacePermissions,
+    WorkspaceSelect,
     WorkspaceStatus,
     new_id,
 )
@@ -34,27 +35,42 @@ from .provider import BigModelProvider, ProviderError
 from .runtime import DemoAgentRuntime
 from .settings import load_settings
 from .store import TaskStore
+from .workspace import WorkspaceError, WorkspaceManager
 
 settings = load_settings()
 store = TaskStore(settings.state_dir)
-runtime = DemoAgentRuntime(store=store, project_root=settings.project_root)
+workspace_manager = WorkspaceManager(
+    initial_root=settings.initial_workspace_root,
+    allowed_roots=settings.allowed_workspace_roots,
+)
 provider = BigModelProvider(
     base_url=settings.provider_base_url,
     model=settings.provider_model,
 )
-agent_runtime = CodexLikeAgentRuntime(
-    provider=provider,
-    project_root=settings.project_root,
-    max_tool_rounds=settings.max_tool_rounds,
-    permission_mode=settings.permission_mode,
-)
-workspace_tools = WorkspaceTools(
-    settings.project_root,
-    permission_mode=settings.permission_mode,
-)
 
 app = FastAPI(title="Nova Gateway", version=__version__)
 app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
+
+
+def _workspace_tools() -> WorkspaceTools:
+    return WorkspaceTools(
+        workspace_manager.current_root,
+        permission_mode=settings.permission_mode,
+    )
+
+
+def _agent_runtime() -> CodexLikeAgentRuntime:
+    return CodexLikeAgentRuntime(
+        provider=provider,
+        project_root=workspace_manager.current_root,
+        global_agent_file=settings.global_agent_file,
+        max_tool_rounds=settings.max_tool_rounds,
+        permission_mode=settings.permission_mode,
+    )
+
+
+def _demo_runtime() -> DemoAgentRuntime:
+    return DemoAgentRuntime(store=store, project_root=workspace_manager.current_root)
 
 
 @app.get("/", include_in_schema=False)
@@ -100,18 +116,32 @@ async def runtime_config() -> dict:
 
 @app.get("/api/tools")
 async def tool_list() -> dict:
-    return {"items": workspace_tools.list_specs()}
+    return {"items": _workspace_tools().list_specs()}
 
 
 @app.get("/api/memory/status")
 async def memory_status() -> dict:
-    return agent_runtime.memory.status()
+    return _agent_runtime().memory.status()
+
+
+@app.get("/api/workspaces")
+async def workspace_list() -> dict:
+    return workspace_manager.status()
+
+
+@app.post("/api/workspace/select")
+async def select_workspace(payload: WorkspaceSelect) -> dict:
+    try:
+        workspace_manager.set_current(payload.path)
+        return workspace_manager.status()
+    except WorkspaceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/workspace/status", response_model=WorkspaceStatus)
 async def workspace_status() -> WorkspaceStatus:
     return WorkspaceStatus(
-        project_root=str(settings.project_root),
+        project_root=str(workspace_manager.current_root),
         git=_read_git_status(),
         modes=[
             WorkspaceMode(
@@ -180,7 +210,7 @@ def _read_git_status() -> GitStatus:
 def _git(args: list[str]) -> str:
     result = subprocess.run(
         ["git", *args],
-        cwd=settings.project_root,
+        cwd=workspace_manager.current_root,
         check=True,
         capture_output=True,
         text=True,
@@ -226,7 +256,7 @@ async def create_chat_message(session_id: str, payload: ChatMessageCreate) -> Ch
         Task(
             id=new_id("task"),
             prompt=payload.content,
-            workspace=str(settings.project_root),
+            workspace=str(workspace_manager.current_root),
         )
     )
     store.add_event(
@@ -311,7 +341,7 @@ async def stream_chat_message(
             Task(
                 id=new_id("task"),
                 prompt=payload.content,
-                workspace=str(settings.project_root),
+                workspace=str(workspace_manager.current_root),
             )
         )
         store.add_event(
@@ -326,7 +356,7 @@ async def stream_chat_message(
 
         answer_parts: list[str] = []
         try:
-            async for event in agent_runtime.stream(store.list_chat_messages(session_id)):
+            async for event in _agent_runtime().stream(store.list_chat_messages(session_id)):
                 if event["type"] == "assistant_delta":
                     answer_parts.append(event["delta"])
                     yield _ndjson(event)
@@ -413,10 +443,10 @@ async def create_task(payload: TaskCreate) -> Task:
         Task(
             id=new_id("task"),
             prompt=payload.prompt,
-            workspace=payload.workspace or str(settings.project_root),
+            workspace=payload.workspace or str(workspace_manager.current_root),
         )
     )
-    asyncio.create_task(runtime.run(task))
+    asyncio.create_task(_demo_runtime().run(task))
     return task
 
 

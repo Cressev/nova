@@ -22,6 +22,16 @@
           <span class="section-label">当前项目</span>
           <strong id="project-name">personal-dev-agent</strong>
           <small id="project-root">读取工作区中...</small>
+          <form id="workspace-form" class="workspace-switcher">
+            <input
+              id="workspace-input"
+              list="workspace-candidates"
+              placeholder="输入或选择项目目录"
+              autocomplete="off"
+            />
+            <datalist id="workspace-candidates"></datalist>
+            <button type="submit">切换</button>
+          </form>
         </section>
 
         <section class="mode-card">

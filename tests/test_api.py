@@ -48,6 +48,17 @@ class ApiTest(unittest.TestCase):
         memory = self.client.get("/api/memory/status")
         self.assertEqual(memory.status_code, 200)
         self.assertTrue(memory.json()["enabled"])
+        development_state = memory.json()["development_state"]
+        self.assertTrue(all(not item["injected"] for item in development_state))
+
+    def test_workspace_list_and_select(self) -> None:
+        workspaces = self.client.get("/api/workspaces")
+        self.assertEqual(workspaces.status_code, 200)
+        current = workspaces.json()["current_root"]
+
+        selected = self.client.post("/api/workspace/select", json={"path": current})
+        self.assertEqual(selected.status_code, 200)
+        self.assertEqual(selected.json()["current_root"], current)
 
     def test_create_task(self) -> None:
         response = self.client.post("/api/tasks", json={"prompt": "测试任务"})
@@ -125,7 +136,10 @@ class ApiTest(unittest.TestCase):
         )
         session = session_response.json()
 
-        with patch.object(app_module.agent_runtime, "stream", fake_agent_stream):
+        class FakeRuntime:
+            stream = staticmethod(fake_agent_stream)
+
+        with patch.object(app_module, "_agent_runtime", lambda: FakeRuntime()):
             with self.client.stream(
                 "POST",
                 f"/api/chat/sessions/{session['id']}/stream",

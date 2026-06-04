@@ -170,6 +170,39 @@ button {
   white-space: nowrap;
 }
 
+.workspace-switcher {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.workspace-switcher input {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 8px;
+  outline: 0;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.workspace-switcher input:focus {
+  border-color: rgba(66, 222, 153, 0.42);
+}
+
+.workspace-switcher button {
+  border: 1px solid rgba(66, 222, 153, 0.35);
+  border-radius: 8px;
+  padding: 0 9px;
+  background: var(--green-soft);
+  color: #9af0c7;
+  font-size: 12px;
+  font-weight: 850;
+}
+
 .mode-list {
   display: grid;
   gap: 8px;
@@ -808,17 +841,18 @@ textarea::placeholder {
 
 .command-palette {
   position: absolute;
-  right: 122px;
+  right: auto;
   bottom: calc(100% + 8px);
   left: 10px;
   z-index: 10;
   display: grid;
-  gap: 4px;
-  max-height: 260px;
+  width: min(430px, calc(100% - 122px));
+  gap: 3px;
+  max-height: 218px;
   overflow: auto;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
-  padding: 6px;
+  padding: 7px;
   background: rgba(18, 22, 20, 0.98);
   box-shadow: var(--shadow);
 }
@@ -827,14 +861,33 @@ textarea::placeholder {
   display: none;
 }
 
+.command-palette-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 4px 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.command-palette-title strong {
+  color: var(--text);
+}
+
+.command-palette-title span {
+  color: var(--faint);
+}
+
 .command-item {
   display: grid;
-  grid-template-columns: 100px minmax(0, 1fr);
+  grid-template-columns: 92px minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   border: 0;
   border-radius: 7px;
-  padding: 8px 9px;
+  min-height: 30px;
+  padding: 6px 8px;
   background: transparent;
   color: var(--text);
   text-align: left;
@@ -896,6 +949,21 @@ textarea::placeholder {
 
 .memory-row {
   grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.memory-heading {
+  margin-top: 2px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.memory-row.injected strong {
+  color: #9af0c7;
+}
+
+.memory-row.ignored strong {
+  color: var(--amber);
 }
 
 @keyframes message-in {
