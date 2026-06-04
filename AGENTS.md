@@ -5,7 +5,7 @@
 - 项目名称：Nova
 - 项目根目录：`/mnt/d/Documents/Study/Code/codex/personal-dev-agent`
 - 主要目标：构建一款个人本地优先编码 Agent 产品，参考 Codex、Claude Code、OpenClaw、Hermes 的成熟能力，重点实现项目记忆、安全工具执行、可复用 Skills、trace/replay 和长期个人开发工作流。
-- 当前阶段：产品预研、文档初始化、项目记忆持久化结构初始化。
+- 当前阶段：v1.0 MVP 代码实现。
 - 主要用户/干系人：个人开发者；当前主要用户是项目发起人。
 
 ## 适用范围
@@ -44,7 +44,7 @@
 - 学习 OpenClaw 的自托管 gateway 和长期在线个人助手思路。
 - 学习 OpenClaw-RL 的 trace 到自改进信号闭环，但第一阶段先做 Skill 改进，不做模型训练。
 
-未来 Agent 在行动前必须理解：本项目当前仍处于产品研发文档和记忆系统初始化阶段，尚未进入运行时编码实现。
+未来 Agent 在行动前必须理解：本项目已经进入 v1.0 MVP 代码实现阶段，当前优先把对话式 Web Agent 网关、模型接入、工具执行和权限审批跑通。
 
 ## 会话启动规则
 
@@ -119,10 +119,12 @@
 
 ## Git 策略
 
-- 本地 git：待用户确认。
-- 远程 git：待用户确认。
-- 默认分支策略：待用户确认。
-- 提交规则：待用户确认。
+- 本地 git：已初始化。
+- 远程 git：`git@github.com:Cressev/nova.git`。
+- GitHub 仓库：`https://github.com/Cressev/nova`。
+- 仓库可见性：private。
+- 默认分支：`main`。
+- 提交规则：提交信息使用简洁英文动词短语；每次完成可运行改动后推送远程。
 - 未经用户明确要求，不重写历史，不执行 destructive git 操作。
 
 ## 文件安全
@@ -142,12 +144,15 @@
 - 后续产品研发文档优先写入飞书云文档；本地 `产品研发文档集/` 作为草稿、镜像或飞书不可用时的落地位置。
 - 使用飞书时，Agent 使用 bot 身份；用户使用自己的飞书账号接收文档权限和私信通知。
 - 产品形态优先 Web 网关和网页交互，CLI 作为备用功能。
+- Web 交互必须以对话形式为主，任务、工具调用、trace 和审批作为对话旁路信息展示，不要把任务面板作为第一入口。
 - 后端尽量使用 Python 实现，便于用户学习和理解。
+- 代码中的关键设计点、边界条件和不直观逻辑使用中文注释；避免无意义空泛注释。
 - Langfuse 仅作为开发调试和工程可观测工具，不作为最终用户界面。
 - 用户侧可观测、任务进度、工具调用、审批、trace 摘要和结果展示需要由本项目自行设计前端交互。
 - 不使用 `pda` 作为产品名、简称或默认命令名；产品命名要更自然、更有辨识度。
 - 产品命名偏好：要更好玩、新颖、有品牌感，接近 OpenClaw、Hermes 这类有记忆点的名字；避免过于普通的工程工具名。
 - 正式产品名：Nova。默认命令名使用 `nova`，不要使用 `pda`。
+- 第一版模型 Provider：BigModel GLM-4.7，base URL 为 `https://open.bigmodel.cn/api/paas/v4`；API key 只允许通过 `BIGMODEL_API_KEY` 环境变量读取，不得写入代码、文档、日志或项目记忆。
 
 ## 硬规则 / 不得违反
 
@@ -162,14 +167,15 @@
 
 - GitHub：当前可通过 `gh` 使用账号 `Cressev` 访问私有仓库。涉及仓库拉取、API 读取、远程提交时应说明动作。
 - `Cressev/project-memory-persistence`：项目记忆持久化 Skill 来源。初始化规则以该仓库 `SKILL.md` 为准。
-- 飞书：优先用 bot 身份创建云盘目录、导入产品研发文档、授权给用户账号并私信通知。当前需要 `FEISHU_APP_ID`、`FEISHU_APP_SECRET` 和用户接收 ID 才能执行。
+- 飞书：优先用 `lark-cli` 创建和更新飞书新版文档（docx），Agent 使用 bot 身份私信通知用户；不要再把产研文档作为 Drive Markdown 普通文件交付。
 
 ## 验证预期
 
 - 文件结构检查：`find personal-dev-agent -maxdepth 4 -type f | sort`
 - 中文化扫描：对 Markdown 文件扫描明显英文段落或旧路径引用。
 - 目录 README 检查：确认 durable 目录包含 `README.md`。
-- 目前尚无代码实现，因此没有测试、构建或 lint 命令。
+- 当前测试命令：`PYTHONPATH=src python3 -m unittest discover -s tests`。
+- 当前启动命令：`PYTHONPATH=src python3 -m nova_gateway.cli serve --host 127.0.0.1 --port 8765`。
 
 ## Durable Artifacts
 
@@ -189,5 +195,5 @@
 - 是否存在未经确认绝不能触碰的文件、目录、机器、服务或命令？
 - 希望未来 Agent 默认遵循哪些用户偏好？
 - 本项目中哪些内容算 durable artifact？
-- 前端具体技术栈是否采用 React + Vite + Tailwind？
+- 前端具体技术栈后续是否升级为 React + Vite + Tailwind？
 - Python 后端是否采用 FastAPI？

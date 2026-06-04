@@ -2,7 +2,7 @@
 
 ## 当前任务
 
-Nova 已进入代码实现阶段。当前已完成 Web-first MVP 骨架：FastAPI 本地网关、静态 Web UI、任务接口、事件时间线、本地 JSONL trace 和备用 CLI 启动入口。
+Nova 已进入代码实现阶段。当前已修正为对话式 Web Agent 网关，并接入 BigModel GLM-4.7 Provider（通过 `BIGMODEL_API_KEY` 环境变量读取 key）。
 
 ## 当前状态
 
@@ -54,11 +54,22 @@ Nova 已进入代码实现阶段。当前已完成 Web-first MVP 骨架：FastAP
   - `POST /api/tasks`
   - `GET /api/tasks/{task_id}/events`
   - `GET /api/tasks/{task_id}/trace`
+- 已按用户纠正，将 Web UI 从任务面板改为对话式交互。
+- 已新增聊天会话和消息接口：`/api/chat/sessions`、`/api/chat/sessions/{session_id}/messages`。
+- 已接入 BigModel OpenAI-compatible Chat Completions：
+  - base URL：`https://open.bigmodel.cn/api/paas/v4`
+  - model：`glm-4.7`
+  - key 环境变量：`BIGMODEL_API_KEY`
+- 已补充中文代码注释，覆盖 Provider、Store、API 编排和前端关键交互。
+- 已初始化 git 仓库并推送到 GitHub private 仓库：
+  - 远程仓库：`https://github.com/Cressev/nova`
+  - SSH remote：`git@github.com:Cressev/nova.git`
+  - main 分支首个提交：`a51a763`
 
 ## 立即下一步
 
 - 继续实现真实 Agent Runtime：工具注册表、权限引擎、文件读取/搜索/shell 工具。
-- 将当前模拟 runtime 替换为可接 OpenAI-compatible Provider 的运行循环。
+- 将对话回复和工具执行打通，让 GLM-4.7 能在权限控制下调用本地工具。
 - 增加审批接口和前端审批卡片。
 - 等待用户明确指定要写的产品研发文档后，再写对应正文。
 - 新增产研文档时使用实际创建日期，不沿用示例日期。
@@ -73,7 +84,7 @@ Nova 已进入代码实现阶段。当前已完成 Web-first MVP 骨架：FastAP
 
 - 初始化偏好尚未完全确认：git 策略、远程仓库、禁止触碰范围、durable artifact 定义、前端是否升级到 React + Vite。
 - 产品研发文档正文不得主动补写。
-- 当前 runtime 仍是模拟执行，尚未接真实模型、真实工具执行和审批。
+- 当前已接模型 Provider，但尚未实现流式输出、真实工具调用和审批闭环。
 
 ## 最后更新
 
