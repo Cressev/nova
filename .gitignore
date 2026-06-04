@@ -3,7 +3,8 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.playwright-cli/
+output/
 dist/
 build/
 *.egg-info/
-

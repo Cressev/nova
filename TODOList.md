@@ -518,6 +518,33 @@ git初始化，并推送到远程仓库
 
 ------ todo-list end at 2026/06/04/15:23:23 -----
 
+补充用户请求：
+发送完之后不显示用户消息而是等模型全部输出才一块显示，不行啊，能成流式输出。另外，你找打ui设计skill现在到本地了吗？配色奇丑无比，也没有设计感和动态感，勾史依托，你快找找skill 下载下来并参考改ui
+
+补充清单：
+- [x] 5. 安装并参考 UI/design 相关 Skill
+  - [x] 5.1 安装 `figma-generate-design`
+  - [x] 5.2 安装 `figma-implement-design`
+  - [x] 5.3 安装 `figma-create-design-system-rules`
+  - [x] 5.4 安装 `figma-use`
+  - [x] 5.5 安装 `playwright`
+  - [x] 5.6 安装 `screenshot`
+  - [x] 5.7 阅读并提炼优秀 Skill 模式
+- [x] 6. 实现流式对话
+  - [x] 6.1 后端 Provider 支持 OpenAI-compatible SSE 流
+  - [x] 6.2 新增 `/api/chat/sessions/{session_id}/stream`
+  - [x] 6.3 前端发送后立即显示用户消息
+  - [x] 6.4 前端 assistant 气泡按 delta 增量更新
+  - [x] 6.5 流式完成后落盘 assistant 消息
+- [x] 7. 验证流式输出
+  - [x] 7.1 自动化测试通过
+  - [x] 7.2 密钥片段扫描无命中
+  - [x] 7.3 Provider 返回 `configured=true`
+  - [x] 7.4 真实流式请求返回 `user_message`、`assistant_delta` 和 `assistant_done`
+
+补充执行问题记录：
+- 官方 skill-installer 列表脚本返回 HTTP 403，改用已登录 `gh api` 查询 `openai/skills` curated 目录，并安装相关 Skill。
+
 ------ todo-list begin at 2026/06/03/15:32:59 -----
 
 用户请求：

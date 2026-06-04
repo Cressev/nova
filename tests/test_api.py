@@ -48,6 +48,24 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(messages.status_code, 200)
         self.assertGreaterEqual(len(messages.json()), 2)
 
+    def test_stream_missing_provider_key(self) -> None:
+        session_response = self.client.post(
+            "/api/chat/sessions",
+            json={"title": "流式测试"},
+        )
+        session = session_response.json()
+
+        with patch.dict("os.environ", {"BIGMODEL_API_KEY": ""}, clear=False):
+            with self.client.stream(
+                "POST",
+                f"/api/chat/sessions/{session['id']}/stream",
+                json={"content": "你好"},
+            ) as response:
+                self.assertEqual(response.status_code, 200)
+                body = "".join(response.iter_text())
+        self.assertIn("user_message", body)
+        self.assertIn("未配置 BIGMODEL_API_KEY", body)
+
 
 if __name__ == "__main__":
     unittest.main()

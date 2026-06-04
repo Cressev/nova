@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import json
+from collections.abc import AsyncIterator
 
 import httpx
 
@@ -62,3 +64,50 @@ class BigModelProvider:
             return data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise ProviderError("GLM 返回结构异常，无法提取 assistant 消息。") from exc
+
+    async def stream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
+        api_key = os.getenv(self.api_key_env)
+        if not api_key:
+            raise ProviderError(
+                f"未配置 {self.api_key_env}，请先在启动服务前设置环境变量。"
+            )
+
+        # 采用 OpenAI-compatible SSE：后端只向前端转发文本增量，不暴露原始响应。
+        payload_messages = [
+            {"role": message.role.value, "content": message.content}
+            for message in messages
+            if message.role in {ChatRole.SYSTEM, ChatRole.USER, ChatRole.ASSISTANT}
+        ]
+        payload = {
+            "model": self.model,
+            "messages": payload_messages,
+            "temperature": 0.3,
+            "stream": True,
+        }
+
+        async with httpx.AsyncClient(timeout=60) as client:
+            async with client.stream(
+                "POST",
+                f"{self.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json=payload,
+            ) as response:
+                if response.status_code >= 400:
+                    body = await response.aread()
+                    raise ProviderError(
+                        f"GLM 调用失败：HTTP {response.status_code}，{body[:300].decode(errors='ignore')}"
+                    )
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line.removeprefix("data:").strip()
+                    if not data or data == "[DONE]":
+                        continue
+                    try:
+                        payload = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    delta = payload.get("choices", [{}])[0].get("delta", {})
+                    content = delta.get("content")
+                    if content:
+                        yield content

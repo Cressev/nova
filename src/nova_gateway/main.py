@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
@@ -153,6 +155,105 @@ async def create_chat_message(session_id: str, payload: ChatMessageCreate) -> Ch
             )
         )
         return error_message
+
+
+@app.post("/api/chat/sessions/{session_id}/stream")
+async def stream_chat_message(
+    session_id: str,
+    payload: ChatMessageCreate,
+) -> StreamingResponse:
+    if store.get_chat_session(session_id) is None:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+
+    async def emit() -> AsyncIterator[str]:
+        user_message = ChatMessage(
+            session_id=session_id,
+            role=ChatRole.USER,
+            content=payload.content,
+        )
+        store.add_chat_message(user_message)
+        yield _ndjson({"type": "user_message", "message": user_message.model_dump(mode="json")})
+
+        task = store.create_task(
+            Task(
+                id=new_id("task"),
+                prompt=payload.content,
+                workspace=str(settings.project_root),
+            )
+        )
+        store.add_event(
+            TimelineEvent(
+                task_id=task.id,
+                type="chat_stream_started",
+                title="开始流式回复",
+                message="Nova 正在调用 GLM-4.7 生成流式回复。",
+                data={"session_id": session_id},
+            )
+        )
+
+        messages = [
+            ChatMessage(
+                session_id=session_id,
+                role=ChatRole.SYSTEM,
+                content=(
+                    "你是 Nova，一个本地优先的个人开发 Agent。"
+                    "请用中文回答，保持直接、务实，并优先帮助用户推进软件开发任务。"
+                ),
+            ),
+            *store.list_chat_messages(session_id),
+        ]
+
+        answer_parts: list[str] = []
+        try:
+            async for delta in provider.stream(messages):
+                answer_parts.append(delta)
+                yield _ndjson({"type": "assistant_delta", "delta": delta})
+
+            assistant_message = ChatMessage(
+                session_id=session_id,
+                role=ChatRole.ASSISTANT,
+                content="".join(answer_parts),
+            )
+            store.add_chat_message(assistant_message)
+            store.add_event(
+                TimelineEvent(
+                    task_id=task.id,
+                    type="assistant_stream_completed",
+                    title="流式回复完成",
+                    message="GLM-4.7 已完成本次流式回复。",
+                    data={"session_id": session_id, "message_id": assistant_message.id},
+                )
+            )
+            yield _ndjson(
+                {
+                    "type": "assistant_done",
+                    "message": assistant_message.model_dump(mode="json"),
+                }
+            )
+        except ProviderError as exc:
+            error_message = ChatMessage(
+                session_id=session_id,
+                role=ChatRole.ERROR,
+                content=str(exc),
+            )
+            store.add_chat_message(error_message)
+            store.add_event(
+                TimelineEvent(
+                    task_id=task.id,
+                    type="assistant_stream_failed",
+                    title="流式回复失败",
+                    message=str(exc),
+                    status="error",
+                    data={"session_id": session_id},
+                )
+            )
+            yield _ndjson({"type": "error", "message": error_message.model_dump(mode="json")})
+
+    return StreamingResponse(emit(), media_type="application/x-ndjson")
+
+
+def _ndjson(payload: dict) -> str:
+    return json.dumps(payload, ensure_ascii=False) + "\n"
 
 
 @app.get("/api/tasks", response_model=list[Task])

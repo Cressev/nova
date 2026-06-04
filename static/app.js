@@ -129,15 +129,27 @@ async function loadMessages() {
 
   messagesEl.innerHTML = "";
   for (const message of messages) {
-    const node = document.createElement("article");
-    node.className = `message ${message.role}`;
-    node.innerHTML = `
-      <div class="message-role">${roleLabel(message.role)}</div>
-      <div class="message-content">${escapeHtml(message.content)}</div>
-      <div class="message-time">${formatTime(message.created_at)}</div>
-    `;
-    messagesEl.appendChild(node);
+    appendMessage(message);
   }
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function appendMessage(message) {
+  const node = document.createElement("article");
+  node.className = `message ${message.role}`;
+  node.dataset.messageId = message.id || "";
+  node.innerHTML = `
+    <div class="message-role">${roleLabel(message.role)}</div>
+    <div class="message-content">${escapeHtml(message.content || "")}</div>
+    <div class="message-time">${message.created_at ? formatTime(message.created_at) : "生成中"}</div>
+  `;
+  messagesEl.appendChild(node);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return node;
+}
+
+function updateMessage(node, content) {
+  node.querySelector(".message-content").innerHTML = escapeHtml(content);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
@@ -194,12 +206,22 @@ form.addEventListener("submit", async (event) => {
 
   try {
     const sessionId = await ensureSession();
-    messageEl.value = "";
-    await api(`/api/chat/sessions/${sessionId}/messages`, {
-      method: "POST",
-      body: JSON.stringify({ content }),
+    const optimisticUser = {
+      id: `local_user_${Date.now()}`,
+      role: "user",
+      content,
+      created_at: new Date().toISOString(),
+    };
+    appendMessage(optimisticUser);
+    const assistantNode = appendMessage({
+      id: `local_assistant_${Date.now()}`,
+      role: "assistant",
+      content: "",
+      created_at: null,
     });
-    await Promise.all([loadSessions(), loadMessages(), loadHealth()]);
+    messageEl.value = "";
+    await streamAssistant(sessionId, content, assistantNode);
+    await Promise.all([loadSessions(), loadHealth()]);
   } finally {
     state.sending = false;
     sendButtonEl.disabled = false;
@@ -207,6 +229,47 @@ form.addEventListener("submit", async (event) => {
     messageEl.focus();
   }
 });
+
+async function streamAssistant(sessionId, content, assistantNode) {
+  const response = await fetch(`/api/chat/sessions/${sessionId}/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(await response.text());
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let assistantText = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (!line.trim()) {
+        continue;
+      }
+      const event = JSON.parse(line);
+      if (event.type === "assistant_delta") {
+        assistantText += event.delta;
+        updateMessage(assistantNode, assistantText);
+      }
+      if (event.type === "error") {
+        assistantNode.className = "message error";
+        updateMessage(assistantNode, event.message.content);
+      }
+    }
+  }
+}
 
 messageEl.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
