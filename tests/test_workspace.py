@@ -30,6 +30,16 @@ class WorkspaceManagerTest(unittest.TestCase):
 
         self.assertIn(str(self.project), candidates)
 
+    def test_query_returns_only_direct_children_not_default_projects(self) -> None:
+        study = self.root / "documents" / "study"
+        unrelated_project = self.allowed_root / "other"
+        unrelated_project.mkdir()
+        (unrelated_project / "AGENTS.md").write_text("其他项目", encoding="utf-8")
+
+        candidates = self.manager.status(query=str(study))["candidates"]
+
+        self.assertEqual(candidates, [str(self.allowed_root)])
+
     def test_select_still_rejects_ancestor_outside_allowed_root(self) -> None:
         with self.assertRaises(WorkspaceError):
             self.manager.set_current(str(self.root / "documents"))

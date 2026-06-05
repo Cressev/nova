@@ -43,13 +43,6 @@ class WorkspaceManager:
                 return True
         return False
 
-    def _can_show_candidate(self, path: Path) -> bool:
-        if path.name.startswith("."):
-            return False
-        if self._is_allowed(path):
-            return True
-        return any(self._same_or_ancestor(path, root) for root in self.allowed_roots)
-
     def _path_key(self, path: Path) -> str:
         return str(path).rstrip("/\\").casefold()
 
@@ -80,11 +73,8 @@ class WorkspaceManager:
                 return
             if require_allowed and not self._is_allowed(resolved):
                 return
-            if not require_allowed and not self._can_show_candidate(resolved):
-                return
-            if self._is_browsable(resolved):
-                seen.add(resolved)
-                candidates.append(resolved)
+            seen.add(resolved)
+            candidates.append(resolved)
 
         if query_text:
             query_path = Path(query_text).expanduser()
@@ -111,8 +101,9 @@ class WorkspaceManager:
                     except OSError:
                         continue
                     if child_is_dir and child.name.lower().startswith(prefix):
-                        # 允许展示通往 allowed root 的祖先目录，切换工作区时仍由 _validate 严格校验。
+                        # 查询目录时只展示该目录的直接子目录；真正切换仍由 _validate 严格校验。
                         add(child, require_allowed=False)
+            return candidates
 
         for root in self.allowed_roots:
             if not root.exists():

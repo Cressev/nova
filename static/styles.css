@@ -54,7 +54,7 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 268px minmax(420px, 1fr) 318px;
+  grid-template-columns: 248px minmax(420px, 1fr) 318px;
   height: 100vh;
   min-height: 100vh;
   overflow: hidden;
@@ -70,8 +70,8 @@ button {
 .sidebar {
   display: grid;
   grid-template-rows: auto auto auto auto auto 1fr auto;
-  gap: 12px;
-  padding: 16px 13px;
+  gap: 8px;
+  padding: 12px 10px;
   overflow: hidden;
   border-right: 1px solid var(--line);
 }
@@ -86,19 +86,19 @@ button {
 }
 
 .brand {
-  gap: 12px;
+  gap: 10px;
 }
 
 .brand-mark {
   display: grid;
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   place-items: center;
   border: 1px solid rgba(66, 222, 153, 0.5);
   border-radius: 8px;
   background: linear-gradient(145deg, #1c2a23, #243129);
   color: var(--green);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 900;
 }
 
@@ -110,7 +110,7 @@ button {
 }
 
 .brand h1 {
-  font-size: 21px;
+  font-size: 19px;
   line-height: 1;
 }
 
@@ -123,7 +123,7 @@ button {
 }
 
 .brand p {
-  margin-top: 6px;
+  margin-top: 3px;
   font-size: 12px;
 }
 
@@ -152,8 +152,12 @@ button {
 .mode-card,
 .skills-card {
   display: grid;
-  gap: 8px;
-  padding: 10px;
+  gap: 6px;
+  border-color: transparent;
+  padding: 7px 4px;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .project-card {
@@ -272,17 +276,17 @@ button {
 
 .mode-list {
   display: grid;
-  gap: 8px;
+  gap: 5px;
 }
 
 .mode-item {
   display: grid;
-  gap: 4px;
+  gap: 3px;
   width: 100%;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: 8px;
-  padding: 9px 10px;
-  background: var(--surface-soft);
+  padding: 7px 8px;
+  background: rgba(255, 255, 255, 0.025);
   color: var(--text);
   text-align: left;
 }
@@ -302,13 +306,13 @@ button {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 38px;
+  min-height: 34px;
   border: 0;
   border-radius: 8px;
   background: var(--green);
   color: #08110d;
   font-weight: 900;
-  box-shadow: 0 14px 40px rgba(66, 222, 153, 0.18);
+  box-shadow: none;
   transition:
     transform 150ms ease,
     background 150ms ease;
@@ -365,7 +369,7 @@ button {
 .session-list {
   display: grid;
   align-content: start;
-  gap: 9px;
+  gap: 5px;
   min-height: 0;
   overflow: auto;
   padding-right: 2px;
@@ -388,11 +392,11 @@ button {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
   border: 1px solid transparent;
   border-radius: 8px;
-  padding: 9px 10px;
+  padding: 7px 8px;
   background: transparent;
   color: var(--text);
   text-align: left;
@@ -404,7 +408,7 @@ button {
 
 .session-group {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .session-group-head {
@@ -413,10 +417,10 @@ button {
   align-items: center;
   gap: 6px;
   width: 100%;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: 8px;
-  padding: 7px 8px;
-  background: rgba(255, 255, 255, 0.035);
+  padding: 6px 7px;
+  background: rgba(255, 255, 255, 0.025);
   color: var(--text);
   text-align: left;
 }
@@ -443,9 +447,13 @@ button {
 
 .session-group-items {
   display: grid;
-  gap: 7px;
-  padding-left: 10px;
+  gap: 5px;
+  padding-left: 8px;
   border-left: 1px solid var(--line);
+}
+
+.session-group-items[hidden] {
+  display: none;
 }
 
 .session-item:hover {
@@ -474,7 +482,7 @@ button {
 .session-item span span,
 .session-item small {
   display: block;
-  margin-top: 6px;
+  margin-top: 3px;
   color: var(--muted);
   font-size: 12px;
 }
