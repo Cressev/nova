@@ -33,33 +33,86 @@ class WorkspaceManager:
 
     def _is_allowed(self, path: Path) -> bool:
         for root in self.allowed_roots:
-            if path == root or root in path.parents:
+            if self._same_or_child(path, root):
                 return True
         return False
+
+    def _is_browsable(self, path: Path) -> bool:
+        for root in self.allowed_roots:
+            if self._is_allowed(path) or self._same_or_ancestor(path, root):
+                return True
+        return False
+
+    def _can_show_candidate(self, path: Path) -> bool:
+        if path.name.startswith("."):
+            return False
+        if self._is_allowed(path):
+            return True
+        return any(self._same_or_ancestor(path, root) for root in self.allowed_roots)
+
+    def _path_key(self, path: Path) -> str:
+        return str(path).rstrip("/\\").casefold()
+
+    def _same_or_child(self, path: Path, root: Path) -> bool:
+        path_key = self._path_key(path)
+        root_key = self._path_key(root)
+        return path_key == root_key or path_key.startswith(f"{root_key}/")
+
+    def _same_or_ancestor(self, path: Path, root: Path) -> bool:
+        path_key = self._path_key(path)
+        root_key = self._path_key(root)
+        return path_key == root_key or root_key.startswith(f"{path_key}/")
 
     def _candidate_projects(self, query: str | None = None) -> list[Path]:
         candidates: list[Path] = []
         seen: set[Path] = set()
         query_text = (query or "").strip()
 
-        def add(path: Path) -> None:
-            resolved = path.resolve()
+        def add(path: Path, *, require_allowed: bool = True) -> None:
+            try:
+                resolved = path.resolve()
+                is_dir = resolved.is_dir()
+            except OSError:
+                return
             if resolved in seen or len(candidates) >= 80:
                 return
-            if resolved.is_dir() and self._is_allowed(resolved) and not resolved.name.startswith("."):
+            if not is_dir or resolved.name.startswith("."):
+                return
+            if require_allowed and not self._is_allowed(resolved):
+                return
+            if not require_allowed and not self._can_show_candidate(resolved):
+                return
+            if self._is_browsable(resolved):
                 seen.add(resolved)
                 candidates.append(resolved)
 
         if query_text:
             query_path = Path(query_text).expanduser()
-            parent = query_path if query_text.endswith(("/", "\\")) else query_path.parent
-            prefix = "" if query_text.endswith(("/", "\\")) else query_path.name.lower()
-            if parent.exists() and parent.is_dir() and self._is_allowed(parent.resolve()):
-                for child in sorted(parent.iterdir()):
+            if query_text.endswith(("/", "\\")) or (query_path.exists() and query_path.is_dir()):
+                parent = query_path
+                prefix = ""
+            else:
+                parent = query_path.parent
+                prefix = query_path.name.lower()
+            try:
+                parent_resolved = parent.resolve()
+            except OSError:
+                parent_resolved = parent
+            if parent.exists() and parent.is_dir() and self._is_browsable(parent_resolved):
+                try:
+                    children = sorted(parent.iterdir())
+                except OSError:
+                    children = []
+                for child in children:
                     if len(candidates) >= 80:
                         return candidates
-                    if child.is_dir() and child.name.lower().startswith(prefix):
-                        add(child)
+                    try:
+                        child_is_dir = child.is_dir()
+                    except OSError:
+                        continue
+                    if child_is_dir and child.name.lower().startswith(prefix):
+                        # 允许展示通往 allowed root 的祖先目录，切换工作区时仍由 _validate 严格校验。
+                        add(child, require_allowed=False)
 
         for root in self.allowed_roots:
             if not root.exists():

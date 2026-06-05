@@ -813,6 +813,25 @@ code {
   color: var(--text);
 }
 
+.turn-process-control {
+  justify-self: start;
+  width: min(720px, 92%);
+  min-height: 30px;
+  border: 1px dashed rgba(115, 201, 244, 0.34);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: rgba(115, 201, 244, 0.055);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  text-align: left;
+}
+
+.turn-process-control:hover {
+  border-color: rgba(115, 201, 244, 0.56);
+  color: var(--text);
+}
+
 .message.user .message-role {
   color: #a6f5cf;
 }
@@ -1369,8 +1388,10 @@ textarea::placeholder {
   text-align: left;
 }
 
-.workspace-dialog-list button:hover {
+.workspace-dialog-list button:hover,
+.workspace-dialog-list button.active {
   border-color: rgba(115, 201, 244, 0.42);
+  background: rgba(115, 201, 244, 0.08);
 }
 
 .workspace-dialog-list span {
@@ -1379,6 +1400,14 @@ textarea::placeholder {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.workspace-dialog-empty {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 #workspace-dialog-submit {
