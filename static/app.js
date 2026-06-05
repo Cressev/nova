@@ -19,6 +19,10 @@ const state = {
     "session",
     "permission",
   ])),
+  sidebarCollapsed: readStorageBool("nova.sidebarCollapsed", false),
+  inspectorCollapsed: readStorageBool("nova.inspectorCollapsed", false),
+  statuslineCollapsed: readStorageBool("nova.statuslineCollapsed", false),
+  settingsCollapsed: new Set(readStorageList("nova.settingsCollapsed")),
 };
 
 const healthEl = document.querySelector("#health");
@@ -67,6 +71,12 @@ const settingsDialogEl = document.querySelector("#settings-dialog");
 const settingsCloseEl = document.querySelector("#settings-close");
 const settingsRuntimeEl = document.querySelector("#settings-runtime");
 const settingsStatuslineEl = document.querySelector("#settings-statusline");
+const settingsSaveEl = document.querySelector("#settings-save");
+const settingsRestartEl = document.querySelector("#settings-restart");
+const settingsNoteEl = document.querySelector("#settings-note");
+const sidebarToggleEl = document.querySelector("#sidebar-toggle");
+const inspectorToggleEl = document.querySelector("#inspector-toggle");
+const statuslineToggleEl = document.querySelector("#statusline-toggle");
 let workspaceSuggestTimer = null;
 let workspaceDialogTimer = null;
 
@@ -85,6 +95,18 @@ function readStorageList(key, fallback = []) {
 
 function writeStorageList(key, values) {
   localStorage.setItem(key, JSON.stringify(Array.from(values)));
+}
+
+function readStorageBool(key, fallback = false) {
+  const raw = localStorage.getItem(key);
+  if (raw === null) {
+    return fallback;
+  }
+  return raw === "true";
+}
+
+function writeStorageBool(key, value) {
+  localStorage.setItem(key, String(Boolean(value)));
 }
 
 const BUILTIN_COMMANDS = [
@@ -213,6 +235,11 @@ function renderStatusline() {
   if (!statuslineEl || !state.statusline) {
     return;
   }
+  statuslineEl.hidden = state.statuslineCollapsed;
+  statuslineToggleEl.textContent = state.statuslineCollapsed ? "展开状态线" : "收起状态线";
+  if (state.statuslineCollapsed) {
+    return;
+  }
   const data = state.statusline;
   const draftTokens = estimateDraftTokens(messageEl.value);
   const rows = {
@@ -249,15 +276,25 @@ function renderSettings() {
   }
   const config = state.runtimeConfig || {};
   const line = state.statusline || {};
-  const runtimeRows = [
-    ["模型", config.model || line.model || "-"],
-    ["Base URL", config.base_url || "-"],
-    ["上下文窗口", `${formatCompactNumber(config.context_window_tokens || line.context_window_tokens || 0)} tokens`],
-    ["权限模式", config.permission_mode || line.permission_mode || "-"],
-    ["网络访问", config.network_access ? "允许" : "关闭"],
-    ["最大工具轮次", String(config.max_tool_rounds || "-")],
-  ];
-  renderKeyValueRows(settingsRuntimeEl, runtimeRows);
+  const pending = config.pending_config || {};
+  settingsRuntimeEl.innerHTML = `
+    ${renderSettingsField("provider_model", "模型", pending.provider_model ?? config.model ?? line.model ?? "", "text")}
+    ${renderSettingsField("provider_base_url", "Base URL", pending.provider_base_url ?? config.base_url ?? "", "text")}
+    ${renderSettingsField("context_window_tokens", "上下文窗口", pending.context_window_tokens ?? config.context_window_tokens ?? line.context_window_tokens ?? 128000, "number")}
+    <label class="setting-field">
+      <span>权限模式</span>
+      <select name="permission_mode">
+        ${renderPermissionOption("workspace_write", "工作区写入", pending.permission_mode ?? config.permission_mode)}
+        ${renderPermissionOption("ask", "需要确认", pending.permission_mode ?? config.permission_mode)}
+        ${renderPermissionOption("read_only", "只读", pending.permission_mode ?? config.permission_mode)}
+      </select>
+    </label>
+    <label class="setting-field setting-field-inline">
+      <span>网络访问</span>
+      <input name="network_access" type="checkbox" ${(pending.network_access ?? config.network_access) ? "checked" : ""} />
+    </label>
+    ${renderSettingsField("max_tool_rounds", "最大工具轮次", pending.max_tool_rounds ?? config.max_tool_rounds ?? 6, "number")}
+  `;
 
   settingsStatuslineEl.innerHTML = "";
   for (const item of STATUSLINE_ITEMS) {
@@ -278,6 +315,24 @@ function renderSettings() {
     });
     settingsStatuslineEl.appendChild(label);
   }
+  settingsNoteEl.textContent = config.restart_required
+    ? "已有待生效配置，点击“重启网关”后生效。"
+    : config.restart_note || "配置修改后需要重启 Nova 网关才会生效。";
+  settingsRestartEl.disabled = !config.restart_required;
+  applySettingsSectionState();
+}
+
+function renderSettingsField(name, label, value, type) {
+  return `
+    <label class="setting-field">
+      <span>${escapeHtml(label)}</span>
+      <input name="${escapeHtml(name)}" type="${escapeHtml(type)}" value="${escapeHtml(String(value))}" />
+    </label>
+  `;
+}
+
+function renderPermissionOption(value, label, selectedValue) {
+  return `<option value="${escapeHtml(value)}" ${value === selectedValue ? "selected" : ""}>${escapeHtml(label)}</option>`;
 }
 
 function formatCompactNumber(value) {
@@ -493,7 +548,8 @@ async function loadSessions({ refreshMessages = true } = {}) {
   }
 
   if (!state.selectedSessionId || !sessions.some((session) => session.id === state.selectedSessionId)) {
-    state.selectedSessionId = sessions[0].id;
+    const currentWorkspace = projectRootEl.textContent.trim();
+    state.selectedSessionId = (sessions.find((session) => session.workspace === currentWorkspace) || sessions[0]).id;
   }
 
   const groups = groupSessionsByProject(sessions);
@@ -585,7 +641,7 @@ function renderSessionItem(session) {
       </span>
       <button class="session-delete" type="button" aria-label="删除对话" title="删除对话">×</button>
     `;
-    item.addEventListener("click", () => selectSession(session.id, session.title));
+    item.addEventListener("click", () => selectSession(session));
     item.querySelector(".session-delete").addEventListener("click", async (event) => {
       event.stopPropagation();
       await deleteSession(session.id);
@@ -605,11 +661,25 @@ async function deleteSession(sessionId) {
   await loadSessions();
 }
 
-async function selectSession(sessionId, title) {
-  state.selectedSessionId = sessionId;
-  state.selectedSessionTitle = title || "Nova Chat";
+async function selectSession(session) {
+  if (session.workspace && session.workspace !== projectRootEl.textContent.trim()) {
+    streamStateEl.textContent = "正在切换到历史线程所属项目";
+    try {
+      await api("/api/workspace/select", {
+        method: "POST",
+        body: JSON.stringify({ path: session.workspace }),
+      });
+      await Promise.all([loadWorkspaceStatus(), loadRuntimePanels()]);
+    } catch (error) {
+      streamStateEl.textContent = `项目切换失败：${error instanceof Error ? error.message : "未知错误"}`;
+      return;
+    }
+  }
+  state.selectedSessionId = session.id;
+  state.selectedSessionTitle = session.title || "Nova Chat";
   chatTitleEl.textContent = state.selectedSessionTitle;
-  await Promise.all([loadSessions(), loadMessages(), refreshStatusline()]);
+  await Promise.all([loadSessions({ refreshMessages: false }), loadMessages(), refreshStatusline()]);
+  streamStateEl.textContent = "历史线程已加载";
 }
 
 function renderEmptyState() {
@@ -986,6 +1056,96 @@ settingsOpenEl.addEventListener("click", async () => {
 settingsCloseEl.addEventListener("click", () => {
   settingsDialogEl.close();
 });
+
+settingsSaveEl.addEventListener("click", async () => {
+  const payload = collectRuntimeSettings();
+  streamStateEl.textContent = "正在保存运行配置";
+  try {
+    state.runtimeConfig = await api("/api/runtime/config", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    renderSettings();
+    streamStateEl.textContent = "配置已保存，重启后生效";
+  } catch (error) {
+    streamStateEl.textContent = `配置保存失败：${error instanceof Error ? error.message : "未知错误"}`;
+  }
+});
+
+settingsRestartEl.addEventListener("click", async () => {
+  settingsRestartEl.disabled = true;
+  streamStateEl.textContent = "Nova 网关正在重启";
+  try {
+    await api("/api/runtime/restart", { method: "POST", body: JSON.stringify({}) });
+    settingsNoteEl.textContent = "网关正在重启，请稍等后刷新或继续使用当前页面。";
+  } catch (error) {
+    streamStateEl.textContent = `重启请求失败：${error instanceof Error ? error.message : "未知错误"}`;
+  }
+});
+
+sidebarToggleEl.addEventListener("click", () => {
+  state.sidebarCollapsed = !state.sidebarCollapsed;
+  writeStorageBool("nova.sidebarCollapsed", state.sidebarCollapsed);
+  applyShellChromeState();
+});
+
+inspectorToggleEl.addEventListener("click", () => {
+  state.inspectorCollapsed = !state.inspectorCollapsed;
+  writeStorageBool("nova.inspectorCollapsed", state.inspectorCollapsed);
+  applyShellChromeState();
+});
+
+statuslineToggleEl.addEventListener("click", () => {
+  state.statuslineCollapsed = !state.statuslineCollapsed;
+  writeStorageBool("nova.statuslineCollapsed", state.statuslineCollapsed);
+  renderStatusline();
+});
+
+for (const button of document.querySelectorAll("[data-settings-section]")) {
+  button.addEventListener("click", () => {
+    const section = button.dataset.settingsSection;
+    if (state.settingsCollapsed.has(section)) {
+      state.settingsCollapsed.delete(section);
+    } else {
+      state.settingsCollapsed.add(section);
+    }
+    writeStorageList("nova.settingsCollapsed", state.settingsCollapsed);
+    applySettingsSectionState();
+  });
+}
+
+function collectRuntimeSettings() {
+  const form = settingsDialogEl.querySelector(".settings-panel");
+  return {
+    provider_model: form.querySelector('[name="provider_model"]').value.trim(),
+    provider_base_url: form.querySelector('[name="provider_base_url"]').value.trim(),
+    context_window_tokens: Number(form.querySelector('[name="context_window_tokens"]').value),
+    permission_mode: form.querySelector('[name="permission_mode"]').value,
+    network_access: form.querySelector('[name="network_access"]').checked,
+    max_tool_rounds: Number(form.querySelector('[name="max_tool_rounds"]').value),
+  };
+}
+
+function applyShellChromeState() {
+  document.body.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
+  document.body.classList.toggle("inspector-collapsed", state.inspectorCollapsed);
+  sidebarToggleEl.textContent = state.sidebarCollapsed ? "›" : "‹";
+  inspectorToggleEl.textContent = state.inspectorCollapsed ? "‹" : "›";
+  sidebarToggleEl.setAttribute("aria-label", state.sidebarCollapsed ? "展开左侧栏" : "收起左侧栏");
+  inspectorToggleEl.setAttribute("aria-label", state.inspectorCollapsed ? "展开右侧栏" : "收起右侧栏");
+}
+
+function applySettingsSectionState() {
+  for (const button of document.querySelectorAll("[data-settings-section]")) {
+    const section = button.dataset.settingsSection;
+    const collapsed = state.settingsCollapsed.has(section);
+    button.classList.toggle("collapsed", collapsed);
+    const content = button.parentElement?.querySelector(section === "runtime" ? "#settings-runtime" : "#settings-statusline");
+    if (content) {
+      content.hidden = collapsed;
+    }
+  }
+}
 
 function openWorkspaceDialog() {
   workspaceDialogInputEl.value = workspaceInputEl.value.trim();
@@ -1601,3 +1761,4 @@ loadWorkspaceStatus();
 loadRuntimePanels();
 loadSessions();
 setupInspectorCards();
+applyShellChromeState();

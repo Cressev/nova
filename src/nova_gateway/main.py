@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
+import sys
+import threading
+import time
 from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Query
@@ -20,6 +24,7 @@ from .models import (
     ChatSession,
     ChatSessionCreate,
     Health,
+    RuntimeConfigUpdate,
     Task,
     TaskCreate,
     TimelineEvent,
@@ -103,6 +108,50 @@ async def provider_status() -> dict:
 
 @app.get("/api/runtime/config")
 async def runtime_config() -> dict:
+    return _runtime_config_payload()
+
+
+@app.patch("/api/runtime/config")
+async def update_runtime_config(payload: RuntimeConfigUpdate) -> dict:
+    pending = _read_runtime_config_overrides()
+    update = payload.model_dump(exclude_none=True)
+    for key, value in update.items():
+        if isinstance(value, str):
+            pending[key] = value.strip()
+        else:
+            pending[key] = value
+    settings.runtime_config_file.parent.mkdir(parents=True, exist_ok=True)
+    settings.runtime_config_file.write_text(
+        json.dumps(pending, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    result = _runtime_config_payload()
+    result["pending_config"] = pending
+    result["restart_required"] = True
+    return result
+
+
+@app.post("/api/runtime/restart")
+async def restart_runtime() -> dict:
+    def delayed_restart() -> None:
+        time.sleep(0.35)
+        os.execv(sys.executable, [sys.executable, *sys.argv])
+
+    threading.Thread(target=delayed_restart, daemon=True).start()
+    return {"ok": True, "message": "Nova 正在重启，配置会在进程重新加载后生效。"}
+
+
+def _runtime_config_payload() -> dict:
+    pending = _read_runtime_config_overrides()
+    effective = {
+        "provider_model": provider.model,
+        "provider_base_url": provider.base_url,
+        "context_window_tokens": settings.context_window_tokens,
+        "permission_mode": settings.permission_mode,
+        "network_access": settings.network_access,
+        "max_tool_rounds": settings.max_tool_rounds,
+    }
+    restart_required = any(pending.get(key) != value for key, value in effective.items() if key in pending)
     return {
         "model": provider.model,
         "base_url": provider.base_url,
@@ -114,7 +163,19 @@ async def runtime_config() -> dict:
         "approval_ui_enabled": False,
         "tool_parallel_readonly": True,
         "memory_enabled": True,
+        "editable": True,
+        "restart_required": restart_required,
+        "restart_note": "模型、上下文窗口、权限、网络和工具轮次配置写入后需要重启 Nova 网关才会生效。",
+        "pending_config": pending,
     }
+
+
+def _read_runtime_config_overrides() -> dict:
+    try:
+        payload = json.loads(settings.runtime_config_file.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 @app.get("/api/runtime/statusline")
@@ -263,7 +324,7 @@ def _git(args: list[str]) -> str:
 
 @app.get("/api/chat/sessions", response_model=list[ChatSession])
 async def list_chat_sessions() -> list[ChatSession]:
-    return store.list_chat_sessions(workspace=str(workspace_manager.current_root))
+    return store.list_chat_sessions()
 
 
 @app.post("/api/chat/sessions", response_model=ChatSession, status_code=201)
@@ -279,7 +340,7 @@ async def create_chat_session(payload: ChatSessionCreate) -> ChatSession:
 
 @app.delete("/api/chat/sessions/{session_id}", status_code=204)
 async def delete_chat_session(session_id: str) -> Response:
-    session = _get_current_chat_session(session_id)
+    session = store.get_chat_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
     store.delete_chat_session(session.id)

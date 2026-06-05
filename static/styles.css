@@ -64,6 +64,18 @@ button:disabled {
   overflow: hidden;
 }
 
+body.sidebar-collapsed .app-shell {
+  grid-template-columns: 54px minmax(420px, 1fr) 318px;
+}
+
+body.inspector-collapsed .app-shell {
+  grid-template-columns: 248px minmax(420px, 1fr) 48px;
+}
+
+body.sidebar-collapsed.inspector-collapsed .app-shell {
+  grid-template-columns: 54px minmax(420px, 1fr) 48px;
+}
+
 .sidebar,
 .inspector {
   height: 100vh;
@@ -90,20 +102,43 @@ button:disabled {
 }
 
 .brand {
+  position: relative;
   gap: 10px;
 }
 
 .brand-mark {
+  position: relative;
   display: grid;
   width: 36px;
   height: 36px;
   place-items: center;
-  border: 1px solid rgba(66, 222, 153, 0.5);
-  border-radius: 8px;
-  background: linear-gradient(145deg, #1c2a23, #243129);
+  overflow: hidden;
+  border: 1px solid rgba(115, 201, 244, 0.45);
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 62% 34%, rgba(242, 184, 97, 0.34), transparent 23%),
+    radial-gradient(circle at 36% 68%, rgba(66, 222, 153, 0.32), transparent 28%),
+    linear-gradient(145deg, #16201c, #1b2a32);
   color: var(--green);
-  font-size: 16px;
+  box-shadow: inset 0 0 22px rgba(115, 201, 244, 0.1);
+}
+
+.brand-orbit {
+  position: absolute;
+  width: 48px;
+  height: 20px;
+  border: 1px solid rgba(115, 201, 244, 0.62);
+  border-radius: 999px;
+  transform: rotate(-32deg);
+}
+
+.brand-core {
+  position: relative;
+  z-index: 1;
+  color: #d9fff0;
+  font-size: 15px;
   font-weight: 900;
+  text-shadow: 0 0 14px rgba(66, 222, 153, 0.68);
 }
 
 .brand h1,
@@ -245,6 +280,53 @@ button:disabled {
   color: var(--text);
 }
 
+.side-toggle {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.side-toggle:hover {
+  border-color: rgba(115, 201, 244, 0.42);
+  color: var(--text);
+}
+
+.brand .side-toggle {
+  margin-left: auto;
+}
+
+body.sidebar-collapsed .sidebar {
+  padding: 12px 8px;
+}
+
+body.sidebar-collapsed .brand {
+  justify-content: center;
+}
+
+body.sidebar-collapsed .brand > div:not(.brand-mark),
+body.sidebar-collapsed .project-card,
+body.sidebar-collapsed .mode-card,
+body.sidebar-collapsed .new-chat,
+body.sidebar-collapsed .sidebar-row,
+body.sidebar-collapsed .session-list,
+body.sidebar-collapsed .skills-card {
+  display: none;
+}
+
+body.sidebar-collapsed .brand .side-toggle {
+  position: absolute;
+  top: 43px;
+  left: 5px;
+  margin: 0;
+}
+
 .workspace-suggestions {
   position: absolute;
   top: calc(100% + 6px);
@@ -344,7 +426,6 @@ button:disabled {
     background 150ms ease;
 }
 
-.new-chat:hover,
 .new-chat:hover,
 #send-button:hover,
 .quick-actions button:hover,
@@ -558,7 +639,13 @@ code {
 
 .chat-header {
   justify-content: space-between;
-  padding: 11px 13px;
+  min-height: 58px;
+  padding: 9px 12px;
+  border-color: rgba(238, 244, 239, 0.08);
+  background:
+    linear-gradient(90deg, rgba(66, 222, 153, 0.08), transparent 28%),
+    rgba(18, 22, 20, 0.74);
+  box-shadow: none;
 }
 
 .eyebrow {
@@ -568,8 +655,8 @@ code {
 }
 
 .chat-header h2 {
-  margin-top: 4px;
-  font-size: 18px;
+  margin-top: 2px;
+  font-size: 17px;
   line-height: 1.2;
 }
 
@@ -582,7 +669,7 @@ code {
 .pill {
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 7px 11px;
+  padding: 6px 10px;
   background: rgba(255, 255, 255, 0.04);
   color: var(--muted);
   font-size: 12px;
@@ -1031,6 +1118,22 @@ code {
   color: var(--faint);
 }
 
+.statusline-toggle {
+  min-height: 22px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 2px 7px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.statusline-toggle:hover {
+  border-color: rgba(115, 201, 244, 0.42);
+  color: var(--text);
+}
+
 .statusline {
   display: flex;
   grid-area: line;
@@ -1042,6 +1145,10 @@ code {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.4;
+}
+
+.statusline[hidden] {
+  display: none;
 }
 
 .statusline-item {
@@ -1120,6 +1227,7 @@ textarea::placeholder {
 }
 
 .inspector {
+  position: relative;
   display: grid;
   align-content: start;
   gap: 12px;
@@ -1127,6 +1235,23 @@ textarea::placeholder {
   overflow: auto;
   padding: 16px 13px;
   border-left: 1px solid var(--line);
+}
+
+.inspector-toggle {
+  justify-self: end;
+}
+
+body.inspector-collapsed .inspector {
+  padding: 12px 8px;
+  overflow: hidden;
+}
+
+body.inspector-collapsed .inspector-card {
+  display: none;
+}
+
+body.inspector-collapsed .inspector-toggle {
+  justify-self: center;
 }
 
 .inspector-card {
@@ -1566,18 +1691,97 @@ textarea::placeholder {
   gap: 9px;
 }
 
-.settings-section h3 {
-  margin: 0;
+.settings-section-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.settings-section-head::after {
+  color: var(--muted);
+  content: "−";
+  font-weight: 900;
+}
+
+.settings-section-head.collapsed::after {
+  content: "+";
+}
+
+.settings-section-head span {
   color: var(--faint);
   font-size: 12px;
   letter-spacing: 0;
   text-transform: uppercase;
 }
 
+.settings-section-head em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
 .settings-list,
 .statusline-options {
   display: grid;
   gap: 8px;
+}
+
+.settings-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.setting-field {
+  display: grid;
+  gap: 5px;
+}
+
+.setting-field span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.setting-field input,
+.setting-field select {
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 8px;
+  outline: 0;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.setting-field input:focus,
+.setting-field select:focus {
+  border-color: rgba(66, 222, 153, 0.42);
+}
+
+.setting-field-inline {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 54px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.setting-field-inline input {
+  width: 17px;
+  min-height: 17px;
+  accent-color: var(--green);
+}
+
+.statusline-options {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .statusline-option {
@@ -1601,6 +1805,50 @@ textarea::placeholder {
 .statusline-option span {
   color: var(--text);
   font-size: 12px;
+}
+
+.settings-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.settings-actions p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-actions button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text);
+  font-weight: 850;
+}
+
+#settings-save {
+  border-color: rgba(66, 222, 153, 0.35);
+  background: var(--green-soft);
+  color: #9af0c7;
+}
+
+#settings-restart {
+  border-color: rgba(242, 184, 97, 0.38);
+  background: rgba(242, 184, 97, 0.1);
+  color: #ffd591;
+}
+
+#settings-restart:disabled {
+  border-color: var(--line);
+  background: rgba(147, 160, 154, 0.14);
+  color: rgba(238, 244, 239, 0.36);
 }
 
 @keyframes message-in {

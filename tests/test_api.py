@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -51,6 +53,30 @@ class ApiTest(unittest.TestCase):
         self.assertTrue(memory.json()["enabled"])
         development_state = memory.json()["development_state"]
         self.assertTrue(all(not item["injected"] for item in development_state))
+
+    def test_runtime_config_update_writes_pending_restart_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_path = app_module.settings.runtime_config_file
+            object.__setattr__(app_module.settings, "runtime_config_file", Path(tmpdir) / "runtime-config.json")
+            self.addCleanup(lambda: object.__setattr__(app_module.settings, "runtime_config_file", old_path))
+
+            response = self.client.patch(
+                "/api/runtime/config",
+                json={
+                    "provider_model": "glm-4.7",
+                    "provider_base_url": "https://open.bigmodel.cn/api/paas/v4",
+                    "context_window_tokens": 256000,
+                    "permission_mode": "ask",
+                    "network_access": True,
+                    "max_tool_rounds": 8,
+                },
+            )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertTrue(payload["restart_required"])
+            self.assertEqual(payload["pending_config"]["permission_mode"], "ask")
+            self.assertEqual(payload["pending_config"]["context_window_tokens"], 256000)
 
     def test_runtime_statusline_estimates_session_tokens(self) -> None:
         session_response = self.client.post(
@@ -146,6 +172,20 @@ class ApiTest(unittest.TestCase):
 
         missing_messages = self.client.get(f"/api/chat/sessions/{session['id']}/messages")
         self.assertEqual(missing_messages.status_code, 404)
+
+    def test_chat_sessions_list_includes_other_workspaces(self) -> None:
+        other = app_module.ChatSession(
+            id=app_module.new_id("chat"),
+            title="其他项目线程",
+            workspace="/mnt/d/documents/Work/other-project",
+        )
+        app_module.store.create_chat_session(other)
+        self.addCleanup(lambda: app_module.store.delete_chat_session(other.id))
+
+        sessions = self.client.get("/api/chat/sessions")
+
+        self.assertEqual(sessions.status_code, 200)
+        self.assertTrue(any(item["id"] == other.id for item in sessions.json()))
 
     def test_stream_missing_provider_key(self) -> None:
         session_response = self.client.post(

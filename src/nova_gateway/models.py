@@ -54,6 +54,15 @@ class WorkspaceFolderCreate(BaseModel):
     path: str = Field(min_length=1, max_length=1200)
 
 
+class RuntimeConfigUpdate(BaseModel):
+    provider_model: str | None = Field(default=None, min_length=1, max_length=80)
+    provider_base_url: str | None = Field(default=None, min_length=1, max_length=300)
+    context_window_tokens: int | None = Field(default=None, ge=8192, le=1000000)
+    permission_mode: str | None = Field(default=None, pattern="^(read_only|ask|workspace_write)$")
+    network_access: bool | None = None
+    max_tool_rounds: int | None = Field(default=None, ge=1, le=12)
+
+
 class ChatMessage(BaseModel):
     id: str = Field(default_factory=lambda: new_id("msg"))
     session_id: str
