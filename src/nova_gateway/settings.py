@@ -18,6 +18,7 @@ class Settings:
     permission_mode: str
     network_access: bool
     max_tool_rounds: int
+    context_window_tokens: int
 
 
 def _parse_paths(value: str | None, fallback: list[Path]) -> list[Path]:
@@ -47,4 +48,5 @@ def load_settings() -> Settings:
         permission_mode=permission_mode,
         network_access=os.getenv("NOVA_NETWORK_ACCESS", "false").lower() == "true",
         max_tool_rounds=max(1, min(int(os.getenv("NOVA_MAX_TOOL_ROUNDS", "6")), 12)),
+        context_window_tokens=max(8192, int(os.getenv("NOVA_CONTEXT_WINDOW_TOKENS", "128000"))),
     )

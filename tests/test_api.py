@@ -38,6 +38,7 @@ class ApiTest(unittest.TestCase):
         config = self.client.get("/api/runtime/config")
         self.assertEqual(config.status_code, 200)
         self.assertIn("permission_mode", config.json())
+        self.assertIn("context_window_tokens", config.json())
 
         tools = self.client.get("/api/tools")
         self.assertEqual(tools.status_code, 200)
@@ -51,6 +52,37 @@ class ApiTest(unittest.TestCase):
         development_state = memory.json()["development_state"]
         self.assertTrue(all(not item["injected"] for item in development_state))
 
+    def test_runtime_statusline_estimates_session_tokens(self) -> None:
+        session_response = self.client.post(
+            "/api/chat/sessions",
+            json={"title": "状态线测试"},
+        )
+        session = session_response.json()
+        app_module.store.add_chat_message(
+            app_module.ChatMessage(
+                session_id=session["id"],
+                role=app_module.ChatRole.USER,
+                content="请总结 README",
+            )
+        )
+        app_module.store.add_chat_message(
+            app_module.ChatMessage(
+                session_id=session["id"],
+                role=app_module.ChatRole.ASSISTANT,
+                content="README 是项目说明。",
+            )
+        )
+
+        response = self.client.get("/api/runtime/statusline", params={"session_id": session["id"]})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["session_id"], session["id"])
+        self.assertEqual(payload["model"], app_module.provider.model)
+        self.assertGreater(payload["used_tokens"], 0)
+        self.assertGreater(payload["context_remaining_tokens"], 0)
+        self.assertTrue(payload["estimated"])
+
     def test_workspace_list_and_select(self) -> None:
         workspaces = self.client.get("/api/workspaces")
         self.assertEqual(workspaces.status_code, 200)
@@ -63,6 +95,7 @@ class ApiTest(unittest.TestCase):
         queried = self.client.get("/api/workspaces", params={"q": current[: max(1, len(current) - 2)]})
         self.assertEqual(queried.status_code, 200)
         self.assertIn(current, queried.json()["candidates"])
+        self.assertIn("query_status", queried.json())
 
     def test_create_task(self) -> None:
         response = self.client.post("/api/tasks", json={"prompt": "测试任务"})

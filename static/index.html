@@ -67,6 +67,7 @@
             <span id="mode-pill" class="pill">本地模式</span>
             <span id="provider" class="pill">模型检查中</span>
             <span id="health" class="pill">网关检查中</span>
+            <button id="settings-open" class="icon-button" type="button" aria-label="打开设置">⚙</button>
           </div>
         </header>
 
@@ -97,6 +98,7 @@
             placeholder="和 Nova 对话，让它帮你读代码、拆任务、解释实现..."
             required
           ></textarea>
+          <div id="composer-statusline" class="statusline" aria-live="polite"></div>
           <div id="command-palette" class="command-palette" hidden></div>
           <button id="send-button" type="submit">
             <span class="send-label">发送</span>
@@ -180,11 +182,28 @@
           <button id="workspace-dialog-close" type="button" aria-label="关闭">×</button>
         </div>
         <input id="workspace-dialog-input" placeholder="输入本地项目绝对路径" autocomplete="off" />
+        <div id="workspace-dialog-state" class="workspace-dialog-state">请输入或选择项目目录</div>
         <div id="workspace-dialog-list" class="workspace-dialog-list"></div>
         <div class="workspace-dialog-actions">
           <button id="workspace-dialog-create" type="button">新建并切换</button>
           <button id="workspace-dialog-submit" type="button">切换到此目录</button>
         </div>
+      </form>
+    </dialog>
+    <dialog id="settings-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-panel">
+        <div class="dialog-title">
+          <strong>设置</strong>
+          <button id="settings-close" type="button" aria-label="关闭">×</button>
+        </div>
+        <section class="settings-section">
+          <h3>运行配置</h3>
+          <div id="settings-runtime" class="settings-list"></div>
+        </section>
+        <section class="settings-section">
+          <h3>Statusline</h3>
+          <div id="settings-statusline" class="statusline-options"></div>
+        </section>
       </form>
     </dialog>
     <script src="/static/app.js"></script>

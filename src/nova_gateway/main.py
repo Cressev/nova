@@ -109,10 +109,38 @@ async def runtime_config() -> dict:
         "permission_mode": settings.permission_mode,
         "network_access": settings.network_access,
         "max_tool_rounds": settings.max_tool_rounds,
+        "context_window_tokens": settings.context_window_tokens,
         "worktree_enabled": False,
         "approval_ui_enabled": False,
         "tool_parallel_readonly": True,
         "memory_enabled": True,
+    }
+
+
+@app.get("/api/runtime/statusline")
+async def runtime_statusline(session_id: str | None = Query(default=None, max_length=80)) -> dict:
+    session = _get_current_chat_session(session_id) if session_id else None
+    token_usage = _estimate_session_tokens(session.id) if session else {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "used_tokens": 0,
+    }
+    context_window = settings.context_window_tokens
+    remaining_tokens = max(context_window - token_usage["used_tokens"], 0)
+    remaining_percent = round((remaining_tokens / context_window) * 100, 1) if context_window else None
+    return {
+        "model": provider.model,
+        "session_id": session.id if session else None,
+        "thread_title": session.title if session else "新线程",
+        "workspace": str(workspace_manager.current_root),
+        "project": workspace_manager.current_root.name,
+        "permission_mode": settings.permission_mode,
+        "status": "working" if session_id and session is None else "ready",
+        "context_window_tokens": context_window,
+        "context_remaining_tokens": remaining_tokens,
+        "context_remaining_percent": remaining_percent,
+        "estimated": True,
+        **token_usage,
     }
 
 
@@ -478,6 +506,34 @@ def _get_current_chat_session(session_id: str) -> ChatSession | None:
     if session.workspace != str(workspace_manager.current_root):
         return None
     return session
+
+
+def _estimate_tokens(text: str) -> int:
+    # Web statusline 只需要稳定估算，真实计费 token 仍以模型供应商返回为准。
+    cleaned = text or ""
+    if not cleaned:
+        return 0
+    return max(1, (len(cleaned) + 3) // 4)
+
+
+def _estimate_session_tokens(session_id: str) -> dict:
+    input_tokens = 0
+    output_tokens = 0
+    for message in store.list_chat_messages(session_id):
+        if message.role in {ChatRole.USER, ChatRole.SYSTEM}:
+            input_tokens += _estimate_tokens(message.content)
+        else:
+            output_tokens += _estimate_tokens(message.content)
+    for event in store.list_chat_events(session_id):
+        if event.arguments:
+            input_tokens += _estimate_tokens(json.dumps(event.arguments, ensure_ascii=False))
+        if event.output:
+            output_tokens += _estimate_tokens(event.output)
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "used_tokens": input_tokens + output_tokens,
+    }
 
 
 def _persist_chat_event(session_id: str, event: dict) -> None:

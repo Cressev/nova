@@ -37,6 +37,59 @@ class WorkspaceManager:
             "current_root": str(self.current_root),
             "allowed_roots": [str(path) for path in self.allowed_roots],
             "candidates": [str(path) for path in self._candidate_projects(query)],
+            "query_status": self.path_status(query),
+        }
+
+    def path_status(self, query: str | None = None) -> dict:
+        query_text = (query or "").strip()
+        if not query_text:
+            return {
+                "path": "",
+                "exists": False,
+                "is_dir": False,
+                "parent_exists": False,
+                "can_select": False,
+                "can_create": False,
+                "reason": "请输入本地目录路径",
+            }
+
+        raw_path = Path(query_text).expanduser()
+        resolved = self._resolve_existing_path(raw_path)
+        exists = resolved.exists()
+        is_dir = exists and resolved.is_dir()
+        can_select = False
+        can_create = False
+        parent_exists = False
+        reason = ""
+
+        if exists:
+            can_select = is_dir and self._is_allowed(resolved)
+            if not is_dir:
+                reason = "目标已存在但不是目录"
+            elif not can_select:
+                reason = "目录不在允许的本地工作区范围内"
+            else:
+                reason = "目录已存在，可直接切换"
+        else:
+            parent = self._resolve_existing_path(raw_path.parent)
+            parent_exists = parent.exists() and parent.is_dir()
+            target = parent / raw_path.name if parent_exists else raw_path
+            can_create = parent_exists and self._is_allowed(target)
+            if not parent_exists:
+                reason = "父目录不存在，无法新建"
+            elif not can_create:
+                reason = "新建目录不在允许的本地工作区范围内"
+            else:
+                reason = "目录不存在，可新建并切换"
+
+        return {
+            "path": str(resolved if exists else raw_path),
+            "exists": exists,
+            "is_dir": is_dir,
+            "parent_exists": parent_exists,
+            "can_select": can_select,
+            "can_create": can_create,
+            "reason": reason,
         }
 
     def _validate(self, path: Path) -> Path:

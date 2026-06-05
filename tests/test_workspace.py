@@ -78,6 +78,22 @@ class WorkspaceManagerTest(unittest.TestCase):
         self.assertTrue(created.is_dir())
         self.assertEqual(created, (self.root / "work" / "nova-new").resolve())
 
+    def test_path_status_existing_directory_can_select_not_create(self) -> None:
+        status = self.manager.status(query=str(self.project))["query_status"]
+
+        self.assertTrue(status["exists"])
+        self.assertTrue(status["can_select"])
+        self.assertFalse(status["can_create"])
+
+    def test_path_status_missing_directory_can_create_not_select(self) -> None:
+        (self.root / "work").mkdir()
+
+        status = self.manager.status(query=str(self.root / "work" / "new-project"))["query_status"]
+
+        self.assertFalse(status["exists"])
+        self.assertFalse(status["can_select"])
+        self.assertTrue(status["can_create"])
+
 
 if __name__ == "__main__":
     unittest.main()

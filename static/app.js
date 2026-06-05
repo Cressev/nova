@@ -8,7 +8,17 @@ const state = {
   workspaceDialogCandidates: [],
   workspaceDialogIndex: -1,
   workspaceDialogRequestId: 0,
+  workspaceDialogStatus: null,
   messagesRequestId: 0,
+  runtimeConfig: null,
+  statusline: null,
+  statuslineItems: new Set(readStorageList("nova.statuslineItems", [
+    "model",
+    "context",
+    "tokens",
+    "session",
+    "permission",
+  ])),
 };
 
 const healthEl = document.querySelector("#health");
@@ -45,20 +55,31 @@ const workspaceCandidatesEl = document.querySelector("#workspace-candidates");
 const workspaceSuggestionsEl = document.querySelector("#workspace-suggestions");
 const workspaceDialogEl = document.querySelector("#workspace-dialog");
 const workspaceDialogInputEl = document.querySelector("#workspace-dialog-input");
+const workspaceDialogStateEl = document.querySelector("#workspace-dialog-state");
 const workspaceDialogListEl = document.querySelector("#workspace-dialog-list");
 const workspaceDialogCloseEl = document.querySelector("#workspace-dialog-close");
 const workspaceDialogSubmitEl = document.querySelector("#workspace-dialog-submit");
 const workspaceDialogCreateEl = document.querySelector("#workspace-dialog-create");
 const messageRailEl = document.querySelector("#message-rail");
+const statuslineEl = document.querySelector("#composer-statusline");
+const settingsOpenEl = document.querySelector("#settings-open");
+const settingsDialogEl = document.querySelector("#settings-dialog");
+const settingsCloseEl = document.querySelector("#settings-close");
+const settingsRuntimeEl = document.querySelector("#settings-runtime");
+const settingsStatuslineEl = document.querySelector("#settings-statusline");
 let workspaceSuggestTimer = null;
 let workspaceDialogTimer = null;
 
-function readStorageList(key) {
+function readStorageList(key, fallback = []) {
   try {
-    const value = JSON.parse(localStorage.getItem(key) || "[]");
+    const raw = localStorage.getItem(key);
+    if (!raw) {
+      return fallback;
+    }
+    const value = JSON.parse(raw);
     return Array.isArray(value) ? value : [];
   } catch {
-    return [];
+    return fallback;
   }
 }
 
@@ -76,6 +97,16 @@ const BUILTIN_COMMANDS = [
   { name: "/help", description: "查看内置指令说明" },
 ];
 let commandMatches = [];
+
+const STATUSLINE_ITEMS = [
+  { id: "model", label: "模型" },
+  { id: "context", label: "上下文剩余" },
+  { id: "tokens", label: "Token 用量" },
+  { id: "session", label: "Session ID" },
+  { id: "project", label: "项目" },
+  { id: "permission", label: "权限" },
+  { id: "state", label: "状态" },
+];
 
 async function api(path, options = {}) {
   // 统一处理 API 错误，调用方只关注业务逻辑。
@@ -148,14 +179,129 @@ async function loadWorkspaceCandidates(query = "") {
 }
 
 async function loadRuntimePanels() {
-  const [config, tools, memory] = await Promise.all([
+  const [config, tools, memory, statusline] = await Promise.all([
     api("/api/runtime/config"),
     api("/api/tools"),
     api("/api/memory/status"),
+    loadStatuslineData(),
   ]);
+  state.runtimeConfig = config;
+  state.statusline = statusline;
   renderRuntimeConfig(config);
   renderTools(tools.items || []);
   renderMemory(memory);
+  renderStatusline();
+  renderSettings();
+}
+
+async function loadStatuslineData() {
+  const suffix = state.selectedSessionId ? `?session_id=${encodeURIComponent(state.selectedSessionId)}` : "";
+  return api(`/api/runtime/statusline${suffix}`);
+}
+
+async function refreshStatusline() {
+  try {
+    state.statusline = await loadStatuslineData();
+    renderStatusline();
+    renderSettings();
+  } catch {
+    statuslineEl.innerHTML = '<span class="statusline-muted">状态线读取失败</span>';
+  }
+}
+
+function renderStatusline() {
+  if (!statuslineEl || !state.statusline) {
+    return;
+  }
+  const data = state.statusline;
+  const draftTokens = estimateDraftTokens(messageEl.value);
+  const rows = {
+    model: ["模型", data.model],
+    context: [
+      "上下文",
+      `${formatCompactNumber(Math.max((data.context_remaining_tokens || 0) - draftTokens, 0))} 剩余 / ${data.context_remaining_percent ?? "-"}%`,
+    ],
+    tokens: [
+      "Token",
+      `${formatCompactNumber((data.used_tokens || 0) + draftTokens)} 已用${data.estimated ? " 估算" : ""}`,
+    ],
+    session: ["Session", data.session_id ? shortId(data.session_id) : "未创建"],
+    project: ["项目", data.project || projectName(data.workspace || "")],
+    permission: ["权限", data.permission_mode],
+    state: ["状态", state.sending ? "working" : data.status],
+  };
+  statuslineEl.innerHTML = "";
+  for (const item of STATUSLINE_ITEMS) {
+    if (!state.statuslineItems.has(item.id)) {
+      continue;
+    }
+    const [label, value] = rows[item.id] || [];
+    const node = document.createElement("span");
+    node.className = "statusline-item";
+    node.innerHTML = `<strong>${escapeHtml(label)}</strong><em>${escapeHtml(String(value ?? "-"))}</em>`;
+    statuslineEl.appendChild(node);
+  }
+}
+
+function renderSettings() {
+  if (!settingsRuntimeEl || !settingsStatuslineEl) {
+    return;
+  }
+  const config = state.runtimeConfig || {};
+  const line = state.statusline || {};
+  const runtimeRows = [
+    ["模型", config.model || line.model || "-"],
+    ["Base URL", config.base_url || "-"],
+    ["上下文窗口", `${formatCompactNumber(config.context_window_tokens || line.context_window_tokens || 0)} tokens`],
+    ["权限模式", config.permission_mode || line.permission_mode || "-"],
+    ["网络访问", config.network_access ? "允许" : "关闭"],
+    ["最大工具轮次", String(config.max_tool_rounds || "-")],
+  ];
+  renderKeyValueRows(settingsRuntimeEl, runtimeRows);
+
+  settingsStatuslineEl.innerHTML = "";
+  for (const item of STATUSLINE_ITEMS) {
+    const label = document.createElement("label");
+    label.className = "statusline-option";
+    label.innerHTML = `
+      <input type="checkbox" value="${escapeHtml(item.id)}" ${state.statuslineItems.has(item.id) ? "checked" : ""} />
+      <span>${escapeHtml(item.label)}</span>
+    `;
+    label.querySelector("input").addEventListener("change", (event) => {
+      if (event.target.checked) {
+        state.statuslineItems.add(item.id);
+      } else {
+        state.statuslineItems.delete(item.id);
+      }
+      writeStorageList("nova.statuslineItems", state.statuslineItems);
+      renderStatusline();
+    });
+    settingsStatuslineEl.appendChild(label);
+  }
+}
+
+function formatCompactNumber(value) {
+  const number = Number(value || 0);
+  if (number >= 1000000) {
+    return `${(number / 1000000).toFixed(1)}M`;
+  }
+  if (number >= 1000) {
+    return `${(number / 1000).toFixed(1)}k`;
+  }
+  return String(number);
+}
+
+function shortId(value) {
+  const text = String(value || "");
+  if (text.length <= 16) {
+    return text || "-";
+  }
+  return `${text.slice(0, 8)}…${text.slice(-4)}`;
+}
+
+function estimateDraftTokens(text) {
+  const cleaned = (text || "").trim();
+  return cleaned ? Math.max(1, Math.ceil(cleaned.length / 4)) : 0;
 }
 
 function renderWorkspace(status) {
@@ -243,6 +389,7 @@ function renderRuntimeConfig(config) {
   configStateEl.textContent = config.permission_mode;
   const rows = [
     ["模型", config.model],
+    ["上下文窗口", `${formatCompactNumber(config.context_window_tokens || 0)} tokens`],
     ["工具轮次", String(config.max_tool_rounds)],
     ["只读并行", config.tool_parallel_readonly ? "已启用" : "关闭"],
     ["审批 UI", config.approval_ui_enabled ? "已启用" : "未实现"],
@@ -381,6 +528,7 @@ async function loadSessions({ refreshMessages = true } = {}) {
   }
   if (refreshMessages) {
     await loadMessages();
+    await refreshStatusline();
   }
 }
 
@@ -461,7 +609,7 @@ async function selectSession(sessionId, title) {
   state.selectedSessionId = sessionId;
   state.selectedSessionTitle = title || "Nova Chat";
   chatTitleEl.textContent = state.selectedSessionTitle;
-  await Promise.all([loadSessions(), loadMessages()]);
+  await Promise.all([loadSessions(), loadMessages(), refreshStatusline()]);
 }
 
 function renderEmptyState() {
@@ -723,7 +871,7 @@ newChatEl.addEventListener("click", async () => {
   state.selectedSessionId = session.id;
   state.selectedSessionTitle = session.title;
   chatTitleEl.textContent = session.title;
-  await loadSessions();
+  await Promise.all([loadSessions(), refreshStatusline()]);
 });
 
 workspaceFormEl.addEventListener("submit", async (event) => {
@@ -810,6 +958,10 @@ workspaceDialogInputEl.addEventListener("keydown", async (event) => {
       selectWorkspaceDialogCandidate(path);
       return;
     }
+    if (state.workspaceDialogStatus?.can_create) {
+      await createWorkspaceFolderFromDialog();
+      return;
+    }
     await switchWorkspaceFromDialog();
   }
 });
@@ -826,8 +978,19 @@ workspaceDialogCreateEl.addEventListener("click", async () => {
   await createWorkspaceFolderFromDialog();
 });
 
+settingsOpenEl.addEventListener("click", async () => {
+  await loadRuntimePanels();
+  settingsDialogEl.showModal();
+});
+
+settingsCloseEl.addEventListener("click", () => {
+  settingsDialogEl.close();
+});
+
 function openWorkspaceDialog() {
   workspaceDialogInputEl.value = workspaceInputEl.value.trim();
+  state.workspaceDialogStatus = null;
+  renderWorkspaceDialogState();
   workspaceDialogEl.showModal();
   scheduleWorkspaceDialogCandidates(0);
   workspaceDialogInputEl.focus();
@@ -836,7 +999,7 @@ function openWorkspaceDialog() {
 
 async function switchWorkspaceFromDialog() {
   const path = workspaceDialogInputEl.value.trim();
-  if (!path) {
+  if (!path || !state.workspaceDialogStatus?.can_select) {
     return;
   }
   workspaceDialogEl.close();
@@ -845,7 +1008,7 @@ async function switchWorkspaceFromDialog() {
 
 async function createWorkspaceFolderFromDialog() {
   const path = workspaceDialogInputEl.value.trim();
-  if (!path) {
+  if (!path || !state.workspaceDialogStatus?.can_create) {
     return;
   }
   streamStateEl.textContent = "正在新建项目目录";
@@ -881,13 +1044,17 @@ async function loadWorkspaceDialogCandidates(query = workspaceDialogInputEl.valu
       return;
     }
     state.workspaceDialogCandidates = workspaces.candidates || [];
+    state.workspaceDialogStatus = workspaces.query_status || null;
     renderWorkspaceDialogList();
+    renderWorkspaceDialogState();
   } catch (error) {
     if (requestId !== state.workspaceDialogRequestId) {
       return;
     }
     state.workspaceDialogCandidates = [];
+    state.workspaceDialogStatus = null;
     renderWorkspaceDialogList(error instanceof Error ? error.message : "目录读取失败");
+    renderWorkspaceDialogState(error instanceof Error ? error.message : "目录读取失败");
   }
 }
 
@@ -926,6 +1093,26 @@ function selectWorkspaceDialogCandidate(path) {
   workspaceInputEl.value = path;
   state.workspaceDialogIndex = -1;
   scheduleWorkspaceDialogCandidates(0, `${path}/`);
+}
+
+function renderWorkspaceDialogState(errorMessage = "") {
+  const status = state.workspaceDialogStatus;
+  if (errorMessage) {
+    workspaceDialogStateEl.textContent = errorMessage;
+    workspaceDialogStateEl.dataset.state = "error";
+    workspaceDialogSubmitEl.disabled = true;
+    workspaceDialogCreateEl.disabled = true;
+    return;
+  }
+  const reason = status?.reason || "请输入或选择项目目录";
+  workspaceDialogStateEl.textContent = reason;
+  workspaceDialogStateEl.dataset.state = status?.can_select
+    ? "select"
+    : status?.can_create ? "create" : "blocked";
+  workspaceDialogSubmitEl.disabled = !status?.can_select;
+  workspaceDialogCreateEl.disabled = !status?.can_create;
+  workspaceDialogSubmitEl.title = status?.can_select ? "切换到已存在目录" : reason;
+  workspaceDialogCreateEl.title = status?.can_create ? "新建目录并切换" : reason;
 }
 
 function renderWorkspaceDialogActive() {
@@ -1152,6 +1339,7 @@ form.addEventListener("submit", async (event) => {
   let assistantNode = null;
   try {
     const sessionId = await ensureSession();
+    await refreshStatusline();
     const optimisticUser = {
       id: `local_user_${Date.now()}`,
       role: "user",
@@ -1179,6 +1367,7 @@ form.addEventListener("submit", async (event) => {
       loadRuntimePanels(),
       loadHealth(),
     ]);
+    renderStatusline();
   } catch (error) {
     const message = error instanceof Error ? error.message : "请求失败";
     if (assistantNode) {
@@ -1348,6 +1537,7 @@ messageEl.addEventListener("keydown", (event) => {
 messageEl.addEventListener("input", () => {
   autoResizeTextarea();
   updateCommandPalette();
+  renderStatusline();
 });
 
 messageEl.addEventListener("focus", updateCommandPalette);

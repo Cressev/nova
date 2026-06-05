@@ -52,6 +52,10 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 248px minmax(420px, 1fr) 318px;
@@ -217,6 +221,28 @@ button {
   color: #9af0c7;
   font-size: 12px;
   font-weight: 850;
+}
+
+.icon-button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 14px;
+  transition:
+    border-color 150ms ease,
+    color 150ms ease,
+    background 150ms ease;
+}
+
+.icon-button:hover {
+  border-color: rgba(115, 201, 244, 0.42);
+  background: rgba(115, 201, 244, 0.08);
+  color: var(--text);
 }
 
 .workspace-suggestions {
@@ -979,7 +1005,8 @@ code {
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
     "status button"
-    "input button";
+    "input button"
+    "line line";
   gap: 7px 12px;
   padding: 10px;
   border-color: var(--line-strong);
@@ -1001,6 +1028,44 @@ code {
 }
 
 .composer-hints {
+  color: var(--faint);
+}
+
+.statusline {
+  display: flex;
+  grid-area: line;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  min-height: 18px;
+  padding-top: 2px;
+  border-top: 1px solid rgba(238, 244, 239, 0.07);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.statusline-item {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 220px;
+  align-items: center;
+  gap: 4px;
+}
+
+.statusline-item strong {
+  color: var(--faint);
+  font-weight: 850;
+}
+
+.statusline-item em {
+  overflow: hidden;
+  color: var(--text);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusline-muted {
   color: var(--faint);
 }
 
@@ -1378,6 +1443,32 @@ textarea::placeholder {
   border-color: rgba(66, 222, 153, 0.42);
 }
 
+.workspace-dialog-state {
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.workspace-dialog-state[data-state="select"] {
+  border-color: rgba(66, 222, 153, 0.28);
+  color: #9af0c7;
+}
+
+.workspace-dialog-state[data-state="create"] {
+  border-color: rgba(115, 201, 244, 0.32);
+  color: var(--blue);
+}
+
+.workspace-dialog-state[data-state="error"],
+.workspace-dialog-state[data-state="blocked"] {
+  border-color: rgba(255, 107, 97, 0.28);
+  color: #ffaaa4;
+}
+
 .workspace-dialog-list {
   display: grid;
   gap: 7px;
@@ -1440,6 +1531,76 @@ textarea::placeholder {
 #workspace-dialog-submit {
   background: var(--green);
   color: #08110d;
+}
+
+#workspace-dialog-create:disabled,
+#workspace-dialog-submit:disabled {
+  border: 1px solid var(--line);
+  background: rgba(147, 160, 154, 0.16);
+  color: rgba(238, 244, 239, 0.35);
+}
+
+.settings-dialog {
+  width: min(620px, calc(100vw - 32px));
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 0;
+  background: rgba(18, 22, 20, 0.98);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.settings-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(6px);
+}
+
+.settings-panel {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.settings-section {
+  display: grid;
+  gap: 9px;
+}
+
+.settings-section h3 {
+  margin: 0;
+  color: var(--faint);
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.settings-list,
+.statusline-options {
+  display: grid;
+  gap: 8px;
+}
+
+.statusline-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.statusline-option input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--green);
+}
+
+.statusline-option span {
+  color: var(--text);
+  font-size: 12px;
 }
 
 @keyframes message-in {
