@@ -7,6 +7,7 @@
 ## 当前文件
 
 - `2026-06-03-feishu-sync-prerequisites.md`：飞书同步前置条件和当前阻塞状态。
+- `2026-06-05-cc-source-reference.md`：cc源码可借鉴的 agent runtime、工具执行、权限、状态线、技能、记忆和 MCP 设计结论。
 
 ## 放置规则
 

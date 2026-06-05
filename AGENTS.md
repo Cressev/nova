@@ -169,6 +169,7 @@
 - GitHub：当前可通过 `gh` 使用账号 `Cressev` 访问私有仓库。涉及仓库拉取、API 读取、远程提交时应说明动作。
 - `Cressev/project-memory-persistence`：项目记忆持久化 Skill 来源。初始化规则以该仓库 `SKILL.md` 为准。
 - 飞书：优先用 `lark-cli` 创建和更新飞书新版文档（docx），Agent 使用 bot 身份私信通知用户；不要再把产研文档作为 Drive Markdown 普通文件交付。
+- `references/upstream/src`：后续简称“cc源码”。进行 Nova agent runtime、工具执行、权限、状态线、技能、记忆、MCP、会话恢复和交互体感设计时，必须同时参考该目录，不只参考 OpenAI Codex 源码。
 
 ## 验证预期
 

@@ -772,3 +772,25 @@ langfuse是给开发调试看的，不是给用户看的，用户展示需要你
 暂无
 
 ------ todo-list end at 2026/06/03/15:33:53 -----
+
+------ todo-list begin at 2026/06/05/18:25:07 -----
+
+用户请求：
+D:\Documents\Study\Code\codex\personal-dev-agent\references\upstream\src 这个我们以后简称cc源码，你设计的时候同时也参考一下这个项目，你看看有哪些可以借鉴的
+
+制定清单：
+- [x] 1. 记录“cc源码”简称和长期参考规则
+  - [x] 1.1 更新 `AGENTS.md`
+  - [x] 1.2 更新 `CURRENT.md`
+- [x] 2. 复查 cc源码关键模块
+  - [x] 2.1 查看会话生命周期和 agent 主循环
+  - [x] 2.2 查看工具执行、并行和错误恢复
+  - [x] 2.3 查看权限、状态线、技能、记忆和 MCP 管理
+- [x] 3. 沉淀调研结论
+  - [x] 3.1 新增 findings 文档
+  - [x] 3.2 更新 findings README
+  - [x] 3.3 更新 log 和 user-queries Done
+- [] 4. 验证、提交和推送
+
+执行问题记录：
+暂无
