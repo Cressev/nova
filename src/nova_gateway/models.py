@@ -50,6 +50,10 @@ class WorkspaceSelect(BaseModel):
     path: str = Field(min_length=1, max_length=1200)
 
 
+class WorkspaceFolderCreate(BaseModel):
+    path: str = Field(min_length=1, max_length=1200)
+
+
 class ChatMessage(BaseModel):
     id: str = Field(default_factory=lambda: new_id("msg"))
     session_id: str

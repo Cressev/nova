@@ -143,6 +143,30 @@ class AgentRuntimeTest(unittest.TestCase):
 
         self.assertTrue(any(event["type"] == "tool_start" and event["tool"] == "shell_command" for event in events))
 
+    def test_direct_tool_answer_uses_provider_when_configured(self) -> None:
+        from nova_gateway.models import ChatMessage, ChatRole
+
+        async def fake_stream(_messages):
+            yield "这是模型基于工具结果生成的回答"
+
+        self.runtime.provider.is_configured = lambda: True  # type: ignore[method-assign]
+        self.runtime.provider.stream = fake_stream  # type: ignore[method-assign]
+        Path(self.tmpdir.name, "README.md").write_text("Nova\n", encoding="utf-8")
+
+        async def collect_events() -> list[dict]:
+            return [
+                event
+                async for event in self.runtime.stream(
+                    [ChatMessage(session_id="s", role=ChatRole.USER, content="查看当前文件目录")]
+                )
+            ]
+
+        events = asyncio.run(collect_events())
+        text = "".join(event.get("delta", "") for event in events if event["type"] == "assistant_delta")
+
+        self.assertIn("这是模型基于工具结果生成的回答", text)
+        self.assertNotIn("已查看当前文件目录", text)
+
     def test_tool_events_have_stable_call_id(self) -> None:
         async def collect_events() -> list[dict]:
             return [

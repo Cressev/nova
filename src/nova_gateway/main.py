@@ -26,6 +26,7 @@ from .models import (
     GitFileStatus,
     GitStatus,
     WorkspaceCommands,
+    WorkspaceFolderCreate,
     WorkspaceMode,
     WorkspacePermissions,
     WorkspaceSelect,
@@ -135,6 +136,18 @@ async def select_workspace(payload: WorkspaceSelect) -> dict:
     try:
         workspace_manager.set_current(payload.path)
         return workspace_manager.status()
+    except WorkspaceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/workspace/folders")
+async def create_workspace_folder(payload: WorkspaceFolderCreate) -> dict:
+    if settings.permission_mode != "workspace_write":
+        raise HTTPException(status_code=403, detail="当前权限模式不允许新建目录")
+    try:
+        created = workspace_manager.create_folder(payload.path)
+        workspace_manager.set_current(str(created))
+        return workspace_manager.status(query=str(created))
     except WorkspaceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

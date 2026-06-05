@@ -181,7 +181,10 @@
         </div>
         <input id="workspace-dialog-input" placeholder="输入本地项目绝对路径" autocomplete="off" />
         <div id="workspace-dialog-list" class="workspace-dialog-list"></div>
-        <button id="workspace-dialog-submit" type="button">切换到此目录</button>
+        <div class="workspace-dialog-actions">
+          <button id="workspace-dialog-create" type="button">新建并切换</button>
+          <button id="workspace-dialog-submit" type="button">切换到此目录</button>
+        </div>
       </form>
     </dialog>
     <script src="/static/app.js"></script>

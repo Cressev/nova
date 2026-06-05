@@ -11,7 +11,7 @@ from uuid import uuid4
 from .agent_tools import ToolExecutionError, WorkspaceTools, tool_result_as_json
 from .memory import ProjectMemory
 from .models import ChatMessage, ChatRole
-from .provider import BigModelProvider
+from .provider import BigModelProvider, ProviderError
 
 TOOL_CALL_PATTERN = re.compile(
     r"<tool_call>\s*(?P<payload>\{.*?\})\s*(?:</tool_call>)?",
@@ -58,10 +58,9 @@ class CodexLikeAgentRuntime:
                     tool_results.append(event["result_json"])
                     continue
                 yield event
-            text = self._answer_from_tool_results(tool_results)
-            for chunk in self._chunk_text(text, 36):
-                yield {"type": "assistant_delta", "delta": chunk}
-            yield {"type": "assistant_done_content", "content": text}
+            yield {"type": "agent_status", "status": "模型基于工具结果生成回答"}
+            async for event in self._stream_tool_result_answer(messages, tool_results):
+                yield event
             return
 
         working_messages = [
@@ -111,10 +110,8 @@ class CodexLikeAgentRuntime:
 
         if used_tools:
             yield {"type": "agent_status", "status": "基于最近工具结果生成回答"}
-            text = self._answer_from_tool_results(all_tool_results)
-            for chunk in self._chunk_text(text, 36):
-                yield {"type": "assistant_delta", "delta": chunk}
-            yield {"type": "assistant_done_content", "content": text}
+            async for event in self._stream_tool_result_answer(working_messages, all_tool_results):
+                yield event
 
     async def _stream_final(
         self,
@@ -145,10 +142,8 @@ class CodexLikeAgentRuntime:
                     tool_results.append(event["result_json"])
                     continue
                 yield event
-            answer = self._answer_from_tool_results(tool_results)
-            for chunk in self._chunk_text(answer, 36):
-                yield {"type": "assistant_delta", "delta": chunk}
-            yield {"type": "assistant_done_content", "content": answer}
+            async for event in self._stream_tool_result_answer(working_messages, tool_results):
+                yield event
             return
 
         for part in parts:
@@ -160,6 +155,55 @@ class CodexLikeAgentRuntime:
             for chunk in self._chunk_text(text):
                 yield {"type": "assistant_delta", "delta": chunk}
         yield {"type": "assistant_done_content", "content": "".join(parts)}
+
+    async def _stream_tool_result_answer(
+        self,
+        original_messages: list[ChatMessage],
+        result_json_items: list[str],
+    ) -> AsyncIterator[dict]:
+        fallback = self._answer_from_tool_results(result_json_items)
+        if not self.provider.is_configured():
+            for chunk in self._chunk_text(fallback, 36):
+                yield {"type": "assistant_delta", "delta": chunk}
+            yield {"type": "assistant_done_content", "content": fallback}
+            return
+
+        prompt = ChatMessage(
+            session_id="agent",
+            role=ChatRole.USER,
+            content=(
+                "请基于下面的真实工具结果回答用户。要求：中文、直接、不要编造；"
+                "如果工具结果已经足够，就用自然语言解释结果；不要输出 <tool_call>。\n\n"
+                "工具结果 JSON：\n" + "\n".join(result_json_items)
+            ),
+        )
+        messages = [
+            ChatMessage(
+                session_id="agent",
+                role=ChatRole.SYSTEM,
+                content=self._system_prompt(),
+            ),
+            *[message for message in original_messages if message.role != ChatRole.ERROR],
+            prompt,
+        ]
+        parts: list[str] = []
+        try:
+            async for delta in self.provider.stream(messages):
+                parts.append(delta)
+                yield {"type": "assistant_delta", "delta": delta}
+        except ProviderError:
+            yield {"type": "agent_status", "status": "模型最终回答失败，使用工具结果兜底"}
+            for chunk in self._chunk_text(fallback, 36):
+                yield {"type": "assistant_delta", "delta": chunk}
+            yield {"type": "assistant_done_content", "content": fallback}
+            return
+
+        text = "".join(parts).strip()
+        if not text:
+            text = fallback
+            for chunk in self._chunk_text(text, 36):
+                yield {"type": "assistant_delta", "delta": chunk}
+        yield {"type": "assistant_done_content", "content": text}
 
     def _parse_tool_call(self, text: str) -> dict | None:
         calls = self._parse_tool_calls(text)

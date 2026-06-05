@@ -40,9 +40,13 @@ class WorkspaceManagerTest(unittest.TestCase):
 
         self.assertEqual(candidates, [str(self.allowed_root)])
 
-    def test_select_still_rejects_ancestor_outside_allowed_root(self) -> None:
-        with self.assertRaises(WorkspaceError):
-            self.manager.set_current(str(self.root / "documents"))
+    def test_select_allows_local_browse_root_descendant(self) -> None:
+        work = self.root / "work"
+        work.mkdir()
+
+        selected = self.manager.set_current(str(work))
+
+        self.assertEqual(selected, work.resolve())
 
     def test_browsing_handles_windows_mount_case_mismatch(self) -> None:
         real_root = self.root / "Documents" / "Study" / "Code"
@@ -56,6 +60,23 @@ class WorkspaceManagerTest(unittest.TestCase):
         candidates = manager.status(query=str(self.root))["candidates"]
 
         self.assertIn(str(self.root / "Documents"), candidates)
+
+    def test_query_resolves_existing_path_case_insensitively(self) -> None:
+        work = self.root / "Documents" / "Work"
+        child = work / "ZhiPu"
+        child.mkdir(parents=True)
+
+        candidates = self.manager.status(query=str(self.root / "documents" / "work"))["candidates"]
+
+        self.assertEqual(candidates, [str(child)])
+
+    def test_create_folder_inside_browse_root(self) -> None:
+        (self.root / "work").mkdir()
+
+        created = self.manager.create_folder(str(self.root / "work" / "nova-new"))
+
+        self.assertTrue(created.is_dir())
+        self.assertEqual(created, (self.root / "work" / "nova-new").resolve())
 
 
 if __name__ == "__main__":

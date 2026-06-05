@@ -48,6 +48,7 @@ const workspaceDialogInputEl = document.querySelector("#workspace-dialog-input")
 const workspaceDialogListEl = document.querySelector("#workspace-dialog-list");
 const workspaceDialogCloseEl = document.querySelector("#workspace-dialog-close");
 const workspaceDialogSubmitEl = document.querySelector("#workspace-dialog-submit");
+const workspaceDialogCreateEl = document.querySelector("#workspace-dialog-create");
 const messageRailEl = document.querySelector("#message-rail");
 let workspaceSuggestTimer = null;
 let workspaceDialogTimer = null;
@@ -821,6 +822,10 @@ workspaceDialogSubmitEl.addEventListener("click", async () => {
   await switchWorkspaceFromDialog();
 });
 
+workspaceDialogCreateEl.addEventListener("click", async () => {
+  await createWorkspaceFolderFromDialog();
+});
+
 function openWorkspaceDialog() {
   workspaceDialogInputEl.value = workspaceInputEl.value.trim();
   workspaceDialogEl.showModal();
@@ -836,6 +841,28 @@ async function switchWorkspaceFromDialog() {
   }
   workspaceDialogEl.close();
   await switchWorkspace(path);
+}
+
+async function createWorkspaceFolderFromDialog() {
+  const path = workspaceDialogInputEl.value.trim();
+  if (!path) {
+    return;
+  }
+  streamStateEl.textContent = "正在新建项目目录";
+  try {
+    await api("/api/workspace/folders", {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    });
+    workspaceDialogEl.close();
+    state.selectedSessionId = null;
+    await Promise.all([loadWorkspaceStatus(), loadRuntimePanels(), loadSessions()]);
+    streamStateEl.textContent = "目录已新建并切换";
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "新建目录失败";
+    streamStateEl.textContent = `新建目录失败：${message}`;
+    renderWorkspaceDialogList(message);
+  }
 }
 
 function scheduleWorkspaceDialogCandidates(delay = 120, query = workspaceDialogInputEl.value.trim()) {

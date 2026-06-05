@@ -1418,13 +1418,28 @@ textarea::placeholder {
   font-size: 12px;
 }
 
-#workspace-dialog-submit {
+.workspace-dialog-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.workspace-dialog-actions button {
   min-height: 38px;
   border: 0;
   border-radius: 8px;
+  font-weight: 900;
+}
+
+#workspace-dialog-create {
+  border: 1px solid rgba(115, 201, 244, 0.34);
+  background: rgba(115, 201, 244, 0.08);
+  color: var(--blue);
+}
+
+#workspace-dialog-submit {
   background: var(--green);
   color: #08110d;
-  font-weight: 900;
 }
 
 @keyframes message-in {
