@@ -853,7 +853,10 @@ $superpowers 使用技能重新审视我们的开发历程和产品形态
   - [x] 3.3 父级设置为 `Nova/产品研发文档集`
 - [x] 4. 私信通知用户
   - [x] 4.1 使用 bot 私信发送文档链接
-- [] 5. 提交和推送本次记录
+- [x] 5. 提交和推送本次记录
+  - [x] 5.1 `git diff --check` 通过
+  - [x] 5.2 本地服务健康接口通过
+  - [x] 5.3 提交记录：`36a3809`
 
 执行问题记录：
 - 云盘搜索 `v1.0` 缺少 `search:docs:read` scope；列出产品研发文档集目录缺少 `space:document:retrieve` scope。因此本次没有枚举子目录，而是把文档创建到已确认正确的 `Nova/产品研发文档集` 文件夹中。
@@ -863,3 +866,27 @@ $superpowers 使用技能重新审视我们的开发历程和产品形态
 - 私信消息 ID：`om_x100b6d77fb91aca0c2bb2f4ea9848e9`
 
 ------ todo-list end at 2026/06/06/23:23:01 -----
+
+------ todo-list begin at 2026/06/06/23:26:16 -----
+
+用户请求：
+文档不存在
+
+制定清单：
+- [x] 1. 核验飞书文档是否真实存在
+  - [x] 1.1 `drive +inspect` 返回 docx 标题和 token
+  - [x] 1.2 `docs +fetch --api-version v2` 成功读取正文
+  - [x] 1.3 `drive metas batch_query` 返回元数据和 URL
+- [x] 2. 核验访问权限
+  - [x] 2.1 `permission.public get` 显示链接租户内可读
+  - [x] 2.2 `permission.members auth` 显示当前 user 身份 view 权限为 true
+- [x] 3. 重新通知用户
+  - [x] 3.1 用纯文本重新发送文档链接，避免 Markdown 影响链接识别
+- [] 4. 提交和推送本次核验记录
+
+执行问题记录：
+- 用户反馈文档不存在，但飞书 API 侧确认文档存在、正文可读取、当前授权用户可查看。已重新发送纯文本链接；若用户继续提示不存在，最可能原因是浏览器登录的飞书账号或租户与当前授权 user 不一致。
+
+交付记录：
+- 文档链接：`https://jcnu7fvwv6c8.feishu.cn/docx/D5ChdLX3DoTyCbxdCMzcUZkDn3g`
+- 重新发送私信消息 ID：`om_x100b6d778f47f8a4c146f573fa2094b`
