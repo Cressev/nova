@@ -834,3 +834,32 @@ $superpowers 使用技能重新审视我们的开发历程和产品形态
 - [26/06/06-23:07:13 CST] 用户确认路线 1：Runtime-first Coding Agent；同时要求文档必须有故事线、循序渐进、拒绝术语堆砌，出现新函数或概念时必须立刻用通俗语言解释；产品包装开源项目的同时，也要有非常极致的自用体验。
 
 ------ todo-list end at 2026/06/06/23:10:42 -----
+
+------ todo-list begin at 2026/06/06/23:19:53 -----
+
+用户请求：
+下一步开发计划是什么，或者你的长期计划。如果你能通过飞书文档的方式写完并发送给我就好了。创建在正确的云盘中
+
+制定清单：
+- [x] 1. 使用飞书相关技能
+  - [x] 1.1 读取 `lark-doc`、`lark-drive`、`lark-im` 技能说明
+  - [x] 1.2 读取 `lark-shared` 和飞书文档创建格式说明
+- [x] 2. 确认正确云盘位置
+  - [x] 2.1 确认 `HZznf3LjmlZ2iYdgPr8cWe4Hncf` 是 `Nova/产品研发文档集`
+  - [x] 2.2 尝试查询 v1.0 子目录；因缺少 scope 未能列目录
+- [x] 3. 创建飞书新版文档
+  - [x] 3.1 按故事线写“Nova 下一步开发计划与长期路线”
+  - [x] 3.2 使用 `docs +create --api-version v2` 创建 docx
+  - [x] 3.3 父级设置为 `Nova/产品研发文档集`
+- [x] 4. 私信通知用户
+  - [x] 4.1 使用 bot 私信发送文档链接
+- [] 5. 提交和推送本次记录
+
+执行问题记录：
+- 云盘搜索 `v1.0` 缺少 `search:docs:read` scope；列出产品研发文档集目录缺少 `space:document:retrieve` scope。因此本次没有枚举子目录，而是把文档创建到已确认正确的 `Nova/产品研发文档集` 文件夹中。
+
+交付记录：
+- 飞书文档：`https://jcnu7fvwv6c8.feishu.cn/docx/D5ChdLX3DoTyCbxdCMzcUZkDn3g`
+- 私信消息 ID：`om_x100b6d77fb91aca0c2bb2f4ea9848e9`
+
+------ todo-list end at 2026/06/06/23:23:01 -----
