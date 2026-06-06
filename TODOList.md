@@ -915,10 +915,17 @@ $superpowers 使用技能重新审视我们的开发历程和产品形态
   - [x] 3.1 获取目标飞书文档当前内容
   - [x] 3.2 追加“先读代码，再开发”的补充章节
   - [x] 3.3 拉取文档验证新章节已写入
-- [] 4. 更新项目记忆、验证并提交
+- [x] 4. 更新项目记忆、验证并提交
   - [x] 4.1 更新 CURRENT.md、PROGRESS.md、log.md
-  - [] 4.2 为 user-queries.md 追加 Done 时间和提交码
-  - [] 4.3 执行 git diff 检查、提交并推送
+  - [x] 4.2 为 user-queries.md 追加 Done 时间和提交码
+  - [x] 4.3 执行 git diff 检查、提交并推送
 
 执行问题记录：
 暂无
+
+交付记录：
+- 飞书文档已追加章节，revision 4：`https://jcnu7fvwv6c8.feishu.cn/docx/D5ChdLX3DoTyCbxdCMzcUZkDn3g`
+- 源码阅读结论：`findings/2026-06-06-reference-architecture-reading.md`
+- 主提交：`29dd04e`
+
+------ todo-list end at 2026/06/06/23:55:05 -----
