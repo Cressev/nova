@@ -882,7 +882,9 @@ $superpowers 使用技能重新审视我们的开发历程和产品形态
   - [x] 2.2 `permission.members auth` 显示当前 user 身份 view 权限为 true
 - [x] 3. 重新通知用户
   - [x] 3.1 用纯文本重新发送文档链接，避免 Markdown 影响链接识别
-- [] 4. 提交和推送本次核验记录
+- [x] 4. 提交和推送本次核验记录
+  - [x] 4.1 `git diff --check` 通过
+  - [x] 4.2 提交核验记录：`7f4ddb6`
 
 执行问题记录：
 - 用户反馈文档不存在，但飞书 API 侧确认文档存在、正文可读取、当前授权用户可查看。已重新发送纯文本链接；若用户继续提示不存在，最可能原因是浏览器登录的飞书账号或租户与当前授权 user 不一致。
@@ -890,3 +892,5 @@ $superpowers 使用技能重新审视我们的开发历程和产品形态
 交付记录：
 - 文档链接：`https://jcnu7fvwv6c8.feishu.cn/docx/D5ChdLX3DoTyCbxdCMzcUZkDn3g`
 - 重新发送私信消息 ID：`om_x100b6d778f47f8a4c146f573fa2094b`
+
+------ todo-list end at 2026/06/06/23:26:16 -----
