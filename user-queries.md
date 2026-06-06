@@ -365,3 +365,9 @@ $superpowers 使用技能重新审视我们的开发历程和产品形态
 [Recieve:26/06/06-23:26:16 CST]
 
 [Done:26/06/06-23:26:16 CST | 7f4ddb6]
+
+---
+
+我觉得在开发之前你还是要多看看参考代码，看看别的亿万级别的项目是怎么构建的。多读读代码再修改开发计划和长期建议。https://jcnu7fvwv6c8.feishu.cn/docx/D5ChdLX3DoTyCbxdCMzcUZkDn3g
+
+[Recieve:26/06/06-23:44:30 CST]
