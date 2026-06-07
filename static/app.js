@@ -325,22 +325,16 @@ function renderSettings() {
     ${renderSettingsField("provider_model", "模型", pending.provider_model ?? config.model ?? line.model ?? "", "text")}
     ${renderSettingsField("provider_base_url", "Base URL", pending.provider_base_url ?? config.base_url ?? "", "text")}
     ${renderSettingsField("context_window_tokens", "上下文窗口", pending.context_window_tokens ?? config.context_window_tokens ?? line.context_window_tokens ?? 128000, "number")}
-    <label class="setting-field">
-      <span>沙箱模式</span>
-      <select name="sandbox_mode">
-        ${renderPermissionOption("read_only", "只读", pending.sandbox_mode ?? config.sandbox_mode)}
-        ${renderPermissionOption("workspace_write", "工作区写入", pending.sandbox_mode ?? config.sandbox_mode)}
-        ${renderPermissionOption("danger_full_access", "完全访问", pending.sandbox_mode ?? config.sandbox_mode)}
+    <label class="setting-field setting-field-wide">
+      <span>权限预设</span>
+      <select name="permission_preset">
+        ${renderPermissionOption("read_only", "只读：只允许读项目", permissionPresetFromConfig(config))}
+        ${renderPermissionOption("ask", "询问：写入和命令前确认", permissionPresetFromConfig(config))}
+        ${renderPermissionOption("workspace_write", "工作区写入：自动改当前项目", permissionPresetFromConfig(config))}
+        ${renderPermissionOption("plan", "计划：只拆方案不执行", permissionPresetFromConfig(config))}
+        ${renderPermissionOption("bypass_permissions", "跳过权限：完全访问", permissionPresetFromConfig(config))}
       </select>
-    </label>
-    <label class="setting-field">
-      <span>审批策略</span>
-      <select name="approval_policy">
-        ${renderPermissionOption("untrusted", "不信任时询问", pending.approval_policy ?? config.approval_policy)}
-        ${renderPermissionOption("on_failure", "失败时询问", pending.approval_policy ?? config.approval_policy)}
-        ${renderPermissionOption("on_request", "每次请求询问", pending.approval_policy ?? config.approval_policy)}
-        ${renderPermissionOption("never", "永不询问", pending.approval_policy ?? config.approval_policy)}
-      </select>
+      <small>像 Codex 一样选择一个权限预设；Nova 会自动配置底层沙箱和审批策略。</small>
     </label>
     <label class="setting-field setting-field-inline">
       <span>网络访问</span>
@@ -384,17 +378,35 @@ function renderSettingsField(name, label, value, type) {
   `;
 }
 
-function derivePermissionMode(sandboxMode, approvalPolicy) {
+function permissionPresetFromConfig(config) {
+  const pending = config.pending_config || {};
+  const permissionMode = pending.permission_mode || config.permission_mode;
+  if (["read_only", "ask", "workspace_write", "plan", "bypass_permissions"].includes(permissionMode)) {
+    return permissionMode;
+  }
+  const sandboxMode = pending.sandbox_mode || config.sandbox_mode;
+  const approvalPolicy = pending.approval_policy || config.approval_policy;
   if (sandboxMode === "read_only") {
     return "read_only";
-  }
-  if (approvalPolicy === "on_request" || approvalPolicy === "untrusted") {
-    return "ask";
   }
   if (sandboxMode === "danger_full_access" && approvalPolicy === "never") {
     return "bypass_permissions";
   }
+  if (approvalPolicy === "on_request" || approvalPolicy === "untrusted") {
+    return "ask";
+  }
   return "workspace_write";
+}
+
+function derivePermissionConfig(permissionPreset) {
+  const presets = {
+    read_only: { permission_mode: "read_only", sandbox_mode: "read_only", approval_policy: "never" },
+    ask: { permission_mode: "ask", sandbox_mode: "workspace_write", approval_policy: "on_request" },
+    workspace_write: { permission_mode: "workspace_write", sandbox_mode: "workspace_write", approval_policy: "never" },
+    plan: { permission_mode: "plan", sandbox_mode: "read_only", approval_policy: "never" },
+    bypass_permissions: { permission_mode: "bypass_permissions", sandbox_mode: "danger_full_access", approval_policy: "never" },
+  };
+  return presets[permissionPreset] || presets.ask;
 }
 
 function renderPermissionOption(value, label, selectedValue) {
@@ -1590,15 +1602,12 @@ for (const button of document.querySelectorAll("[data-settings-section]")) {
 
 function collectRuntimeSettings() {
   const form = settingsDialogEl.querySelector(".settings-panel");
-  const sandboxMode = form.querySelector('[name="sandbox_mode"]').value;
-  const approvalPolicy = form.querySelector('[name="approval_policy"]').value;
+  const permissionConfig = derivePermissionConfig(form.querySelector('[name="permission_preset"]').value);
   return {
     provider_model: form.querySelector('[name="provider_model"]').value.trim(),
     provider_base_url: form.querySelector('[name="provider_base_url"]').value.trim(),
     context_window_tokens: Number(form.querySelector('[name="context_window_tokens"]').value),
-    permission_mode: derivePermissionMode(sandboxMode, approvalPolicy),
-    sandbox_mode: sandboxMode,
-    approval_policy: approvalPolicy,
+    ...permissionConfig,
     network_access: form.querySelector('[name="network_access"]').checked,
     max_tool_rounds: Number(form.querySelector('[name="max_tool_rounds"]').value),
   };

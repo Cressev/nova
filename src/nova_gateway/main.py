@@ -445,7 +445,7 @@ async def select_workspace(payload: WorkspaceSelect) -> dict:
 
 @app.post("/api/workspace/folders")
 async def create_workspace_folder(payload: WorkspaceFolderCreate) -> dict:
-    if settings.permission_mode != "workspace_write":
+    if settings.permission_mode not in {"workspace_write", "bypass_permissions"}:
         raise HTTPException(status_code=403, detail="当前权限模式不允许新建目录")
     try:
         created = workspace_manager.create_folder(payload.path)
@@ -481,17 +481,13 @@ async def workspace_status() -> WorkspaceStatus:
             ),
         ],
         permissions=WorkspacePermissions(
-            workspace_write=settings.permission_mode == "workspace_write",
+            workspace_write=settings.permission_mode in {"workspace_write", "bypass_permissions"},
             network_access=settings.network_access,
-            approval_policy=(
-                "自动允许工作区写入"
-                if settings.permission_mode == "workspace_write"
-                else "需要审批" if settings.permission_mode == "ask" else "只读"
-            ),
+            approval_policy=_permission_mode_label(settings.permission_mode),
             permission_mode=settings.permission_mode,
             sandbox_mode=settings.sandbox_mode,
             approval_policy_id=settings.approval_policy,
-            shell_commands=settings.permission_mode == "workspace_write",
+            shell_commands=settings.permission_mode in {"workspace_write", "bypass_permissions"},
         ),
         commands=WorkspaceCommands(
             test="PYTHONPATH=src python3 -m unittest discover -s tests",
@@ -501,6 +497,18 @@ async def workspace_status() -> WorkspaceStatus:
             ),
         ),
     )
+
+
+def _permission_mode_label(permission_mode: str) -> str:
+    return {
+        "read_only": "只读：只允许读工具",
+        "ask": "询问：写入和 shell 需要审批",
+        "workspace_write": "工作区写入：自动允许当前项目内写入",
+        "plan": "计划：只拆方案，不执行写入或 shell",
+        "bypass_permissions": "跳过权限：跳过审批并允许完全访问",
+        "accept_edits": "接受编辑：允许写文件，shell 仍需限制",
+        "dont_ask": "不询问：未预批准的高风险工具会被拒绝",
+    }.get(permission_mode, "询问：写入和 shell 需要审批")
 
 
 def _read_git_status() -> GitStatus:

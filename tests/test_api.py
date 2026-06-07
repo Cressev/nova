@@ -116,6 +116,35 @@ class ApiTest(unittest.TestCase):
         self.assertIn("danger_full_access", payload["sandbox_modes"])
         self.assertIn("on_request", payload["approval_policies"])
 
+    def test_workspace_status_describes_each_permission_preset(self) -> None:
+        old_permission = app_module.settings.permission_mode
+        old_sandbox = app_module.settings.sandbox_mode
+        old_approval = app_module.settings.approval_policy
+        self.addCleanup(lambda: object.__setattr__(app_module.settings, "permission_mode", old_permission))
+        self.addCleanup(lambda: object.__setattr__(app_module.settings, "sandbox_mode", old_sandbox))
+        self.addCleanup(lambda: object.__setattr__(app_module.settings, "approval_policy", old_approval))
+
+        cases = [
+            ("read_only", "read_only", "never", "只读", False, False),
+            ("ask", "workspace_write", "on_request", "询问", False, False),
+            ("workspace_write", "workspace_write", "never", "工作区写入", True, True),
+            ("plan", "read_only", "never", "计划", False, False),
+            ("bypass_permissions", "danger_full_access", "never", "跳过权限", True, True),
+        ]
+
+        for permission_mode, sandbox_mode, approval_policy, label, workspace_write, shell_commands in cases:
+            with self.subTest(permission_mode=permission_mode):
+                object.__setattr__(app_module.settings, "permission_mode", permission_mode)
+                object.__setattr__(app_module.settings, "sandbox_mode", sandbox_mode)
+                object.__setattr__(app_module.settings, "approval_policy", approval_policy)
+
+                payload = self.client.get("/api/workspace/status").json()["permissions"]
+
+                self.assertEqual(payload["permission_mode"], permission_mode)
+                self.assertIn(label, payload["approval_policy"])
+                self.assertEqual(payload["workspace_write"], workspace_write)
+                self.assertEqual(payload["shell_commands"], shell_commands)
+
     def test_runtime_api_key_update_takes_effect_without_restart(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             secret_file = Path(tmpdir) / "runtime-secrets.json"
