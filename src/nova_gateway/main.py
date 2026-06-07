@@ -15,7 +15,6 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
-from .approvals.store import PendingApprovalStore
 from .config.settings import load_settings
 from .providers.bigmodel import BigModelProvider, ProviderError
 from .processes.manager import ProcessManager
@@ -63,9 +62,9 @@ provider = BigModelProvider(
     model=settings.provider_model,
     api_key_file=settings.runtime_secret_file,
 )
-pending_approvals = PendingApprovalStore()
 process_manager = ProcessManager()
 agent_sessions = AgentSessionService()
+pending_approvals = agent_sessions.pending_approvals
 _active_session_turns = agent_sessions.active_session_ids
 _queued_session_messages = agent_sessions.queued_session_messages
 _runtime_override = None
@@ -333,12 +332,12 @@ async def remember(payload: dict) -> dict:
 
 @app.get("/api/approvals/pending")
 async def list_pending_approvals(session_id: str | None = Query(default=None, max_length=80)) -> dict:
-    return {"items": [item.as_dict() for item in pending_approvals.list_pending(session_id=session_id)]}
+    return {"items": [item.as_dict() for item in agent_sessions.list_pending_approvals(session_id=session_id)]}
 
 
 @app.post("/api/approvals/{approval_id}/approve")
 async def approve_tool_call(approval_id: str) -> dict:
-    item = pending_approvals.approve(approval_id)
+    item = agent_sessions.approve_pending_approval(approval_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Approval not found")
     tools = WorkspaceTools(
@@ -362,7 +361,7 @@ async def approve_tool_call(approval_id: str) -> dict:
 @app.post("/api/approvals/{approval_id}/deny")
 async def deny_tool_call(approval_id: str, payload: dict | None = None) -> dict:
     reason = str((payload or {}).get("reason") or "用户拒绝执行")
-    item = pending_approvals.deny(approval_id, reason=reason)
+    item = agent_sessions.deny_pending_approval(approval_id, reason=reason)
     if item is None:
         raise HTTPException(status_code=404, detail="Approval not found")
     event = _event_builder_for_existing_turn(item.session_id, item.turn_id)(
@@ -595,13 +594,37 @@ async def list_chat_messages(session_id: str) -> list[ChatMessage]:
 async def list_chat_timeline(session_id: str) -> dict:
     if _get_current_chat_session(session_id) is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
+    return {"items": _chat_timeline_items(session_id)}
+
+
+@app.get("/api/chat/sessions/{session_id}/runtime-state")
+async def chat_runtime_state(session_id: str) -> dict:
+    session = _get_current_chat_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    return {
+        "session": session.model_dump(mode="json"),
+        "timeline": {"items": _chat_timeline_items(session_id)},
+        "pending_approvals": [
+            item.as_dict() for item in agent_sessions.list_pending_approvals(session_id=session_id)
+        ],
+        "processes": process_manager.list_jobs(),
+        "active": agent_sessions.is_active(session_id),
+        "queued_messages": [
+            message.model_dump(mode="json")
+            for message in agent_sessions.queued_session_messages.get(session_id, [])
+        ],
+    }
+
+
+def _chat_timeline_items(session_id: str) -> list[dict]:
     items: list[dict] = []
     for message in store.list_chat_messages(session_id):
         items.append({"kind": "message", "created_at": message.created_at, "item": message.model_dump(mode="json")})
     for event in store.list_chat_events(session_id):
         items.append({"kind": "event", "created_at": event.created_at, "item": event.model_dump(mode="json")})
     items.sort(key=lambda item: item["created_at"])
-    return {"items": [{"kind": item["kind"], "item": item["item"]} for item in items]}
+    return [{"kind": item["kind"], "item": item["item"]} for item in items]
 
 
 @app.post("/api/chat/sessions/{session_id}/messages", response_model=ChatMessage)
@@ -789,7 +812,7 @@ async def stream_chat_message(
                     if runtime is not None:
                         yield _ndjson({"type": "runtime_event", "event": runtime})
                     if event["type"] == "permission_request":
-                        pending_approvals.create(
+                        agent_sessions.create_pending_approval(
                             session_id=session_id,
                             turn_id=turn_id,
                             call_id=str(event.get("call_id") or (runtime.get("id") if runtime else new_id("tool"))),

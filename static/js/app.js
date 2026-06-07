@@ -891,13 +891,18 @@ async function loadMessages() {
   }
   const sessionId = state.selectedSessionId;
   const requestId = ++state.messagesRequestId;
-  const timeline = await api(`/api/chat/sessions/${sessionId}/timeline`);
+  const runtimeState = await api(`/api/chat/sessions/${sessionId}/runtime-state`);
   if (requestId !== state.messagesRequestId || sessionId !== state.selectedSessionId) {
     return;
   }
-  const items = timeline.items || [];
+  const items = runtimeState.timeline?.items || [];
+  const hasRuntimeRestorations = Boolean(
+    runtimeState.pending_approvals?.length
+      || runtimeState.processes?.length
+      || runtimeState.queued_messages?.length,
+  );
 
-  if (items.length === 0) {
+  if (items.length === 0 && !hasRuntimeRestorations) {
     renderEmptyState();
     return;
   }
@@ -917,6 +922,7 @@ async function loadMessages() {
       appendStoredEvent(entry.item);
     }
   }
+  appendRuntimeStateRestorations(runtimeState, items);
   updateAllTurnToolControls();
   renderMessageRail();
   scrollMessagesToBottom();
@@ -976,6 +982,71 @@ function appendStoredEvent(event) {
   }
   if (event.type === "status") {
     appendStatusEvent(event.title, { autoscroll: false });
+  }
+}
+
+function appendRuntimeStateRestorations(runtimeState, timelineItems = []) {
+  // runtime-state 里有些对象是当前进程态，不一定已经写进 timeline，刷新页面时要补回可见状态。
+  const knownEventIds = new Set();
+  const knownMessageIds = new Set();
+  const knownProcessIds = new Set();
+  for (const entry of timelineItems) {
+    if (entry.kind === "message") {
+      knownMessageIds.add(entry.item?.id);
+    }
+    if (entry.kind === "event") {
+      knownEventIds.add(entry.item?.id);
+      collectProcessIds(entry.item, knownProcessIds);
+    }
+  }
+
+  for (const approval of runtimeState.pending_approvals || []) {
+    const callId = approval.call_id || approval.id;
+    if (knownEventIds.has(callId)) {
+      continue;
+    }
+    appendPermissionEvent(
+      {
+        call_id: callId,
+        tool: approval.tool,
+        permission: approval.permission,
+        title: approval.reason || "等待工具审批",
+        message: approval.reason,
+        arguments: approval.arguments || {},
+        data: { permission: approval.permission },
+      },
+      null,
+      { autoscroll: false },
+    );
+  }
+
+  for (const process of runtimeState.processes || []) {
+    if (knownProcessIds.has(process.id)) {
+      continue;
+    }
+    appendStatusEvent(
+      `后台任务 ${shortId(process.id)}：${shortText(process.command || "运行中", 80)} · ${process.status || "running"}`,
+      { autoscroll: false },
+    );
+  }
+
+  for (const message of runtimeState.queued_messages || []) {
+    if (knownMessageIds.has(message.id)) {
+      continue;
+    }
+    appendStatusEvent(`排队输入：${shortText(message.content || "", 80)}`, { autoscroll: false });
+  }
+}
+
+function collectProcessIds(value, target) {
+  if (!value || typeof value !== "object") {
+    return;
+  }
+  if (typeof value.id === "string" && value.id.startsWith("proc_")) {
+    target.add(value.id);
+  }
+  for (const child of Array.isArray(value) ? value : Object.values(value)) {
+    collectProcessIds(child, target);
   }
 }
 

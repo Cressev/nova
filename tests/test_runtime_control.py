@@ -24,11 +24,13 @@ class RuntimeControlTest(unittest.TestCase):
             old_process_manager = app_module.process_manager
             old_pending = app_module.pending_approvals
             old_root = app_module.workspace_manager.current_root
-            app_module.pending_approvals = PendingApprovalStore()
+            app_module.agent_sessions.pending_approvals = PendingApprovalStore()
+            app_module.pending_approvals = app_module.agent_sessions.pending_approvals
             app_module.process_manager = ProcessManager()
             app_module.workspace_manager.current_root = Path(tmpdir).resolve()
             object.__setattr__(app_module.settings, "permission_mode", "ask")
             self.addCleanup(lambda: object.__setattr__(app_module.settings, "permission_mode", old_permission))
+            self.addCleanup(lambda: setattr(app_module.agent_sessions, "pending_approvals", old_pending))
             self.addCleanup(lambda: setattr(app_module, "pending_approvals", old_pending))
             self.addCleanup(lambda: setattr(app_module, "process_manager", old_process_manager))
             self.addCleanup(lambda: setattr(app_module.workspace_manager, "current_root", old_root))
@@ -56,7 +58,7 @@ class RuntimeControlTest(unittest.TestCase):
             self.assertTrue(any(event["type"] == "tool_done" for event in approved.json()["events"]))
             self.assertEqual(self.client.get("/api/approvals/pending").json()["items"], [])
 
-            app_module.pending_approvals.create(
+            app_module.agent_sessions.create_pending_approval(
                 session_id=session["id"],
                 turn_id="turn_test",
                 call_id="tool_deny",

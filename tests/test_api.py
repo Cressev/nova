@@ -8,7 +8,9 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from nova_gateway import main as app_module
+from nova_gateway.approvals.store import PendingApprovalStore
 from nova_gateway.main import app
+from nova_gateway.processes.manager import ProcessManager
 
 
 class ApiTest(unittest.TestCase):
@@ -539,6 +541,46 @@ class ApiTest(unittest.TestCase):
         queued_events = [event for event in events if event["type"] == "queued_message"]
         self.assertEqual(len(queued_events), 1)
         self.assertEqual(queued_events[0]["message"]["id"], queued_message.id)
+
+    def test_session_runtime_state_restores_timeline_approvals_and_processes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_root = app_module.workspace_manager.current_root
+            old_process_manager = app_module.process_manager
+            old_pending = app_module.pending_approvals
+            app_module.workspace_manager.current_root = Path(tmpdir).resolve()
+            app_module.process_manager = ProcessManager()
+            app_module.agent_sessions.pending_approvals = PendingApprovalStore()
+            app_module.pending_approvals = app_module.agent_sessions.pending_approvals
+            self.addCleanup(lambda: setattr(app_module.workspace_manager, "current_root", old_root))
+            self.addCleanup(lambda: setattr(app_module, "process_manager", old_process_manager))
+            self.addCleanup(lambda: setattr(app_module.agent_sessions, "pending_approvals", old_pending))
+            self.addCleanup(lambda: setattr(app_module, "pending_approvals", old_pending))
+            self.addCleanup(lambda: app_module.process_manager.kill_all())
+
+            session = self.client.post("/api/chat/sessions", json={"title": "恢复"}).json()
+            message = app_module.ChatMessage(session_id=session["id"], role=app_module.ChatRole.USER, content="恢复测试")
+            app_module.store.add_chat_message(message)
+            app_module.agent_sessions.create_pending_approval(
+                session_id=session["id"],
+                turn_id="turn_restore",
+                call_id="tool_restore",
+                tool="shell_command",
+                arguments={"command": "pwd"},
+                permission="shell",
+                reason="恢复审批",
+            )
+            job = app_module.process_manager.start_background(
+                "python3 -c 'import time; time.sleep(20)'",
+                cwd=Path(tmpdir),
+            )
+
+            response = self.client.get(f"/api/chat/sessions/{session['id']}/runtime-state")
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertTrue(any(item["kind"] == "message" for item in payload["timeline"]["items"]))
+            self.assertEqual(payload["pending_approvals"][0]["id"], "tool_restore")
+            self.assertTrue(any(item["id"] == job["id"] for item in payload["processes"]))
 
 
 if __name__ == "__main__":
