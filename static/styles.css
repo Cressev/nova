@@ -1666,7 +1666,7 @@ body.inspector-collapsed .inspector-toggle {
 }
 
 .settings-dialog {
-  width: min(620px, calc(100vw - 32px));
+  width: min(760px, calc(100vw - 28px));
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   padding: 0;
@@ -1682,13 +1682,13 @@ body.inspector-collapsed .inspector-toggle {
 
 .settings-panel {
   display: grid;
-  gap: 14px;
-  padding: 14px;
+  gap: 10px;
+  padding: 12px;
 }
 
 .settings-section {
   display: grid;
-  gap: 9px;
+  gap: 7px;
 }
 
 .settings-section-head {
@@ -1732,12 +1732,16 @@ body.inspector-collapsed .inspector-toggle {
 }
 
 .settings-list {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .setting-field {
   display: grid;
-  gap: 5px;
+  gap: 4px;
+}
+
+.setting-field-wide {
+  grid-column: 1 / -1;
 }
 
 .setting-field span {
@@ -1757,6 +1761,20 @@ body.inspector-collapsed .inspector-toggle {
   color: var(--text);
   font: inherit;
   font-size: 12px;
+}
+
+.setting-field small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.setting-secret-field {
+  grid-template-columns: minmax(0, 1fr);
+  border: 1px solid rgba(66, 222, 153, 0.22);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(66, 222, 153, 0.05);
 }
 
 .setting-field input:focus,
@@ -1814,6 +1832,11 @@ body.inspector-collapsed .inspector-toggle {
   align-items: center;
   border-top: 1px solid var(--line);
   padding-top: 12px;
+}
+
+.settings-list[hidden],
+.statusline-options[hidden] {
+  display: none;
 }
 
 .settings-actions p {
@@ -1967,6 +1990,11 @@ body.inspector-collapsed .inspector-toggle {
   }
 
   .inspector {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-list,
+  .statusline-options {
     grid-template-columns: 1fr;
   }
 }

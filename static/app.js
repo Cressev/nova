@@ -160,6 +160,28 @@ function projectName(path) {
   return parts.at(-1) || "Nova";
 }
 
+function normalizeWorkspacePath(path) {
+  if (typeof path !== "string") {
+    return "";
+  }
+  return path.trim().replace(/[\\/]+$/, "");
+}
+
+function workspaceGroupKey(path) {
+  const normalized = normalizeWorkspacePath(path);
+  return normalized ? normalized.toLowerCase() : "__unbound__";
+}
+
+function parentProjectName(path) {
+  const parts = normalizeWorkspacePath(path).split(/[\\/]/).filter(Boolean);
+  return parts.length > 1 ? parts.at(-2) : "";
+}
+
+function workspaceDisplayName(path) {
+  const normalized = normalizeWorkspacePath(path);
+  return normalized ? projectName(normalized) : "未绑定项目";
+}
+
 async function loadHealth() {
   try {
     // 只展示模型是否可用，不把密钥或敏感内容传到前端。
@@ -278,6 +300,11 @@ function renderSettings() {
   const line = state.statusline || {};
   const pending = config.pending_config || {};
   settingsRuntimeEl.innerHTML = `
+    <label class="setting-field setting-field-wide setting-secret-field">
+      <span>BigModel API Key</span>
+      <input name="bigmodel_api_key" type="password" value="" autocomplete="off" placeholder="${escapeHtml(config.api_key_set ? "已设置，输入新 Key 可替换" : "填写后立即生效，无需重启")}" />
+      <small>${escapeHtml(config.api_key_set ? `当前来源：${config.api_key_source === "runtime" ? "设置页" : "环境变量"}` : "仅保存在本机 .nova/runtime-secrets.json，不会回显明文")}</small>
+    </label>
     ${renderSettingsField("provider_model", "模型", pending.provider_model ?? config.model ?? line.model ?? "", "text")}
     ${renderSettingsField("provider_base_url", "Base URL", pending.provider_base_url ?? config.base_url ?? "", "text")}
     ${renderSettingsField("context_window_tokens", "上下文窗口", pending.context_window_tokens ?? config.context_window_tokens ?? line.context_window_tokens ?? 128000, "number")}
@@ -317,7 +344,7 @@ function renderSettings() {
   }
   settingsNoteEl.textContent = config.restart_required
     ? "已有待生效配置，点击“重启网关”后生效。"
-    : config.restart_note || "配置修改后需要重启 Nova 网关才会生效。";
+    : "API Key 保存后立即生效；模型、权限等运行配置修改后才需要重启。";
   settingsRestartEl.disabled = !config.restart_required;
   applySettingsSectionState();
 }
@@ -444,6 +471,7 @@ function renderRuntimeConfig(config) {
   configStateEl.textContent = config.permission_mode;
   const rows = [
     ["模型", config.model],
+    ["API Key", config.api_key_set ? `已配置 · ${config.api_key_source === "runtime" ? "设置页" : "环境变量"}` : "未配置"],
     ["上下文窗口", `${formatCompactNumber(config.context_window_tokens || 0)} tokens`],
     ["工具轮次", String(config.max_tool_rounds)],
     ["只读并行", config.tool_parallel_readonly ? "已启用" : "关闭"],
@@ -611,22 +639,34 @@ function toggleSessionGroup(groupNode, workspace) {
 function groupSessionsByProject(sessions) {
   const map = new Map();
   for (const session of sessions) {
-    const workspace = session.workspace || "unknown";
-    if (!map.has(workspace)) {
-      map.set(workspace, {
+    const workspace = normalizeWorkspacePath(session.workspace);
+    const key = workspaceGroupKey(workspace);
+    if (!map.has(key)) {
+      map.set(key, {
         workspace,
-        name: projectName(workspace),
+        name: workspaceDisplayName(workspace),
         sessions: [],
         updated_at: session.updated_at,
       });
     }
-    const group = map.get(workspace);
+    const group = map.get(key);
     group.sessions.push(session);
     if (new Date(session.updated_at) > new Date(group.updated_at)) {
       group.updated_at = session.updated_at;
     }
   }
-  return Array.from(map.values()).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+  const groups = Array.from(map.values());
+  const nameCounts = groups.reduce((counts, group) => {
+    counts.set(group.name, (counts.get(group.name) || 0) + 1);
+    return counts;
+  }, new Map());
+  for (const group of groups) {
+    if (group.workspace && nameCounts.get(group.name) > 1) {
+      const parent = parentProjectName(group.workspace);
+      group.name = parent ? `${group.name} · ${parent}` : group.workspace;
+    }
+  }
+  return groups.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
 }
 
 function renderSessionItem(session) {
@@ -636,7 +676,7 @@ function renderSessionItem(session) {
     item.innerHTML = `
       <span class="session-main">
         <strong>${shortText(session.title)}</strong>
-        <small>${shortText(projectName(session.workspace || ""), 28)}</small>
+        <small>${shortText(workspaceDisplayName(session.workspace), 28)}</small>
         <span>${formatTime(session.updated_at)}</span>
       </span>
       <button class="session-delete" type="button" aria-label="删除对话" title="删除对话">×</button>
@@ -1063,14 +1103,28 @@ settingsCloseEl.addEventListener("click", () => {
 
 settingsSaveEl.addEventListener("click", async () => {
   const payload = collectRuntimeSettings();
+  const secrets = collectRuntimeSecrets();
   streamStateEl.textContent = "正在保存运行配置";
   try {
     state.runtimeConfig = await api("/api/runtime/config", {
       method: "PATCH",
       body: JSON.stringify(payload),
     });
+    if (secrets.bigmodel_api_key) {
+      await api("/api/runtime/secrets", {
+        method: "PATCH",
+        body: JSON.stringify(secrets),
+      });
+      streamStateEl.textContent = state.runtimeConfig.restart_required
+        ? "API Key 已立即生效，运行配置重启后生效"
+        : "API Key 已保存并立即生效";
+    } else {
+      streamStateEl.textContent = state.runtimeConfig.restart_required
+        ? "配置已保存，重启后生效"
+        : "配置已保存";
+    }
+    await Promise.all([loadHealth(), loadRuntimePanels(), refreshStatusline()]);
     renderSettings();
-    streamStateEl.textContent = "配置已保存，重启后生效";
   } catch (error) {
     streamStateEl.textContent = `配置保存失败：${error instanceof Error ? error.message : "未知错误"}`;
   }
@@ -1127,6 +1181,13 @@ function collectRuntimeSettings() {
     permission_mode: form.querySelector('[name="permission_mode"]').value,
     network_access: form.querySelector('[name="network_access"]').checked,
     max_tool_rounds: Number(form.querySelector('[name="max_tool_rounds"]').value),
+  };
+}
+
+function collectRuntimeSecrets() {
+  const form = settingsDialogEl.querySelector(".settings-panel");
+  return {
+    bigmodel_api_key: form.querySelector('[name="bigmodel_api_key"]').value.trim(),
   };
 }
 

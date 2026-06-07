@@ -25,6 +25,7 @@ from .models import (
     ChatSessionCreate,
     Health,
     RuntimeConfigUpdate,
+    RuntimeSecretUpdate,
     Task,
     TaskCreate,
     TimelineEvent,
@@ -53,6 +54,7 @@ workspace_manager = WorkspaceManager(
 provider = BigModelProvider(
     base_url=settings.provider_base_url,
     model=settings.provider_model,
+    api_key_file=settings.runtime_secret_file,
 )
 
 app = FastAPI(title="Nova Gateway", version=__version__)
@@ -102,6 +104,7 @@ async def provider_status() -> dict:
         "model": provider.model,
         "base_url": provider.base_url,
         "configured": provider.is_configured(),
+        "api_key_source": provider.api_key_source(),
         "api_key_env": provider.api_key_env,
     }
 
@@ -127,8 +130,22 @@ async def update_runtime_config(payload: RuntimeConfigUpdate) -> dict:
     )
     result = _runtime_config_payload()
     result["pending_config"] = pending
-    result["restart_required"] = True
     return result
+
+
+@app.patch("/api/runtime/secrets")
+async def update_runtime_secrets(payload: RuntimeSecretUpdate) -> dict:
+    if payload.bigmodel_api_key is not None:
+        provider.set_runtime_api_key(
+            payload.bigmodel_api_key,
+            api_key_file=settings.runtime_secret_file,
+        )
+    return {
+        "ok": True,
+        "api_key_set": provider.is_configured(),
+        "api_key_source": provider.api_key_source(),
+        "provider_configured": provider.is_configured(),
+    }
 
 
 @app.post("/api/runtime/restart")
@@ -167,6 +184,8 @@ def _runtime_config_payload() -> dict:
         "restart_required": restart_required,
         "restart_note": "模型、上下文窗口、权限、网络和工具轮次配置写入后需要重启 Nova 网关才会生效。",
         "pending_config": pending,
+        "api_key_set": provider.is_configured(),
+        "api_key_source": provider.api_key_source(),
     }
 
 

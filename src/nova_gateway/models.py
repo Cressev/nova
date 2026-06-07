@@ -63,6 +63,10 @@ class RuntimeConfigUpdate(BaseModel):
     max_tool_rounds: int | None = Field(default=None, ge=1, le=12)
 
 
+class RuntimeSecretUpdate(BaseModel):
+    bigmodel_api_key: str | None = Field(default=None, max_length=3000)
+
+
 class ChatMessage(BaseModel):
     id: str = Field(default_factory=lambda: new_id("msg"))
     session_id: str

@@ -22,6 +22,7 @@ class Settings:
     max_tool_rounds: int
     context_window_tokens: int
     runtime_config_file: Path
+    runtime_secret_file: Path
 
 
 def _parse_paths(value: str | None, fallback: list[Path]) -> list[Path]:
@@ -75,6 +76,7 @@ def _bool_override(overrides: dict[str, Any], key: str, fallback: bool) -> bool:
 def load_settings() -> Settings:
     project_root = Path(__file__).resolve().parents[2]
     runtime_config_file = project_root / ".nova" / "runtime-config.json"
+    runtime_secret_file = project_root / ".nova" / "runtime-secrets.json"
     overrides = _load_runtime_overrides(runtime_config_file)
     allowed_roots = _parse_paths(
         os.getenv("NOVA_ALLOWED_WORKSPACE_ROOTS"),
@@ -117,4 +119,5 @@ def load_settings() -> Settings:
             maximum=1000000,
         ),
         runtime_config_file=runtime_config_file,
+        runtime_secret_file=runtime_secret_file,
     )

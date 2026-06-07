@@ -78,6 +78,34 @@ class ApiTest(unittest.TestCase):
             self.assertEqual(payload["pending_config"]["permission_mode"], "ask")
             self.assertEqual(payload["pending_config"]["context_window_tokens"], 256000)
 
+    def test_runtime_api_key_update_takes_effect_without_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            secret_file = Path(tmpdir) / "runtime-secrets.json"
+            old_path = app_module.settings.runtime_secret_file
+            object.__setattr__(app_module.settings, "runtime_secret_file", secret_file)
+            app_module.provider.clear_runtime_api_key(persist=False)
+            self.addCleanup(lambda: object.__setattr__(app_module.settings, "runtime_secret_file", old_path))
+            self.addCleanup(lambda: app_module.provider.clear_runtime_api_key(persist=False))
+
+            with patch.dict("os.environ", {"BIGMODEL_API_KEY": ""}, clear=False):
+                before = self.client.get("/api/provider")
+                self.assertFalse(before.json()["configured"])
+
+                response = self.client.patch(
+                    "/api/runtime/secrets",
+                    json={"bigmodel_api_key": "test-runtime-key"},
+                )
+
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertTrue(payload["provider_configured"])
+                self.assertTrue(payload["api_key_set"])
+                self.assertNotIn("test-runtime-key", response.text)
+                self.assertTrue(secret_file.exists())
+
+                after = self.client.get("/api/provider")
+                self.assertTrue(after.json()["configured"])
+
     def test_runtime_statusline_estimates_session_tokens(self) -> None:
         session_response = self.client.post(
             "/api/chat/sessions",

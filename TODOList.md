@@ -968,3 +968,46 @@ $superpowers 使用技能重新审视我们的开发历程和产品形态
 - 本地网站：`http://127.0.0.1:8765`。
 
 ------ todo-list end at 2026/06/07/10:39:30 -----
+
+------ todo-list begin at 2026/06/07/11:05:00 -----
+
+用户请求：
+ui设置中添加可以填写apikey的地方，不需要重启就能生效。你每次开发完告诉我下一步的建议。还有ui也要同步修复https://jcnu7fvwv6c8.feishu.cn/base/Xim8bA99Oa1M8AscqKMcdkHVnIc?table=tbl3HqNdCo5e03JG&view=vew2jPJH61。继续遵守技能superpower
+
+制定清单：
+- [x] 1. 读取上下文和问题表
+  - [x] 1.1 使用 Superpowers 和 lark-base 技能
+  - [x] 1.2 读取当前 provider、settings UI 和 Base 问题表
+  - [x] 1.3 确认本轮并入 UI 问题：设置页 API Key 热更新、设置页紧凑/折叠、历史分组 unknown/重复项目名
+- [x] 2. TDD 补测试
+  - [x] 2.1 后端测试：API Key 设置后无需重启立即生效且不回显明文
+  - [x] 2.2 前端测试：历史分组不显示 unknown，重复项目名消歧
+  - [x] 2.3 运行测试确认红灯
+- [x] 3. 实现
+  - [x] 3.1 Provider 支持运行时 API Key 覆盖和本地 secrets 文件
+  - [x] 3.2 新增 API Key 设置接口和 runtime config 状态字段
+  - [x] 3.3 设置弹窗新增 API Key 输入，保存后立即刷新 provider 状态，不要求重启
+  - [x] 3.4 修复设置页密度/折叠表达和历史项目分组显示
+- [x] 4. 验证和交付
+  - [x] 4.1 自动化测试、JS 检查、Python 编译
+  - [x] 4.2 Playwright 真实验证 UI
+  - [x] 4.3 Base 问题表回写解释和解决方案，不改状态字段
+  - [x] 4.4 更新 CURRENT.md、PROGRESS.md、log.md、user-queries.md
+  - [x] 4.5 提交、推送、启动服务并给出下一步建议
+
+执行问题记录：
+暂无
+
+交付记录：
+- 设置页新增 BigModel API Key 密码输入框，保存到本机 ignored 的 `.nova/runtime-secrets.json`，保存后 provider 立即生效，不需要重启。
+- `/api/provider`、`/api/runtime/config` 只返回 `api_key_set` 和 `api_key_source`，不回显明文。
+- 新增 `PATCH /api/runtime/secrets`，用于运行时更新密钥。
+- 设置页运行配置改为更紧凑三列布局，API Key 横跨整行；窄屏回退单列。
+- 设置页运行配置和 Statusline 折叠已用 Playwright 验证 `hidden=true` 且 `display=none`。
+- 历史会话分组修复：旧线程显示“未绑定项目”，不再显示 unknown；同名项目用父目录消歧。
+- 已回写 Base 三条 UI 记录的解释和解决方案：`recvlM9rL975fz`、`recvlM9R5uMSrz`、`recvlMa6oqt8rb`，未修改状态字段。
+- 验证通过：`PYTHONPATH=src python3 -m unittest discover -s tests`、`node tests/frontend_runtime_events.test.js`、`node tests/frontend_session_groups.test.js`、`node --check static/app.js`、`python3 -m py_compile src/nova_gateway/*.py`。
+- Playwright 截图：`output/playwright/nova-settings-api-key-runtime.png`。
+- 本地网站：`http://127.0.0.1:8765`。
+
+------ todo-list end at 2026/06/07/11:50:40 -----
