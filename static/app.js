@@ -597,13 +597,21 @@ function bindToolTooltip(node) {
 function renderMemory(memory) {
   memoryStateEl.textContent = memory.enabled ? "已启用" : "关闭";
   memoryListEl.innerHTML = "";
-  appendMemoryGroup("真实注入上下文", memory.injected_sources || []);
-  const addButton = document.createElement("button");
-  addButton.type = "button";
-  addButton.className = "memory-add";
-  addButton.textContent = "添加记忆文件";
-  addButton.addEventListener("click", addMemoryFile);
-  memoryListEl.appendChild(addButton);
+  appendMemoryGroup("Agent 指令", (memory.injected_sources || []).filter((item) => item.kind === "instruction"));
+  appendMemoryGroup("人格文件", memory.persona_files || []);
+  appendMemoryGroup("长期记忆", memory.memory_files || []);
+  const personaButton = document.createElement("button");
+  personaButton.type = "button";
+  personaButton.className = "memory-add";
+  personaButton.textContent = "添加人格文件";
+  personaButton.addEventListener("click", addPersonaFile);
+  memoryListEl.appendChild(personaButton);
+  const memoryButton = document.createElement("button");
+  memoryButton.type = "button";
+  memoryButton.className = "memory-add";
+  memoryButton.textContent = "添加记忆文件";
+  memoryButton.addEventListener("click", addMemoryFile);
+  memoryListEl.appendChild(memoryButton);
 }
 
 function appendMemoryGroup(title, items) {
@@ -618,13 +626,13 @@ function appendMemoryGroup(title, items) {
       <span title="${escapeHtml(item.path)}">${escapeHtml(shortPath(item.path))}</span>
       <strong>${memoryLabel(item)}</strong>
     `;
-    if (item.injected && item.scope === "项目人格" && item.path && item.name?.endsWith(".md")) {
+    if (item.injected && item.path && item.name?.endsWith(".md") && ["persona", "memory"].includes(item.kind)) {
       row.tabIndex = 0;
       row.title = "点击查看和编辑";
-      row.addEventListener("click", () => editMemoryFile(item.name));
+      row.addEventListener("click", () => editContextFile(item));
       row.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
-          editMemoryFile(item.name);
+          editContextFile(item);
         }
       });
     }
@@ -632,17 +640,28 @@ function appendMemoryGroup(title, items) {
   }
 }
 
-async function editMemoryFile(name) {
+async function editContextFile(item) {
   try {
+    const name = item.name;
+    if (item.kind === "persona") {
+      const scope = item.scope === "全局人格" ? "global" : "project";
+      const file = await api(`/api/persona/files/${encodeURIComponent(scope)}/${encodeURIComponent(name)}`);
+      openMemoryDialog({ name, content: file.content || "", mode: "edit", source: "persona", scope });
+      return;
+    }
     const file = await api(`/api/memory/files/${encodeURIComponent(name)}`);
-    openMemoryDialog({ name, content: file.content || "", mode: "edit" });
+    openMemoryDialog({ name, content: file.content || "", mode: "edit", source: "memory", scope: "project" });
   } catch (error) {
-    streamStateEl.textContent = `记忆编辑失败：${error instanceof Error ? error.message : "未知错误"}`;
+    streamStateEl.textContent = `上下文文件编辑失败：${error instanceof Error ? error.message : "未知错误"}`;
   }
 }
 
+async function addPersonaFile() {
+  openMemoryDialog({ name: "soul.md", content: "", mode: "create", source: "persona", scope: "project" });
+}
+
 async function addMemoryFile() {
-  openMemoryDialog({ name: "soul.md", content: "", mode: "create" });
+  openMemoryDialog({ name: "index.md", content: "", mode: "create", source: "memory", scope: "project" });
 }
 
 function normalizeMemoryFileName(name) {
@@ -653,12 +672,19 @@ function normalizeMemoryFileName(name) {
   return cleaned.endsWith(".md") ? cleaned : `${cleaned}.md`;
 }
 
-function openMemoryDialog({ name, content, mode }) {
-  memoryDialogTitleEl.textContent = mode === "create" ? "添加记忆文件" : `编辑 ${name}`;
+function openMemoryDialog({ name, content, mode, source = "memory", scope = "project" }) {
+  const isPersona = source === "persona";
+  memoryDialogEl.dataset.source = source;
+  memoryDialogEl.dataset.scope = scope;
+  memoryDialogTitleEl.textContent = mode === "create"
+    ? (isPersona ? "添加人格文件" : "添加记忆文件")
+    : `编辑 ${isPersona ? "人格" : "记忆"} ${name}`;
   memoryDialogNameEl.value = normalizeMemoryFileName(name);
   memoryDialogNameEl.disabled = mode !== "create";
   memoryDialogContentEl.value = content || "";
-  memoryDialogStateEl.textContent = "仅支持 .md 文件；保存后会进入当前项目 .nova/memory。";
+  memoryDialogStateEl.textContent = isPersona
+    ? `仅支持 .md 文件；保存后会进入${scope === "global" ? "全局" : "当前项目"} .nova/persona。`
+    : "仅支持 .md 文件；保存后会进入当前项目 .nova/memory。";
   memoryDialogSaveEl.disabled = false;
   memoryDialogEl.showModal();
   memoryDialogContentEl.focus();
@@ -671,15 +697,18 @@ async function saveMemoryDialog() {
     return;
   }
   memoryDialogSaveEl.disabled = true;
-  memoryDialogStateEl.textContent = "正在保存记忆文件";
+  const source = memoryDialogEl.dataset.source || "memory";
+  const scope = memoryDialogEl.dataset.scope || "project";
+  const isPersona = source === "persona";
+  memoryDialogStateEl.textContent = isPersona ? "正在保存人格文件" : "正在保存记忆文件";
   try {
-    await api("/api/memory/files", {
+    await api(isPersona ? "/api/persona/files" : "/api/memory/files", {
       method: "POST",
-      body: JSON.stringify({ name, content: memoryDialogContentEl.value }),
+      body: JSON.stringify({ scope, name, content: memoryDialogContentEl.value }),
     });
     memoryDialogEl.close();
     await loadRuntimePanels();
-    streamStateEl.textContent = `已更新记忆 ${name}`;
+    streamStateEl.textContent = `已更新${isPersona ? "人格" : "记忆"} ${name}`;
   } catch (error) {
     memoryDialogStateEl.textContent = `保存失败：${error instanceof Error ? error.message : "未知错误"}`;
     memoryDialogSaveEl.disabled = false;

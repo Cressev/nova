@@ -310,6 +310,19 @@ async def write_memory_file(payload: dict) -> dict:
     return _agent_runtime().memory.write_file(name, content)
 
 
+@app.get("/api/persona/files/{scope}/{name}")
+async def persona_file(scope: str, name: str) -> dict:
+    return _agent_runtime().memory.read_persona_file(scope, name)
+
+
+@app.post("/api/persona/files")
+async def write_persona_file(payload: dict) -> dict:
+    scope = str(payload.get("scope") or "project")
+    name = str(payload.get("name") or "user.md")
+    content = str(payload.get("content") or "")
+    return _agent_runtime().memory.write_persona_file(scope, name, content)
+
+
 @app.post("/api/memory/remember")
 async def remember(payload: dict) -> dict:
     text = str(payload.get("text") or "").strip()

@@ -241,7 +241,11 @@ class RuntimeControlTest(unittest.TestCase):
     def test_memory_status_separates_global_and_project_persona_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             old_root = app_module.workspace_manager.current_root
-            app_module.workspace_manager.current_root = Path(tmpdir).resolve()
+            root = Path(tmpdir).resolve()
+            legacy_persona = root / ".nova" / "memory" / "user.md"
+            legacy_persona.parent.mkdir(parents=True, exist_ok=True)
+            legacy_persona.write_text("旧位置人格不应继续作为记忆展示", encoding="utf-8")
+            app_module.workspace_manager.current_root = root
             self.addCleanup(lambda: setattr(app_module.workspace_manager, "current_root", old_root))
 
             status = self.client.get("/api/memory/status").json()
@@ -253,6 +257,23 @@ class RuntimeControlTest(unittest.TestCase):
             self.assertIn("项目人格", scopes)
             self.assertIn("soul.md", names)
             self.assertIn("tools.md", names)
+            self.assertIn("persona_files", status)
+            self.assertIn("memory_files", status)
+            persona_paths = [item["path"] for item in status["persona_files"]]
+            memory_paths = [item["path"] for item in status["memory_files"]]
+            self.assertTrue(any("/.nova/persona/" in path for path in persona_paths))
+            self.assertTrue(all("/.nova/memory/" not in path for path in persona_paths))
+            self.assertTrue(all(Path(path).name not in {"user.md", "soul.md", "tools.md"} for path in memory_paths))
+
+            written = self.client.post(
+                "/api/persona/files",
+                json={"scope": "project", "name": "soul.md", "content": "人格：务实"},
+            )
+            self.assertEqual(written.status_code, 200)
+            self.assertIn("/.nova/persona/", written.json()["path"])
+            read = self.client.get("/api/persona/files/project/soul.md")
+            self.assertEqual(read.status_code, 200)
+            self.assertIn("务实", read.json()["content"])
 
 
 if __name__ == "__main__":
