@@ -18,11 +18,14 @@ class Settings:
     provider_base_url: str
     provider_model: str
     permission_mode: str
+    sandbox_mode: str
+    approval_policy: str
     network_access: bool
     max_tool_rounds: int
     context_window_tokens: int
     runtime_config_file: Path
     runtime_secret_file: Path
+    tool_hooks_file: Path
 
 
 def _parse_paths(value: str | None, fallback: list[Path]) -> list[Path]:
@@ -77,6 +80,7 @@ def load_settings() -> Settings:
     project_root = Path(__file__).resolve().parents[2]
     runtime_config_file = project_root / ".nova" / "runtime-config.json"
     runtime_secret_file = project_root / ".nova" / "runtime-secrets.json"
+    tool_hooks_file = project_root / ".nova" / "hooks.json"
     overrides = _load_runtime_overrides(runtime_config_file)
     allowed_roots = _parse_paths(
         os.getenv("NOVA_ALLOWED_WORKSPACE_ROOTS"),
@@ -87,8 +91,14 @@ def load_settings() -> Settings:
         "permission_mode",
         os.getenv("NOVA_PERMISSION_MODE", "workspace_write").strip(),
     )
-    if permission_mode not in {"read_only", "ask", "workspace_write"}:
+    if permission_mode not in {"read_only", "ask", "workspace_write", "default", "plan", "accept_edits", "dont_ask", "bypass_permissions"}:
         permission_mode = "ask"
+    sandbox_mode = _string_override(overrides, "sandbox_mode", os.getenv("NOVA_SANDBOX_MODE", "workspace_write").strip())
+    if sandbox_mode not in {"read_only", "workspace_write", "danger_full_access"}:
+        sandbox_mode = "workspace_write"
+    approval_policy = _string_override(overrides, "approval_policy", os.getenv("NOVA_APPROVAL_POLICY", "never").strip())
+    if approval_policy not in {"untrusted", "on_failure", "on_request", "never", "granular"}:
+        approval_policy = "on_request"
     return Settings(
         project_root=project_root,
         state_dir=project_root / ".nova",
@@ -103,6 +113,8 @@ def load_settings() -> Settings:
         ),
         provider_model=_string_override(overrides, "provider_model", os.getenv("BIGMODEL_MODEL", "glm-4.7")),
         permission_mode=permission_mode,
+        sandbox_mode=sandbox_mode,
+        approval_policy=approval_policy,
         network_access=_bool_override(overrides, "network_access", os.getenv("NOVA_NETWORK_ACCESS", "false").lower() == "true"),
         max_tool_rounds=_int_override(
             overrides,
@@ -120,4 +132,5 @@ def load_settings() -> Settings:
         ),
         runtime_config_file=runtime_config_file,
         runtime_secret_file=runtime_secret_file,
+        tool_hooks_file=tool_hooks_file,
     )

@@ -1,0 +1,208 @@
+from __future__ import annotations
+
+import json
+import subprocess
+from typing import Any
+
+from .agent_tools import ToolExecutionError, WorkspaceTools, tool_result_as_json
+from .tool_hooks import HookOutcome, ToolHookRunner
+
+
+class ToolExecutor:
+    """统一工具执行入口。
+
+    Runtime 只关心事件流；权限、hook、工具失败兜底都集中在这里，后续接
+    approve/deny、取消、分片 stdout 时不用再改模型循环。
+    """
+
+    def __init__(self, tools: WorkspaceTools, *, hooks: ToolHookRunner | None = None) -> None:
+        self.tools = tools
+        self.hooks = hooks or ToolHookRunner(cwd=tools.project_root)
+
+    def run_one(
+        self,
+        call_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        parallel: bool = False,
+    ) -> tuple[list[dict], str]:
+        events: list[dict] = []
+        current_arguments = dict(arguments)
+
+        pre_outcomes = self._run_hooks(
+            events,
+            "PreToolUse",
+            call_id,
+            tool_name,
+            current_arguments,
+        )
+        for outcome in pre_outcomes:
+            if outcome.updated_input:
+                current_arguments.update(outcome.updated_input)
+            if outcome.permission_decision == "deny":
+                reason = outcome.reason or "PreToolUse hook 拒绝执行"
+                self._run_hooks(
+                    events,
+                    "PermissionDenied",
+                    call_id,
+                    tool_name,
+                    current_arguments,
+                    reason=reason,
+                )
+                return self._failed_tool(events, call_id, tool_name, current_arguments, reason, {"hook": outcome.name})
+            if outcome.permission_decision == "ask":
+                event = {
+                    "type": "permission_request",
+                    "call_id": call_id,
+                    "tool": tool_name,
+                    "permission": self._permission_for(tool_name),
+                    "title": f"需要审批：{tool_name}",
+                    "message": outcome.reason or f"执行 {tool_name} 前需要用户确认。",
+                    "arguments": current_arguments,
+                    "data": {"reason": "PreToolUse hook 要求审批", "hook": outcome.name},
+                }
+                events.append(event)
+                return events, json.dumps(
+                    {
+                        "tool": tool_name,
+                        "ok": False,
+                        "permission_request": True,
+                        "permission": event["permission"],
+                        "arguments": current_arguments,
+                        "output": event["message"],
+                        "data": event["data"],
+                    },
+                    ensure_ascii=False,
+                )
+
+        events.append(
+            {
+                "type": "tool_start",
+                "call_id": call_id,
+                "tool": tool_name,
+                "arguments": current_arguments,
+                "title": self._tool_title(tool_name, current_arguments),
+                "parallel": parallel,
+            }
+        )
+        try:
+            result = self.tools.run(tool_name, current_arguments)
+        except (ToolExecutionError, OSError, ValueError, subprocess.SubprocessError) as exc:
+            message = str(exc)
+            self._run_hooks(
+                events,
+                "PostToolUseFailure",
+                call_id,
+                tool_name,
+                current_arguments,
+                error=message,
+            )
+            return self._failed_tool(events, call_id, tool_name, current_arguments, message, {})
+
+        self._run_hooks(
+            events,
+            "PostToolUse",
+            call_id,
+            tool_name,
+            current_arguments,
+            tool_response={"ok": result.ok, "output": result.output, "data": result.data or {}},
+        )
+        events.append(
+            {
+                "type": "tool_done",
+                "call_id": call_id,
+                "tool": tool_name,
+                "ok": result.ok,
+                "title": result.title,
+                "output": result.output,
+                "data": result.data or {},
+            }
+        )
+        return events, tool_result_as_json(result)
+
+    def _run_hooks(
+        self,
+        events: list[dict],
+        hook_event: str,
+        call_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        tool_response: Any | None = None,
+        error: str | None = None,
+        reason: str | None = None,
+    ) -> list[HookOutcome]:
+        outcomes = self.hooks.run(
+            hook_event,
+            tool_name=tool_name,
+            tool_input=arguments,
+            tool_use_id=call_id,
+            tool_response=tool_response,
+            error=error,
+            reason=reason,
+        )
+        for outcome in outcomes:
+            events.append(
+                {
+                    "type": "hook_start",
+                    "call_id": call_id,
+                    "tool": tool_name,
+                    "hook_event": hook_event,
+                    "hook_name": outcome.name,
+                    "title": f"Hook {hook_event}: {outcome.name}",
+                    "data": {},
+                }
+            )
+            events.append(
+                {
+                    "type": "hook_done",
+                    "call_id": call_id,
+                    "tool": tool_name,
+                    "hook_event": hook_event,
+                    "hook_name": outcome.name,
+                    "title": f"Hook 完成：{outcome.name}",
+                    "data": {
+                        "permission_decision": outcome.permission_decision,
+                        "reason": outcome.reason,
+                        "updated_input": outcome.updated_input,
+                        "additional_context": outcome.additional_context,
+                    },
+                }
+            )
+        return outcomes
+
+    def _failed_tool(
+        self,
+        events: list[dict],
+        call_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        message: str,
+        data: dict[str, Any],
+    ) -> tuple[list[dict], str]:
+        result_json = json.dumps(
+            {"tool": tool_name, "ok": False, "error": message, "data": data},
+            ensure_ascii=False,
+        )
+        events.append(
+            {
+                "type": "tool_done",
+                "call_id": call_id,
+                "tool": tool_name,
+                "arguments": arguments,
+                "ok": False,
+                "title": f"{tool_name} 执行失败",
+                "output": message,
+                "data": data,
+            }
+        )
+        return events, result_json
+
+    def _permission_for(self, tool_name: str) -> str:
+        specs = {item["name"]: item for item in self.tools.list_specs()}
+        return str(specs.get(tool_name, {}).get("permission") or "unknown")
+
+    def _tool_title(self, tool_name: str, arguments: dict[str, Any]) -> str:
+        target = arguments.get("path") or arguments.get("query") or arguments.get("command") or arguments.get("url") or ""
+        return f"{tool_name} {target}".strip()

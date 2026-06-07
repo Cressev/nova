@@ -67,6 +67,108 @@ class WorkspaceToolsTest(unittest.TestCase):
         self.assertTrue(specs["read_file"]["supports_parallel"])
         self.assertFalse(specs["create_file"]["supports_parallel"])
 
+    def test_tool_catalog_exposes_codex_like_metadata_and_core_tools(self) -> None:
+        specs = {item["name"]: item for item in self.tools.list_specs()}
+
+        for name in [
+            "read_file",
+            "read_many_files",
+            "list_files",
+            "glob_files",
+            "search_text",
+            "git_status",
+            "git_diff",
+            "shell_command",
+            "replace_in_file",
+            "create_file",
+            "write_file",
+            "edit_file",
+            "multi_edit",
+            "apply_patch",
+            "todo_read",
+            "todo_write",
+            "web_fetch",
+            "web_search",
+        ]:
+            self.assertIn(name, specs)
+            self.assertIn("category", specs[name])
+            self.assertIn("risk", specs[name])
+            self.assertIn("interrupt_behavior", specs[name])
+            self.assertTrue(specs[name]["hooks_enabled"])
+
+        self.assertEqual(specs["read_file"]["category"], "filesystem")
+        self.assertEqual(specs["shell_command"]["permission"], "shell")
+        self.assertEqual(specs["web_fetch"]["permission"], "network")
+        self.assertEqual(specs["web_search"]["permission"], "network")
+
+    def test_write_file_overwrites_and_returns_diff(self) -> None:
+        result = self.tools.run("write_file", {"path": "README.md", "content": "Nova 新内容\n"})
+
+        self.assertIn("-Nova 工具测试", result.output)
+        self.assertIn("+Nova 新内容", result.output)
+        self.assertEqual((self.root / "README.md").read_text(encoding="utf-8"), "Nova 新内容\n")
+
+    def test_edit_file_alias_and_multi_edit(self) -> None:
+        self.tools.run("edit_file", {"path": "README.md", "old": "Nova", "new": "Nova Agent"})
+        result = self.tools.run(
+            "multi_edit",
+            {
+                "path": "README.md",
+                "edits": [
+                    {"old": "Agent", "new": "Gateway"},
+                    {"old": "工具测试", "new": "工具链测试"},
+                ],
+            },
+        )
+
+        content = (self.root / "README.md").read_text(encoding="utf-8")
+        self.assertIn("Nova Gateway 工具链测试", content)
+        self.assertIn("+Nova Gateway 工具链测试", result.output)
+
+    def test_todo_read_returns_current_todo_snapshot(self) -> None:
+        self.tools.run("todo_write", {"items": [{"content": "补齐工具", "status": "in_progress"}]})
+
+        result = self.tools.run("todo_read", {})
+
+        self.assertIn("补齐工具", result.output)
+
+    def test_danger_full_access_allows_workspace_outside_path(self) -> None:
+        outside = Path(self.tmpdir.name).parent / f"{Path(self.tmpdir.name).name}-outside.txt"
+        outside.write_text("外部文件\n", encoding="utf-8")
+        self.addCleanup(lambda: outside.unlink(missing_ok=True))
+        tools = WorkspaceTools(self.root, sandbox_mode="danger_full_access")
+
+        result = tools.run("read_file", {"path": str(outside)})
+
+        self.assertTrue(result.ok)
+        self.assertIn("外部文件", result.output)
+
+    def test_network_tools_require_network_access(self) -> None:
+        tools = WorkspaceTools(self.root, network_access=False)
+
+        with self.assertRaises(ToolExecutionError):
+            tools.run("web_fetch", {"url": "https://example.com"})
+        with self.assertRaises(ToolExecutionError):
+            tools.run("web_search", {"query": "Nova"})
+
+    def test_codex_like_permission_modes_have_real_behavior(self) -> None:
+        WorkspaceTools(self.root, permission_mode="accept_edits").run(
+            "create_file",
+            {"path": "accepted.txt", "content": "ok"},
+        )
+
+        with self.assertRaises(ToolExecutionError):
+            WorkspaceTools(self.root, permission_mode="accept_edits").run("shell_command", {"command": "pwd"})
+
+        with self.assertRaises(ToolExecutionError):
+            WorkspaceTools(self.root, permission_mode="plan").run("create_file", {"path": "planned.txt", "content": "x"})
+
+        with self.assertRaises(ToolExecutionError):
+            WorkspaceTools(self.root, permission_mode="dont_ask").run("create_file", {"path": "denied.txt", "content": "x"})
+
+        result = WorkspaceTools(self.root, permission_mode="bypass_permissions").run("shell_command", {"command": "pwd"})
+        self.assertTrue(result.ok)
+
 
 if __name__ == "__main__":
     unittest.main()

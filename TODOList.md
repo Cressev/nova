@@ -1049,3 +1049,44 @@ ui设置中添加可以填写apikey的地方，不需要重启就能生效。你
 - 验证后已恢复 `workspace_write`，本地服务保持启动：`http://127.0.0.1:8765`。
 
 ------ todo-list end at 2026/06/07/12:36:00 -----
+
+------ todo-list begin at 2026/06/07/12:41:58 -----
+
+用户请求：
+直接把工具和权限开发齐全，参考cc和codex源码，他们有什么工具，有哪些用户可选择切换的权限，工具的调用兜底、包括hook接口全部实现。
+
+制定清单：
+- [x] 1. 读取参考和现状
+  - [x] 1.1 读取 Nova 当前工具、权限、配置、前端设置页
+  - [x] 1.2 对照 cc 源码的工具、PermissionMode、PermissionRule、Hook schemas、StreamingToolExecutor
+  - [x] 1.3 对照 Codex 源码的 AskForApproval、SandboxMode、app-server approval/command/file schema
+- [x] 2. TDD 补协议测试
+  - [x] 2.1 工具清单增加分类、风险、hook、权限元数据和新增常用工具
+  - [x] 2.2 配置支持 sandbox_mode 和 approval_policy，前端可选择
+  - [x] 2.3 Tool hooks 支持 PreToolUse、PostToolUse、PostToolUseFailure、PermissionDenied、PermissionRequest
+  - [x] 2.4 Runtime 输出 hook/runtime 事件并有工具调用兜底
+- [x] 3. 实现工具/权限/hook 基座
+  - [x] 3.1 抽 ToolExecutor，统一并行、独占、权限和 hooks
+  - [x] 3.2 扩展 WorkspaceTools 工具集和元数据
+  - [x] 3.3 扩展 settings/models/main API 和前端设置
+  - [x] 3.4 将 runtime 改用 ToolExecutor
+- [x] 4. 验证和交付
+  - [x] 4.1 自动化测试、JS 检查、Python 编译
+  - [x] 4.2 Playwright 真实验证配置与工具展示
+  - [x] 4.3 更新 CURRENT.md、PROGRESS.md、log.md、user-queries.md
+  - [x] 4.4 提交、推送、服务保持启动并给出下一步建议
+
+执行问题记录：
+暂无
+
+交付记录：
+- 对照 cc/Codex 扩展工具清单到 18 个：新增 `read_many_files`、`glob_files`、`edit_file`、`multi_edit`、`write_file`、`todo_read`、`todo_write`、`web_fetch`、`web_search` 等，并给每个工具补齐 category、risk、interrupt_behavior、hooks_enabled。
+- 新增 `ToolExecutor` 和 `ToolHookRunner`，统一 PreToolUse、PermissionRequest、PostToolUse、PostToolUseFailure、PermissionDenied、PostToolUse 等 hook 链路；hook 拒绝和工具异常都会回填可展示的失败结果。
+- 权限配置扩展为 Codex/cc 风格组合：permission mode 支持 `read_only`、`ask`、`workspace_write`、`default`、`plan`、`accept_edits`、`dont_ask`、`bypass_permissions`；sandbox 支持 `read_only`、`workspace_write`、`danger_full_access`；approval policy 支持 `untrusted`、`on_failure`、`on_request`、`never`、`granular`。
+- 设置页新增权限模式、沙箱模式、审批策略选择，运行配置保存后立即影响下一次请求，不再要求重启。
+- 只读并行工具也改走 `ToolExecutor`，不再绕过 hooks 和失败兜底；hook 拒绝时工具卡片保留调用参数。
+- 验证通过：`PYTHONPATH=src python3 -m unittest discover -s tests`、`node tests/frontend_runtime_events.test.js`、`node tests/frontend_session_groups.test.js`、`node tests/frontend_permission_events.test.js`、`node --check static/app.js`、`python3 -m py_compile src/nova_gateway/*.py`、`git diff --check`。
+- Playwright 真实验证：设置页可见权限/沙箱/审批配置和 API Key；右侧 Tools 显示 18 个工具；临时 hook 拦截 `shell_command` 时页面展示 hook 状态和失败工具卡片，参数保留。截图：`output/playwright/nova-tools-permissions-hooks-settings.png`、`output/playwright/nova-hook-deny-tool-details.png`。
+- 临时 `.nova/hooks.json` 已删除，当前 `/api/runtime/config` 返回 `hooks_enabled=false`。本地网站：`http://127.0.0.1:8765`。
+
+------ todo-list end at 2026/06/07/13:06:40 -----

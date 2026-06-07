@@ -54,11 +54,27 @@ class ApiTest(unittest.TestCase):
         development_state = memory.json()["development_state"]
         self.assertTrue(all(not item["injected"] for item in development_state))
 
-    def test_runtime_config_update_writes_pending_restart_config(self) -> None:
+    def test_runtime_config_update_takes_effect_without_restart(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             old_path = app_module.settings.runtime_config_file
+            old_permission = app_module.settings.permission_mode
+            old_sandbox = app_module.settings.sandbox_mode
+            old_approval = app_module.settings.approval_policy
+            old_network = app_module.settings.network_access
+            old_rounds = app_module.settings.max_tool_rounds
+            old_context = app_module.settings.context_window_tokens
+            old_model = app_module.provider.model
+            old_base_url = app_module.provider.base_url
             object.__setattr__(app_module.settings, "runtime_config_file", Path(tmpdir) / "runtime-config.json")
             self.addCleanup(lambda: object.__setattr__(app_module.settings, "runtime_config_file", old_path))
+            self.addCleanup(lambda: object.__setattr__(app_module.settings, "permission_mode", old_permission))
+            self.addCleanup(lambda: object.__setattr__(app_module.settings, "sandbox_mode", old_sandbox))
+            self.addCleanup(lambda: object.__setattr__(app_module.settings, "approval_policy", old_approval))
+            self.addCleanup(lambda: object.__setattr__(app_module.settings, "network_access", old_network))
+            self.addCleanup(lambda: object.__setattr__(app_module.settings, "max_tool_rounds", old_rounds))
+            self.addCleanup(lambda: object.__setattr__(app_module.settings, "context_window_tokens", old_context))
+            self.addCleanup(lambda: setattr(app_module.provider, "model", old_model))
+            self.addCleanup(lambda: setattr(app_module.provider, "base_url", old_base_url))
 
             response = self.client.patch(
                 "/api/runtime/config",
@@ -67,6 +83,8 @@ class ApiTest(unittest.TestCase):
                     "provider_base_url": "https://open.bigmodel.cn/api/paas/v4",
                     "context_window_tokens": 256000,
                     "permission_mode": "ask",
+                    "sandbox_mode": "workspace_write",
+                    "approval_policy": "on_request",
                     "network_access": True,
                     "max_tool_rounds": 8,
                 },
@@ -74,9 +92,29 @@ class ApiTest(unittest.TestCase):
 
             self.assertEqual(response.status_code, 200)
             payload = response.json()
-            self.assertTrue(payload["restart_required"])
+            self.assertFalse(payload["restart_required"])
+            self.assertEqual(payload["permission_mode"], "ask")
+            self.assertEqual(payload["approval_policy"], "on_request")
+            self.assertTrue(payload["network_access"])
             self.assertEqual(payload["pending_config"]["permission_mode"], "ask")
+            self.assertEqual(payload["pending_config"]["sandbox_mode"], "workspace_write")
+            self.assertEqual(payload["pending_config"]["approval_policy"], "on_request")
             self.assertEqual(payload["pending_config"]["context_window_tokens"], 256000)
+            self.assertEqual(app_module.settings.permission_mode, "ask")
+            self.assertEqual(app_module.settings.max_tool_rounds, 8)
+            self.assertEqual(app_module.provider.model, "glm-4.7")
+
+    def test_runtime_config_exposes_permission_choices_and_hook_status(self) -> None:
+        response = self.client.get("/api/runtime/config")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("permission_modes", payload)
+        self.assertIn("sandbox_modes", payload)
+        self.assertIn("approval_policies", payload)
+        self.assertIn("hooks_enabled", payload)
+        self.assertIn("danger_full_access", payload["sandbox_modes"])
+        self.assertIn("on_request", payload["approval_policies"])
 
     def test_runtime_api_key_update_takes_effect_without_restart(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

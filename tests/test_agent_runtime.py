@@ -183,6 +183,43 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertTrue(start["call_id"].startswith("tool_"))
         self.assertEqual(start["call_id"], done["call_id"])
 
+    def test_parallel_readonly_tools_use_executor_hooks(self) -> None:
+        hook_file = Path(self.tmpdir.name, ".nova-hooks.json")
+        hook_file.write_text(
+            '{"hooks":{"PreToolUse":[{"name":"readme-alias","matcher":"read_file",'
+            '"updated_input":{"path":"README.md"}}]}}',
+            encoding="utf-8",
+        )
+        Path(self.tmpdir.name, "README.md").write_text("Nova\n", encoding="utf-8")
+        runtime = CodexLikeAgentRuntime(
+            provider=BigModelProvider(),
+            project_root=Path(self.tmpdir.name),
+            tool_hooks_file=hook_file,
+        )
+
+        async def collect_events() -> list[dict]:
+            return [
+                event
+                async for event in runtime._run_tool_calls(
+                    [
+                        {"tool": "read_file", "arguments": {"path": "ALIAS.md"}},
+                        {"tool": "list_files", "arguments": {"path": ".", "limit": 5}},
+                    ]
+                )
+            ]
+
+        events = asyncio.run(collect_events())
+        hook_events = [event for event in events if event["type"] == "hook_done"]
+        read_result = next(
+            event["result_json"]
+            for event in events
+            if event["type"] == "tool_result_json" and '"tool": "read_file"' in event["result_json"]
+        )
+
+        self.assertTrue(any(event["hook_name"] == "readme-alias" for event in hook_events))
+        self.assertIn("Nova", read_result)
+        self.assertTrue(any(event["type"] == "tool_start" and event.get("parallel") for event in events))
+
     def test_ask_permission_emits_permission_request_for_shell(self) -> None:
         runtime = CodexLikeAgentRuntime(
             provider=BigModelProvider(),
@@ -206,6 +243,34 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertEqual(request["permission"], "shell")
         self.assertEqual(request["arguments"]["command"], "pwd")
         self.assertIn("permission_request", result["result_json"])
+
+    def test_tool_hooks_emit_runtime_events_and_can_deny(self) -> None:
+        hook_file = Path(self.tmpdir.name, ".nova-hooks.json")
+        hook_file.write_text(
+            '{"hooks":{"PreToolUse":[{"name":"deny-shell","matcher":"shell_command",'
+            '"permission_decision":"deny","reason":"hook 拒绝执行"}]}}',
+            encoding="utf-8",
+        )
+        runtime = CodexLikeAgentRuntime(
+            provider=BigModelProvider(),
+            project_root=Path(self.tmpdir.name),
+            tool_hooks_file=hook_file,
+        )
+
+        async def collect_events() -> list[dict]:
+            return [
+                event
+                async for event in runtime._run_tool_calls(
+                    [{"tool": "shell_command", "arguments": {"command": "pwd", "workdir": "."}}]
+                )
+            ]
+
+        events = asyncio.run(collect_events())
+
+        self.assertTrue(any(event["type"] == "hook_start" and event["hook_event"] == "PreToolUse" for event in events))
+        done = next(event for event in events if event["type"] == "tool_done")
+        self.assertFalse(done["ok"])
+        self.assertIn("hook 拒绝执行", done["output"])
 
     def test_final_stream_tool_calls_are_executed_not_rendered_as_text(self) -> None:
         async def fake_stream(_messages):

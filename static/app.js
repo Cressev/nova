@@ -314,6 +314,28 @@ function renderSettings() {
         ${renderPermissionOption("workspace_write", "工作区写入", pending.permission_mode ?? config.permission_mode)}
         ${renderPermissionOption("ask", "需要确认", pending.permission_mode ?? config.permission_mode)}
         ${renderPermissionOption("read_only", "只读", pending.permission_mode ?? config.permission_mode)}
+        ${renderPermissionOption("plan", "计划模式", pending.permission_mode ?? config.permission_mode)}
+        ${renderPermissionOption("accept_edits", "自动接受编辑", pending.permission_mode ?? config.permission_mode)}
+        ${renderPermissionOption("dont_ask", "不询问", pending.permission_mode ?? config.permission_mode)}
+        ${renderPermissionOption("bypass_permissions", "跳过权限", pending.permission_mode ?? config.permission_mode)}
+      </select>
+    </label>
+    <label class="setting-field">
+      <span>沙箱模式</span>
+      <select name="sandbox_mode">
+        ${renderPermissionOption("read_only", "只读", pending.sandbox_mode ?? config.sandbox_mode)}
+        ${renderPermissionOption("workspace_write", "工作区写入", pending.sandbox_mode ?? config.sandbox_mode)}
+        ${renderPermissionOption("danger_full_access", "完全访问", pending.sandbox_mode ?? config.sandbox_mode)}
+      </select>
+    </label>
+    <label class="setting-field">
+      <span>审批策略</span>
+      <select name="approval_policy">
+        ${renderPermissionOption("untrusted", "不信任时询问", pending.approval_policy ?? config.approval_policy)}
+        ${renderPermissionOption("on_failure", "失败时询问", pending.approval_policy ?? config.approval_policy)}
+        ${renderPermissionOption("on_request", "每次请求询问", pending.approval_policy ?? config.approval_policy)}
+        ${renderPermissionOption("never", "永不询问", pending.approval_policy ?? config.approval_policy)}
+        ${renderPermissionOption("granular", "细粒度", pending.approval_policy ?? config.approval_policy)}
       </select>
     </label>
     <label class="setting-field setting-field-inline">
@@ -344,7 +366,7 @@ function renderSettings() {
   }
   settingsNoteEl.textContent = config.restart_required
     ? "已有待生效配置，点击“重启网关”后生效。"
-    : "API Key 保存后立即生效；模型、权限等运行配置修改后才需要重启。";
+    : "API Key、模型和权限配置保存后都会立即影响下一次请求。";
   settingsRestartEl.disabled = !config.restart_required;
   applySettingsSectionState();
 }
@@ -457,6 +479,8 @@ function renderPermissions(permissions) {
     ["网络访问", permissions.network_access ? "允许" : "关闭"],
     ["审批策略", permissions.approval_policy],
     ["权限模式", permissions.permission_mode],
+    ["沙箱模式", permissions.sandbox_mode],
+    ["审批 ID", permissions.approval_policy_id],
     ["Shell", permissions.shell_commands ? "受控允许" : "关闭"],
   ];
   for (const [label, value] of rows) {
@@ -474,8 +498,11 @@ function renderRuntimeConfig(config) {
     ["API Key", config.api_key_set ? `已配置 · ${config.api_key_source === "runtime" ? "设置页" : "环境变量"}` : "未配置"],
     ["上下文窗口", `${formatCompactNumber(config.context_window_tokens || 0)} tokens`],
     ["工具轮次", String(config.max_tool_rounds)],
+    ["沙箱模式", config.sandbox_mode],
+    ["审批策略", config.approval_policy],
     ["只读并行", config.tool_parallel_readonly ? "已启用" : "关闭"],
     ["审批 UI", config.approval_ui_enabled ? "已启用" : "未实现"],
+    ["Hooks", config.hooks_enabled ? "已启用" : "未配置"],
     ["工作树", config.worktree_enabled ? "已启用" : "未实现"],
   ];
   renderKeyValueRows(configListEl, rows);
@@ -830,6 +857,10 @@ function appendStoredEvent(event) {
     );
     return;
   }
+  if (event.type === "hook" || event.event_type?.startsWith("hook.")) {
+    appendStatusEvent(event.title || event.message || "Hook 事件", { autoscroll: false });
+    return;
+  }
   if (event.type === "status") {
     appendStatusEvent(event.title, { autoscroll: false });
   }
@@ -1171,7 +1202,7 @@ settingsSaveEl.addEventListener("click", async () => {
     } else {
       streamStateEl.textContent = state.runtimeConfig.restart_required
         ? "配置已保存，重启后生效"
-        : "配置已保存";
+        : "配置已保存并立即生效";
     }
     await Promise.all([loadHealth(), loadRuntimePanels(), refreshStatusline()]);
     renderSettings();
@@ -1229,6 +1260,8 @@ function collectRuntimeSettings() {
     provider_base_url: form.querySelector('[name="provider_base_url"]').value.trim(),
     context_window_tokens: Number(form.querySelector('[name="context_window_tokens"]').value),
     permission_mode: form.querySelector('[name="permission_mode"]').value,
+    sandbox_mode: form.querySelector('[name="sandbox_mode"]').value,
+    approval_policy: form.querySelector('[name="approval_policy"]').value,
     network_access: form.querySelector('[name="network_access"]').checked,
     max_tool_rounds: Number(form.querySelector('[name="max_tool_rounds"]').value),
   };
@@ -1703,6 +1736,11 @@ async function streamAssistant(sessionId, content, assistantNode) {
       streamStateEl.textContent = event.title || "请求失败";
       appendStatusEvent(event.message || event.title || "请求失败", { beforeNode: assistantNode });
       updateTurnToolControl(assistantNode);
+      return;
+    }
+    if (event.event_type?.startsWith("hook.")) {
+      appendStatusEvent(event.title || "Hook 事件", { beforeNode: assistantNode });
+      updateTurnToolControl(assistantNode);
     }
   };
 
@@ -1806,6 +1844,9 @@ function consumeStreamLines(buffer, assistantNode, handlers) {
     }
     if (event.type === "permission_request") {
       handlers.onPermissionRequest?.(event);
+    }
+    if (event.type === "hook_start" || event.type === "hook_done") {
+      handlers.onStatus?.({ status: event.title || "Hook 事件" });
     }
     if (event.type === "agent_status") {
       handlers.onStatus?.(event);

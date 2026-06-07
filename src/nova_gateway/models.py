@@ -58,7 +58,9 @@ class RuntimeConfigUpdate(BaseModel):
     provider_model: str | None = Field(default=None, min_length=1, max_length=80)
     provider_base_url: str | None = Field(default=None, min_length=1, max_length=300)
     context_window_tokens: int | None = Field(default=None, ge=8192, le=1000000)
-    permission_mode: str | None = Field(default=None, pattern="^(read_only|ask|workspace_write)$")
+    permission_mode: str | None = Field(default=None, pattern="^(read_only|ask|workspace_write|default|plan|accept_edits|dont_ask|bypass_permissions)$")
+    sandbox_mode: str | None = Field(default=None, pattern="^(read_only|workspace_write|danger_full_access)$")
+    approval_policy: str | None = Field(default=None, pattern="^(untrusted|on_failure|on_request|never|granular)$")
     network_access: bool | None = None
     max_tool_rounds: int | None = Field(default=None, ge=1, le=12)
 
@@ -151,6 +153,8 @@ class WorkspacePermissions(BaseModel):
     network_access: bool
     approval_policy: str
     permission_mode: str = "workspace_write"
+    sandbox_mode: str = "workspace_write"
+    approval_policy_id: str = "on_request"
     shell_commands: bool = True
 
 

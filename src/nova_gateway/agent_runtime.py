@@ -3,15 +3,16 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-import subprocess
 from collections.abc import AsyncIterator
 from pathlib import Path
 from uuid import uuid4
 
-from .agent_tools import TOOL_SPECS, ToolExecutionError, WorkspaceTools, tool_result_as_json
+from .agent_tools import TOOL_SPECS, WorkspaceTools
 from .memory import ProjectMemory
 from .models import ChatMessage, ChatRole
 from .provider import BigModelProvider, ProviderError
+from .tool_executor import ToolExecutor
+from .tool_hooks import ToolHookRunner
 
 TOOL_CALL_PATTERN = re.compile(
     r"<tool_call>\s*(?P<payload>\{.*?\})\s*(?:</tool_call>)?",
@@ -32,12 +33,25 @@ class CodexLikeAgentRuntime:
         global_agent_file: Path | None = None,
         max_tool_rounds: int = 4,
         permission_mode: str = "workspace_write",
+        sandbox_mode: str = "workspace_write",
+        approval_policy: str = "never",
+        network_access: bool = False,
+        tool_hooks_file: Path | None = None,
     ) -> None:
         self.provider = provider
-        self.tools = WorkspaceTools(project_root, permission_mode=permission_mode)
+        self.tools = WorkspaceTools(
+            project_root,
+            permission_mode=permission_mode,
+            sandbox_mode=sandbox_mode,
+            network_access=network_access,
+        )
+        self.hooks = ToolHookRunner.from_file(tool_hooks_file, cwd=project_root)
+        self.executor = ToolExecutor(self.tools, hooks=self.hooks)
         self.memory = ProjectMemory(project_root, global_agent_file=global_agent_file)
         self.max_tool_rounds = max_tool_rounds
         self.permission_mode = permission_mode
+        self.sandbox_mode = sandbox_mode
+        self.approval_policy = approval_policy
 
     async def stream(
         self,
@@ -431,78 +445,106 @@ class CodexLikeAgentRuntime:
 
         if parallel:
             yield {"type": "agent_status", "status": f"并行执行 {len(normalized)} 个只读工具"}
-            for call_id, name, arguments in normalized:
-                yield {
-                    "type": "tool_start",
-                    "call_id": call_id,
-                    "tool": name,
-                    "arguments": arguments,
-                    "title": self._tool_title(name, arguments),
-                    "parallel": True,
-                }
             results = await asyncio.gather(
-                *(asyncio.to_thread(self._run_one_tool, call_id, name, args) for call_id, name, args in normalized)
+                *(
+                    asyncio.to_thread(self.executor.run_one, call_id, name, args, parallel=True)
+                    for call_id, name, args in normalized
+                )
             )
-            for event, result_json in results:
-                yield event
+            for events, result_json in results:
+                for event in events:
+                    yield event
                 yield {"type": "tool_result_json", "result_json": result_json}
             return
 
         for call_id, name, arguments in normalized:
             if self._requires_permission_request(name):
+                hook_events, hook_decision = self._run_permission_request_hooks(call_id, name, arguments)
+                for hook_event in hook_events:
+                    yield hook_event
+                if hook_decision == "allow":
+                    events, result_json = self.executor.run_one(call_id, name, arguments)
+                    for event in events:
+                        yield event
+                    yield {"type": "tool_result_json", "result_json": result_json}
+                    continue
+                if hook_decision == "deny":
+                    result_json = json.dumps(
+                        {"tool": name, "ok": False, "error": "PermissionRequest hook 拒绝执行"},
+                        ensure_ascii=False,
+                    )
+                    yield {
+                        "type": "tool_done",
+                        "call_id": call_id,
+                        "tool": name,
+                        "ok": False,
+                        "title": f"{name} 执行失败",
+                        "output": "PermissionRequest hook 拒绝执行",
+                        "data": {"hook_decision": "deny"},
+                    }
+                    yield {"type": "tool_result_json", "result_json": result_json}
+                    continue
                 event = self._permission_request_event(call_id, name, arguments)
                 yield event
                 yield {"type": "tool_result_json", "result_json": self._permission_result_json(event)}
                 continue
-            yield {
-                "type": "tool_start",
-                "call_id": call_id,
-                "tool": name,
-                "arguments": arguments,
-                "title": self._tool_title(name, arguments),
-                "parallel": False,
-            }
-            event, result_json = self._run_one_tool(call_id, name, arguments)
-            yield event
+            events, result_json = self.executor.run_one(call_id, name, arguments)
+            for event in events:
+                yield event
             yield {"type": "tool_result_json", "result_json": result_json}
-
-    def _run_one_tool(self, call_id: str, tool_name: str, arguments: dict) -> tuple[dict, str]:
-        try:
-            result = self.tools.run(tool_name, arguments)
-            result_json = tool_result_as_json(result)
-            return (
-                {
-                    "type": "tool_done",
-                    "call_id": call_id,
-                    "tool": tool_name,
-                    "ok": result.ok,
-                    "title": result.title,
-                    "output": result.output,
-                    "data": result.data or {},
-                },
-                result_json,
-            )
-        except (ToolExecutionError, OSError, ValueError, subprocess.SubprocessError) as exc:  # type: ignore[name-defined]
-            result_json = json.dumps(
-                {"tool": tool_name, "ok": False, "error": str(exc)},
-                ensure_ascii=False,
-            )
-            return (
-                {
-                    "type": "tool_done",
-                    "call_id": call_id,
-                    "tool": tool_name,
-                    "ok": False,
-                    "title": f"{tool_name} 执行失败",
-                    "output": str(exc),
-                    "data": {},
-                },
-                result_json,
-            )
 
     def _requires_permission_request(self, tool_name: str) -> bool:
         spec = TOOL_SPECS.get(tool_name)
-        return bool(self.permission_mode == "ask" and spec and spec.permission != "read")
+        if not spec or spec.permission == "read":
+            return False
+        if self.permission_mode in {"ask", "plan"}:
+            return True
+        if self.approval_policy == "on_request":
+            return spec.permission in {"write", "shell"}
+        return False
+
+    def _run_permission_request_hooks(self, call_id: str, tool_name: str, arguments: dict) -> tuple[list[dict], str | None]:
+        events: list[dict] = []
+        decision: str | None = None
+        outcomes = self.hooks.run(
+            "PermissionRequest",
+            tool_name=tool_name,
+            tool_input=arguments,
+            tool_use_id=call_id,
+        )
+        for outcome in outcomes:
+            events.append(
+                {
+                    "type": "hook_start",
+                    "call_id": call_id,
+                    "tool": tool_name,
+                    "hook_event": "PermissionRequest",
+                    "hook_name": outcome.name,
+                    "title": f"Hook PermissionRequest: {outcome.name}",
+                    "data": {},
+                }
+            )
+            events.append(
+                {
+                    "type": "hook_done",
+                    "call_id": call_id,
+                    "tool": tool_name,
+                    "hook_event": "PermissionRequest",
+                    "hook_name": outcome.name,
+                    "title": f"Hook 完成：{outcome.name}",
+                    "data": {
+                        "permission_decision": outcome.permission_decision,
+                        "reason": outcome.reason,
+                        "updated_input": outcome.updated_input,
+                        "additional_context": outcome.additional_context,
+                    },
+                }
+            )
+            if outcome.updated_input:
+                arguments.update(outcome.updated_input)
+            if outcome.permission_decision in {"allow", "deny", "ask"}:
+                decision = outcome.permission_decision
+        return events, decision
 
     def _permission_request_event(self, call_id: str, tool_name: str, arguments: dict) -> dict:
         spec = TOOL_SPECS.get(tool_name)
@@ -632,14 +674,23 @@ class CodexLikeAgentRuntime:
 
 可用工具：
 - read_file: {"path":"相对路径","max_bytes":24000}
+- read_many_files: {"paths":["相对路径"],"max_bytes_each":12000}
 - list_files: {"path":".","limit":200}
+- glob_files: {"pattern":"**/*.py","path":".","limit":200}
 - search_text: {"query":"关键词","path":".","max_results":80}
 - git_status: {}
 - git_diff: {"path":"可选相对路径","max_bytes":24000}
 - shell_command: {"command":"受控 shell 命令","workdir":".","timeout_ms":10000}
 - replace_in_file: {"path":"文件","old":"原文","new":"新文"}
+- edit_file: {"path":"文件","old":"原文","new":"新文"}
+- multi_edit: {"path":"文件","edits":[{"old":"原文","new":"新文"}]}
 - create_file: {"path":"文件","content":"内容"}
+- write_file: {"path":"文件","content":"内容"}
 - apply_patch: {"patch":"unified diff"}
+- todo_read: {}
+- todo_write: {"items":[{"content":"任务","status":"pending|in_progress|completed"}]}
+- web_fetch: {"url":"https://example.com","max_bytes":20000}
+- web_search: {"query":"搜索关键词","max_bytes":20000}
 
 路径必须使用工作区内相对路径。回答使用中文，保持直接、务实。
 """.strip()

@@ -45,6 +45,10 @@ from .settings import load_settings
 from .store import TaskStore
 from .workspace import WorkspaceError, WorkspaceManager
 
+PERMISSION_MODES = ["read_only", "ask", "workspace_write", "default", "plan", "accept_edits", "dont_ask", "bypass_permissions"]
+SANDBOX_MODES = ["read_only", "workspace_write", "danger_full_access"]
+APPROVAL_POLICIES = ["untrusted", "on_failure", "on_request", "never", "granular"]
+
 settings = load_settings()
 store = TaskStore(settings.state_dir)
 workspace_manager = WorkspaceManager(
@@ -65,6 +69,8 @@ def _workspace_tools() -> WorkspaceTools:
     return WorkspaceTools(
         workspace_manager.current_root,
         permission_mode=settings.permission_mode,
+        sandbox_mode=settings.sandbox_mode,
+        network_access=settings.network_access,
     )
 
 
@@ -75,6 +81,10 @@ def _agent_runtime() -> CodexLikeAgentRuntime:
         global_agent_file=settings.global_agent_file,
         max_tool_rounds=settings.max_tool_rounds,
         permission_mode=settings.permission_mode,
+        sandbox_mode=settings.sandbox_mode,
+        approval_policy=settings.approval_policy,
+        network_access=settings.network_access,
+        tool_hooks_file=settings.tool_hooks_file,
     )
 
 
@@ -128,6 +138,7 @@ async def update_runtime_config(payload: RuntimeConfigUpdate) -> dict:
         json.dumps(pending, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    _apply_runtime_config(update)
     result = _runtime_config_payload()
     result["pending_config"] = pending
     return result
@@ -165,6 +176,8 @@ def _runtime_config_payload() -> dict:
         "provider_base_url": provider.base_url,
         "context_window_tokens": settings.context_window_tokens,
         "permission_mode": settings.permission_mode,
+        "sandbox_mode": settings.sandbox_mode,
+        "approval_policy": settings.approval_policy,
         "network_access": settings.network_access,
         "max_tool_rounds": settings.max_tool_rounds,
     }
@@ -173,20 +186,42 @@ def _runtime_config_payload() -> dict:
         "model": provider.model,
         "base_url": provider.base_url,
         "permission_mode": settings.permission_mode,
+        "sandbox_mode": settings.sandbox_mode,
+        "approval_policy": settings.approval_policy,
         "network_access": settings.network_access,
         "max_tool_rounds": settings.max_tool_rounds,
         "context_window_tokens": settings.context_window_tokens,
         "worktree_enabled": False,
-        "approval_ui_enabled": False,
+        "approval_ui_enabled": True,
         "tool_parallel_readonly": True,
         "memory_enabled": True,
+        "hooks_enabled": settings.tool_hooks_file.exists(),
+        "tool_hooks_file": str(settings.tool_hooks_file),
+        "permission_modes": PERMISSION_MODES,
+        "sandbox_modes": SANDBOX_MODES,
+        "approval_policies": APPROVAL_POLICIES,
         "editable": True,
         "restart_required": restart_required,
-        "restart_note": "模型、上下文窗口、权限、网络和工具轮次配置写入后需要重启 Nova 网关才会生效。",
+        "restart_note": "运行配置保存后会立即影响下一次请求；重启仅用于兜底刷新进程状态。",
         "pending_config": pending,
         "api_key_set": provider.is_configured(),
         "api_key_source": provider.api_key_source(),
     }
+
+
+def _apply_runtime_config(update: dict) -> None:
+    """把设置页保存的配置同步到当前进程，避免用户每次切换权限后都要重启。"""
+    for key, value in update.items():
+        if key == "provider_model" and isinstance(value, str):
+            provider.model = value.strip()
+            object.__setattr__(settings, key, provider.model)
+            continue
+        if key == "provider_base_url" and isinstance(value, str):
+            provider.base_url = value.strip().rstrip("/")
+            object.__setattr__(settings, key, provider.base_url)
+            continue
+        if hasattr(settings, key):
+            object.__setattr__(settings, key, value)
 
 
 def _read_runtime_config_overrides() -> dict:
@@ -215,6 +250,8 @@ async def runtime_statusline(session_id: str | None = Query(default=None, max_le
         "workspace": str(workspace_manager.current_root),
         "project": workspace_manager.current_root.name,
         "permission_mode": settings.permission_mode,
+        "sandbox_mode": settings.sandbox_mode,
+        "approval_policy": settings.approval_policy,
         "status": "working" if session_id and session is None else "ready",
         "context_window_tokens": context_window,
         "context_remaining_tokens": remaining_tokens,
@@ -294,6 +331,8 @@ async def workspace_status() -> WorkspaceStatus:
                 else "需要审批" if settings.permission_mode == "ask" else "只读"
             ),
             permission_mode=settings.permission_mode,
+            sandbox_mode=settings.sandbox_mode,
+            approval_policy_id=settings.approval_policy,
             shell_commands=settings.permission_mode == "workspace_write",
         ),
         commands=WorkspaceCommands(
@@ -745,6 +784,41 @@ def _runtime_event_from_agent_event(event: dict, build_event) -> dict | None:
                 **(event.get("data") if isinstance(event.get("data"), dict) else {}),
             },
         )
+    if event_type == "hook_start":
+        hook_event = str(event.get("hook_event") or "Hook")
+        hook_name = str(event.get("hook_name") or hook_event)
+        return build_event(
+            "hook.started",
+            category="hook",
+            phase="started",
+            status="running",
+            title=str(event.get("title") or f"Hook {hook_event}: {hook_name}"),
+            message="Hook 已开始执行。",
+            tool=str(event.get("tool") or "tool"),
+            call_id=str(event.get("call_id") or new_id("hook")),
+            data={
+                "hook_event": hook_event,
+                "hook_name": hook_name,
+                **(event.get("data") if isinstance(event.get("data"), dict) else {}),
+            },
+        )
+    if event_type == "hook_done":
+        hook_event = str(event.get("hook_event") or "Hook")
+        hook_name = str(event.get("hook_name") or hook_event)
+        return build_event(
+            "hook.completed",
+            category="hook",
+            phase="completed",
+            title=str(event.get("title") or f"Hook 完成：{hook_name}"),
+            message="Hook 已完成。",
+            tool=str(event.get("tool") or "tool"),
+            call_id=str(event.get("call_id") or new_id("hook")),
+            data={
+                "hook_event": hook_event,
+                "hook_name": hook_name,
+                **(event.get("data") if isinstance(event.get("data"), dict) else {}),
+            },
+        )
     if event_type == "agent_status":
         status = str(event.get("status") or "运行中")
         return build_event(
@@ -771,6 +845,8 @@ def _persist_runtime_event(event: dict) -> None:
                 if category == "turn"
                 else "permission"
                 if category == "permission"
+                else "hook"
+                if category == "hook"
                 else "status"
             ),
             event_type=str(event.get("event_type") or ""),
