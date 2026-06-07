@@ -15,9 +15,14 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
-from .agent_runtime import CodexLikeAgentRuntime
-from .agent_tools import WorkspaceTools
-from .tool_executor import ToolExecutor
+from .approvals.store import PendingApprovalStore
+from .config.settings import load_settings
+from .providers.bigmodel import BigModelProvider, ProviderError
+from .processes.manager import ProcessManager
+from .runtime import CodexLikeAgentRuntime, DemoAgentRuntime
+from .sessions import AgentSessionService, TaskStore
+from .tools.executor import ToolExecutor
+from .tools.workspace import WorkspaceTools
 from .models import (
     ChatEvent,
     ChatMessage,
@@ -41,12 +46,6 @@ from .models import (
     WorkspaceStatus,
     new_id,
 )
-from .pending_approvals import PendingApprovalStore
-from .process_manager import ProcessManager
-from .provider import BigModelProvider, ProviderError
-from .runtime import DemoAgentRuntime
-from .settings import load_settings
-from .store import TaskStore
 from .workspace import WorkspaceError, WorkspaceManager
 
 PERMISSION_MODES = ["read_only", "ask", "workspace_write", "default", "plan", "accept_edits", "dont_ask", "bypass_permissions"]
@@ -66,8 +65,9 @@ provider = BigModelProvider(
 )
 pending_approvals = PendingApprovalStore()
 process_manager = ProcessManager()
-_active_session_turns: set[str] = set()
-_queued_session_messages: dict[str, list[ChatMessage]] = {}
+agent_sessions = AgentSessionService()
+_active_session_turns = agent_sessions.active_session_ids
+_queued_session_messages = agent_sessions.queued_session_messages
 _runtime_override = None
 
 app = FastAPI(title="Nova Gateway", version=__version__)
@@ -632,19 +632,19 @@ async def stream_chat_message(
 ) -> Response:
     if _get_current_chat_session(session_id) is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
-    if session_id in _active_session_turns:
+    if agent_sessions.is_active(session_id):
         queued = ChatMessage(
             session_id=session_id,
             role=ChatRole.USER,
             content=payload.content,
         )
         store.add_chat_message(queued)
-        _queued_session_messages.setdefault(session_id, []).append(queued)
+        agent_sessions.enqueue_message(session_id, queued)
         return JSONResponse(
             status_code=202,
             content={"ok": True, "status": "queued", "message": queued.model_dump(mode="json")},
         )
-    _active_session_turns.add(session_id)
+    agent_sessions.mark_active(session_id)
 
     async def emit() -> AsyncIterator[str]:
         turn_id = new_id("turn")
@@ -772,7 +772,7 @@ async def stream_chat_message(
                 )
             )
             yield _ndjson({"type": "runtime_event", "event": completed})
-            for queued in _queued_session_messages.pop(session_id, []):
+            for queued in agent_sessions.drain_queued_messages(session_id):
                 queued_event = runtime_event(
                     "turn.queued_message",
                     category="turn",
@@ -846,7 +846,7 @@ async def stream_chat_message(
             yield _ndjson({"type": "runtime_event", "event": failed})
             yield _ndjson({"type": "error", "message": error_message.model_dump(mode="json")})
         finally:
-            _active_session_turns.discard(session_id)
+            agent_sessions.mark_idle(session_id)
 
     return StreamingResponse(emit(), media_type="application/x-ndjson")
 

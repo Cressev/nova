@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from .models import Task, TaskStatus, TimelineEvent
-from .store import TaskStore
+from ..models import Task, TaskStatus, TimelineEvent
+from ..sessions.store import TaskStore
 
 
 class DemoAgentRuntime:
@@ -81,4 +81,3 @@ class DemoAgentRuntime:
                 data=data or {},
             )
         )
-
