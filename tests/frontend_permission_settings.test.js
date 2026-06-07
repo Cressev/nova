@@ -1,7 +1,7 @@
 const assert = require("node:assert");
 const fs = require("node:fs");
 
-const source = fs.readFileSync("static/app.js", "utf8");
+const source = fs.readFileSync("static/js/app.js", "utf8");
 
 assert(!source.includes('name="permission_mode"'), "设置页不应该暴露独立 permission_mode 下拉");
 assert(source.includes('name="permission_preset"'), "设置页应该提供 Codex-like 权限预设");

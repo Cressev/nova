@@ -1,0 +1,17 @@
+export const BUILTIN_COMMANDS = [
+  { name: "/status", description: "查看网关、权限和 Git 状态" },
+  { name: "/model", description: "查看模型与 Base URL" },
+  { name: "/tools", description: "列出当前可用工具和并行能力" },
+  { name: "/permissions", description: "查看权限模式和限制" },
+  { name: "/approvals", description: "查看审批策略" },
+  { name: "/sandbox", description: "查看沙箱模式" },
+  { name: "/memory", description: "查看项目记忆注入状态" },
+  { name: "/remember", description: "写入长期记忆" },
+  { name: "/ps", description: "查看后台任务" },
+  { name: "/kill", description: "终止后台任务" },
+  { name: "/review", description: "读取当前 diff 摘要" },
+  { name: "/plan", description: "先拆解任务再执行" },
+  { name: "/compact", description: "查看上下文压缩策略" },
+  { name: "/clear", description: "创建空线程提示" },
+  { name: "/help", description: "查看内置指令说明" },
+];

@@ -1,3 +1,14 @@
+import { api } from "./api/client.js";
+import { BUILTIN_COMMANDS } from "./components/command_palette.js";
+import { consumeStreamLines } from "./runtime/stream.js";
+import {
+  readStorageBool,
+  readStorageList,
+  writeStorageBool,
+  writeStorageList,
+} from "./state/storage.js";
+import { queryRequired } from "./ui/dom.js";
+
 const state = {
   selectedSessionId: null,
   selectedSessionTitle: "Nova Chat",
@@ -25,8 +36,8 @@ const state = {
   settingsCollapsed: new Set(readStorageList("nova.settingsCollapsed")),
 };
 
-const healthEl = document.querySelector("#health");
-const providerEl = document.querySelector("#provider");
+const healthEl = queryRequired("#health");
+const providerEl = queryRequired("#provider");
 const newChatEl = document.querySelector("#new-chat");
 const form = document.querySelector("#chat-form");
 const messageEl = document.querySelector("#message");
@@ -89,52 +100,6 @@ let workspaceSuggestTimer = null;
 let workspaceDialogTimer = null;
 const TOOL_TOOLTIP_DELAY_MS = 1000;
 
-function readStorageList(key, fallback = []) {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) {
-      return fallback;
-    }
-    const value = JSON.parse(raw);
-    return Array.isArray(value) ? value : [];
-  } catch {
-    return fallback;
-  }
-}
-
-function writeStorageList(key, values) {
-  localStorage.setItem(key, JSON.stringify(Array.from(values)));
-}
-
-function readStorageBool(key, fallback = false) {
-  const raw = localStorage.getItem(key);
-  if (raw === null) {
-    return fallback;
-  }
-  return raw === "true";
-}
-
-function writeStorageBool(key, value) {
-  localStorage.setItem(key, String(Boolean(value)));
-}
-
-const BUILTIN_COMMANDS = [
-  { name: "/status", description: "查看网关、权限和 Git 状态" },
-  { name: "/model", description: "查看模型与 Base URL" },
-  { name: "/tools", description: "列出当前可用工具和并行能力" },
-  { name: "/permissions", description: "查看权限模式和限制" },
-  { name: "/approvals", description: "查看审批策略" },
-  { name: "/sandbox", description: "查看沙箱模式" },
-  { name: "/memory", description: "查看项目记忆注入状态" },
-  { name: "/remember", description: "写入长期记忆" },
-  { name: "/ps", description: "查看后台任务" },
-  { name: "/kill", description: "终止后台任务" },
-  { name: "/review", description: "读取当前 diff 摘要" },
-  { name: "/plan", description: "先拆解任务再执行" },
-  { name: "/compact", description: "查看上下文压缩策略" },
-  { name: "/clear", description: "创建空线程提示" },
-  { name: "/help", description: "查看内置指令说明" },
-];
 let commandMatches = [];
 
 const STATUSLINE_ITEMS = [
@@ -146,19 +111,6 @@ const STATUSLINE_ITEMS = [
   { id: "permission", label: "权限" },
   { id: "state", label: "状态" },
 ];
-
-async function api(path, options = {}) {
-  // 统一处理 API 错误，调用方只关注业务逻辑。
-  const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || response.statusText);
-  }
-  return response.json();
-}
 
 function formatTime(value) {
   return new Date(value).toLocaleString("zh-CN", { hour12: false });
@@ -2201,7 +2153,7 @@ async function streamAssistant(sessionId, content, assistantNode) {
       },
       onRuntimeEvent: handleRuntimeEvent,
       onQueuedMessage: handleQueuedMessage,
-    });
+    }, { updateMessage, updateMessageMeta });
     buffer = result.rest;
     ok = ok && result.ok;
   }
@@ -2239,77 +2191,10 @@ async function streamAssistant(sessionId, content, assistantNode) {
       },
       onRuntimeEvent: handleRuntimeEvent,
       onQueuedMessage: handleQueuedMessage,
-    });
+    }, { updateMessage, updateMessageMeta });
     ok = ok && result.ok;
   }
   return ok;
-}
-
-function consumeStreamLines(buffer, assistantNode, handlers) {
-  const lines = buffer.split("\n");
-  const rest = lines.pop() || "";
-  let ok = true;
-
-  for (const line of lines) {
-    if (!line.trim()) {
-      continue;
-    }
-    let event;
-    try {
-      event = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (event.type === "assistant_delta") {
-      handlers.onDelta(event.delta || "");
-    }
-    if (event.type === "tool_start") {
-      handlers.onToolStart?.(event);
-    }
-    if (event.type === "tool_done") {
-      handlers.onToolDone?.(event);
-    }
-    if (event.type === "tool_output") {
-      handlers.onToolOutput?.(event);
-    }
-    if (event.type === "permission_request") {
-      handlers.onPermissionRequest?.(event);
-    }
-    if (event.type === "hook_start" || event.type === "hook_done") {
-      handlers.onStatus?.({ status: event.title || "Hook 事件" });
-    }
-    if (event.type === "agent_status") {
-      handlers.onStatus?.(event);
-    }
-    if (event.type === "runtime_event") {
-      handlers.onRuntimeEvent?.(event.event || {});
-    }
-    if (event.type === "assistant_done") {
-      assistantNode.classList.remove("streaming");
-      if (event.message?.content) {
-        updateMessage(assistantNode, event.message.content);
-      }
-      if (event.message) {
-        updateMessageMeta(assistantNode, event.message);
-      }
-    }
-    if (event.type === "queued_message") {
-      const nextAssistantNode = handlers.onQueuedMessage?.(event);
-      if (nextAssistantNode) {
-        assistantNode = nextAssistantNode;
-      }
-      handlers.onStatus?.({ status: "新消息已排队" });
-    }
-    if (event.type === "error") {
-      ok = false;
-      assistantNode.className = "message error";
-      updateMessage(assistantNode, event.message?.content || "模型调用失败");
-      if (event.message) {
-        updateMessageMeta(assistantNode, event.message);
-      }
-    }
-  }
-  return { rest, ok };
 }
 
 messageEl.addEventListener("keydown", (event) => {

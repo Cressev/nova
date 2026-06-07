@@ -2,8 +2,8 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 
 const html = fs.readFileSync("static/index.html", "utf8");
-const app = fs.readFileSync("static/app.js", "utf8");
-const css = fs.readFileSync("static/styles.css", "utf8");
+const app = fs.readFileSync("static/js/app.js", "utf8");
+const css = fs.readFileSync("static/css/styles.css", "utf8");
 
 assert(html.includes('id="memory-dialog"'), "应该提供主题一致的记忆编辑弹窗");
 assert(app.includes("openMemoryDialog"), "记忆查看/编辑应打开弹窗");

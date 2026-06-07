@@ -2,7 +2,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const vm = require("node:vm");
 
-const source = fs.readFileSync("static/app.js", "utf8");
+const source = fs.readFileSync("static/js/app.js", "utf8");
 const match = source.match(/function projectName[\s\S]*?function renderSessionItem/);
 
 assert(match, "没有找到会话分组相关函数");

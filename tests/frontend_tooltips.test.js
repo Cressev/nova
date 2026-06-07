@@ -1,8 +1,8 @@
 const assert = require("node:assert");
 const fs = require("node:fs");
 
-const app = fs.readFileSync("static/app.js", "utf8");
-const css = fs.readFileSync("static/styles.css", "utf8");
+const app = fs.readFileSync("static/js/app.js", "utf8");
+const css = fs.readFileSync("static/css/styles.css", "utf8");
 
 assert(app.includes("const TOOL_TOOLTIP_DELAY_MS = 1000"), "工具详情应悬浮 1 秒后显示");
 assert(app.includes("scheduleToolTooltip"), "工具详情应由 JS 延迟控制");

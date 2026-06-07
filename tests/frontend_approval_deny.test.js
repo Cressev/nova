@@ -1,7 +1,7 @@
 const assert = require("node:assert");
 const fs = require("node:fs");
 
-const app = fs.readFileSync("static/app.js", "utf8");
+const app = fs.readFileSync("static/js/app.js", "utf8");
 
 assert(app.includes("response.message"), "拒绝审批后前端必须读取后端返回的 assistant message");
 assert(

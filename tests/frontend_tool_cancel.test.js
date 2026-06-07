@@ -1,8 +1,8 @@
 const assert = require("node:assert");
 const fs = require("node:fs");
 
-const app = fs.readFileSync("static/app.js", "utf8");
-const css = fs.readFileSync("static/styles.css", "utf8");
+const app = fs.readFileSync("static/js/app.js", "utf8");
+const css = fs.readFileSync("static/css/styles.css", "utf8");
 
 assert(app.includes("cancelToolCall"), "前端应该实现运行中工具调用取消函数");
 assert(app.includes("/api/tool-calls/"), "取消按钮必须调用真实 tool call cancel API");
