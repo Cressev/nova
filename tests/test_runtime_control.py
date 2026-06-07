@@ -1,0 +1,130 @@
+from __future__ import annotations
+
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from nova_gateway import main as app_module
+from nova_gateway.main import app
+from nova_gateway.pending_approvals import PendingApprovalStore
+from nova_gateway.process_manager import ProcessManager
+
+
+class RuntimeControlTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = TestClient(app)
+
+    def test_pending_approval_can_be_approved_and_denied(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_permission = app_module.settings.permission_mode
+            old_process_manager = app_module.process_manager
+            old_pending = app_module.pending_approvals
+            old_root = app_module.workspace_manager.current_root
+            app_module.pending_approvals = PendingApprovalStore()
+            app_module.process_manager = ProcessManager()
+            app_module.workspace_manager.current_root = Path(tmpdir).resolve()
+            object.__setattr__(app_module.settings, "permission_mode", "ask")
+            self.addCleanup(lambda: object.__setattr__(app_module.settings, "permission_mode", old_permission))
+            self.addCleanup(lambda: setattr(app_module, "pending_approvals", old_pending))
+            self.addCleanup(lambda: setattr(app_module, "process_manager", old_process_manager))
+            self.addCleanup(lambda: setattr(app_module.workspace_manager, "current_root", old_root))
+            self.addCleanup(lambda: app_module.process_manager.kill_all())
+
+            session = self.client.post("/api/chat/sessions", json={"title": "审批"}).json()
+            with self.client.stream(
+                "POST",
+                f"/api/chat/sessions/{session['id']}/stream",
+                json={"content": "你不会调用命令行工具吗"},
+            ) as response:
+                self.assertEqual(response.status_code, 200)
+                body = "".join(response.iter_text())
+
+            self.assertIn("permission.requested", body)
+            pending = self.client.get("/api/approvals/pending").json()["items"]
+            self.assertEqual(len(pending), 1)
+            self.assertEqual(pending[0]["tool"], "shell_command")
+
+            approved = self.client.post(
+                f"/api/approvals/{pending[0]['id']}/approve",
+                json={},
+            )
+            self.assertEqual(approved.status_code, 200)
+            self.assertTrue(any(event["type"] == "tool_done" for event in approved.json()["events"]))
+            self.assertEqual(self.client.get("/api/approvals/pending").json()["items"], [])
+
+            app_module.pending_approvals.create(
+                session_id=session["id"],
+                turn_id="turn_test",
+                call_id="tool_deny",
+                tool="shell_command",
+                arguments={"command": "pwd", "workdir": "."},
+                permission="shell",
+                reason="测试拒绝",
+            )
+            denied = self.client.post("/api/approvals/tool_deny/deny", json={"reason": "不允许"})
+            self.assertEqual(denied.status_code, 200)
+            self.assertEqual(denied.json()["status"], "denied")
+
+    def test_process_manager_streams_output_and_kills_background_jobs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = ProcessManager(chunk_size=8)
+            self.addCleanup(manager.kill_all)
+
+            events = list(
+                manager.run_foreground(
+                    "python3 -c 'import sys; print(\"out\"); print(\"err\", file=sys.stderr)'",
+                    cwd=Path(tmpdir),
+                    timeout_ms=3000,
+                )
+            )
+
+            streams = [event for event in events if event["type"] == "tool_output"]
+            self.assertTrue(any(event["stream"] == "stdout" and "out" in event["chunk"] for event in streams))
+            self.assertTrue(any(event["stream"] == "stderr" and "err" in event["chunk"] for event in streams))
+            self.assertTrue(any(event["type"] == "tool_done" and event["ok"] for event in events))
+
+            job = manager.start_background("python3 -c 'import time; print(\"start\"); time.sleep(20)'", cwd=Path(tmpdir))
+            self.assertEqual(job["status"], "running")
+            time.sleep(0.3)
+            jobs = manager.list_jobs()
+            self.assertTrue(any(item["id"] == job["id"] for item in jobs))
+            killed = manager.kill(job["id"])
+            self.assertEqual(killed["status"], "killed")
+
+    def test_chat_stream_queues_message_while_session_running(self) -> None:
+        session = self.client.post("/api/chat/sessions", json={"title": "队列"}).json()
+        app_module._active_session_turns.add(session["id"])
+        self.addCleanup(lambda: app_module._active_session_turns.discard(session["id"]))
+
+        queued = self.client.post(
+            f"/api/chat/sessions/{session['id']}/stream",
+            json={"content": "第二条"},
+        )
+
+        self.assertEqual(queued.status_code, 202)
+        self.assertEqual(queued.json()["status"], "queued")
+        messages = self.client.get(f"/api/chat/sessions/{session['id']}/messages").json()
+        self.assertTrue(any(message["content"] == "第二条" for message in messages))
+
+    def test_memory_api_reads_writes_and_marks_injected_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_root = app_module.workspace_manager.current_root
+            app_module.workspace_manager.current_root = Path(tmpdir).resolve()
+            self.addCleanup(lambda: setattr(app_module.workspace_manager, "current_root", old_root))
+
+            status = self.client.get("/api/memory/status").json()
+            self.assertTrue(status["enabled"])
+            self.assertTrue(any(item["injected"] for item in status["injected_sources"]))
+
+            written = self.client.post("/api/memory/files", json={"name": "user.md", "content": "用户偏好：中文"})
+            self.assertEqual(written.status_code, 200)
+            read = self.client.get("/api/memory/files/user.md")
+            self.assertEqual(read.status_code, 200)
+            self.assertIn("用户偏好", read.json()["content"])
+
+
+if __name__ == "__main__":
+    unittest.main()

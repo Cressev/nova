@@ -10,6 +10,7 @@ from uuid import uuid4
 from .agent_tools import TOOL_SPECS, WorkspaceTools
 from .memory import ProjectMemory
 from .models import ChatMessage, ChatRole
+from .process_manager import ProcessManager
 from .provider import BigModelProvider, ProviderError
 from .tool_executor import ToolExecutor
 from .tool_hooks import ToolHookRunner
@@ -37,6 +38,7 @@ class CodexLikeAgentRuntime:
         approval_policy: str = "never",
         network_access: bool = False,
         tool_hooks_file: Path | None = None,
+        process_manager: ProcessManager | None = None,
     ) -> None:
         self.provider = provider
         self.tools = WorkspaceTools(
@@ -46,7 +48,8 @@ class CodexLikeAgentRuntime:
             network_access=network_access,
         )
         self.hooks = ToolHookRunner.from_file(tool_hooks_file, cwd=project_root)
-        self.executor = ToolExecutor(self.tools, hooks=self.hooks)
+        self.process_manager = process_manager or ProcessManager()
+        self.executor = ToolExecutor(self.tools, hooks=self.hooks, process_manager=self.process_manager)
         self.memory = ProjectMemory(project_root, global_agent_file=global_agent_file)
         self.max_tool_rounds = max_tool_rounds
         self.permission_mode = permission_mode
@@ -463,7 +466,7 @@ class CodexLikeAgentRuntime:
                 for hook_event in hook_events:
                     yield hook_event
                 if hook_decision == "allow":
-                    events, result_json = self.executor.run_one(call_id, name, arguments)
+                    events, result_json = self.executor.run_one_stream(call_id, name, arguments)
                     for event in events:
                         yield event
                     yield {"type": "tool_result_json", "result_json": result_json}
@@ -488,7 +491,7 @@ class CodexLikeAgentRuntime:
                 yield event
                 yield {"type": "tool_result_json", "result_json": self._permission_result_json(event)}
                 continue
-            events, result_json = self.executor.run_one(call_id, name, arguments)
+            events, result_json = self.executor.run_one_stream(call_id, name, arguments)
             for event in events:
                 yield event
             yield {"type": "tool_result_json", "result_json": result_json}
@@ -606,32 +609,31 @@ class CodexLikeAgentRuntime:
 
     async def _handle_builtin_command(self, content: str) -> AsyncIterator[dict]:
         command = content.split(maxsplit=1)[0].lower()
-        text = self._builtin_response(command)
+        text = self._builtin_response(command, content)
         for chunk in self._chunk_text(text, 36):
             yield {"type": "assistant_delta", "delta": chunk}
         yield {"type": "assistant_done_content", "content": text}
 
-    def _builtin_response(self, command: str) -> str:
+    def _builtin_response(self, command: str, raw_content: str = "") -> str:
         if command == "/tools":
             rows = [
                 f"- {item['name']}：{item['description']}；权限={item['permission']}；并行={'是' if item['supports_parallel'] else '否'}"
                 for item in self.tools.list_specs()
             ]
             return "当前工具清单：\n" + "\n".join(rows)
-        if command == "/permissions":
+        if command in {"/permissions", "/approvals", "/sandbox"}:
             return (
                 f"当前权限模式：{self.permission_mode}\n"
+                f"当前沙箱：{self.sandbox_mode}\n"
+                f"当前审批策略：{self.approval_policy}\n"
                 "- read_only：只允许读工具。\n"
-                "- ask：读工具允许，写入和 shell 会被拦截，等待后续审批 UI。\n"
-                "- workspace_write：允许工作区写入和受控 shell。"
+                "- ask/on_request：读工具允许，写入和 shell 生成待审批工具调用。\n"
+                "- workspace_write：允许工作区写入和受控 shell。\n"
+                "- bypass_permissions：跳过权限提示，但仍受工具自身安全校验约束。"
             )
         if command == "/memory":
             status = self.memory.status()
-            injected_sources = [
-                source
-                for source in [status.get("global"), status.get("project")]
-                if source is not None
-            ]
+            injected_sources = status.get("injected_sources", [])
             development_sources = status.get("development_state", [])
             injected_rows = [
                 f"- {item['scope']}：{item['path']}（{'存在' if item['exists'] else '缺失'}）"
@@ -648,15 +650,53 @@ class CodexLikeAgentRuntime:
                 + "\n\n只给 Nova 开发过程，不注入产品内 Agent：\n"
                 + "\n".join(ignored_rows)
             )
+        if command == "/remember":
+            parts = raw_content.split(maxsplit=1)
+            if len(parts) < 2 or not parts[1].strip():
+                return "用法：/remember 要长期记住的事实或偏好"
+            text = parts[1].strip()
+            self.memory.append_fact(text)
+            return f"已写入长期记忆：{text}"
+        if command in {"/ps", "/jobs"}:
+            jobs = self.process_manager.list_jobs()
+            if not jobs:
+                return "当前没有后台任务。"
+            return "后台任务：\n" + "\n".join(
+                f"- {item['id']} [{item['status']}] exit={item.get('exit_code')} cwd={item['cwd']} cmd={item['command']}"
+                for item in jobs
+            )
+        if command in {"/stop", "/kill"}:
+            parts = raw_content.split(maxsplit=1)
+            if len(parts) < 2:
+                return f"用法：{command} <后台任务ID>"
+            job_id = parts[1].strip()
+            try:
+                job = self.process_manager.kill(job_id)
+            except KeyError:
+                return f"没有找到后台任务：{job_id}"
+            return f"已终止后台任务 {job['id']}，状态：{job['status']}"
         if command == "/status":
             git = self.tools.git_status({}).output
-            return f"Nova 本地网关在线。\n权限模式：{self.permission_mode}\nGit 状态：\n{git}"
+            return (
+                f"Nova 本地网关在线。\n模型：{self.provider.model}\n"
+                f"权限模式：{self.permission_mode}\n沙箱：{self.sandbox_mode}\n"
+                f"审批策略：{self.approval_policy}\n工作区：{self.tools.project_root}\nGit 状态：\n{git}"
+            )
+        if command == "/model":
+            return f"模型：{self.provider.model}\nBase URL：{self.provider.base_url}\n已配置密钥：{'是' if self.provider.is_configured() else '否'}"
         if command == "/review":
             diff = self.tools.git_diff({}).output
             return f"当前 diff 摘要：\n{diff[:3000]}"
         if command == "/plan":
             return "请在 /plan 后写目标和验收标准；Nova 会先拆步骤，再按步骤调用工具执行。"
-        return "可用内置指令：/status、/tools、/permissions、/memory、/review、/plan、/help。"
+        if command == "/compact":
+            return "当前版本保留完整历史；后续压缩会把长会话摘要写入 .nova/memory/session.md。"
+        if command == "/clear":
+            return "请点击左侧“新对话”创建空线程；Nova 不会自动删除已有历史。"
+        return (
+            "可用内置指令：/status、/model、/tools、/permissions、/approvals、/sandbox、"
+            "/memory、/remember、/ps、/jobs、/stop、/kill、/review、/plan、/compact、/clear、/help。"
+        )
 
     def _system_prompt(self) -> str:
         memory_context = self.memory.context()
@@ -671,6 +711,8 @@ class CodexLikeAgentRuntime:
 <tool_calls>[{"tool":"read_file","arguments":{...}},{"tool":"search_text","arguments":{...}}]</tool_calls>
 5. 不需要工具时，不要输出工具调用，直接给最终答复。
 6. 不要请求执行破坏性命令；需要修改文件时优先使用 apply_patch、replace_in_file 或 create_file。
+7. 预计耗时较长的 shell 命令可以加 "background": true 后台执行；后台任务可由用户用 /ps 查看、/kill 终止。
+8. 需要长期记住用户偏好、项目事实或阶段总结时，写入 memory_write；查询长期记忆用 memory_read 或 memory_search。
 
 可用工具：
 - read_file: {"path":"相对路径","max_bytes":24000}
@@ -680,7 +722,7 @@ class CodexLikeAgentRuntime:
 - search_text: {"query":"关键词","path":".","max_results":80}
 - git_status: {}
 - git_diff: {"path":"可选相对路径","max_bytes":24000}
-- shell_command: {"command":"受控 shell 命令","workdir":".","timeout_ms":10000}
+- shell_command: {"command":"受控 shell 命令","workdir":".","timeout_ms":10000,"background":false}
 - replace_in_file: {"path":"文件","old":"原文","new":"新文"}
 - edit_file: {"path":"文件","old":"原文","new":"新文"}
 - multi_edit: {"path":"文件","edits":[{"old":"原文","new":"新文"}]}
@@ -691,6 +733,9 @@ class CodexLikeAgentRuntime:
 - todo_write: {"items":[{"content":"任务","status":"pending|in_progress|completed"}]}
 - web_fetch: {"url":"https://example.com","max_bytes":20000}
 - web_search: {"query":"搜索关键词","max_bytes":20000}
+- memory_read: {"name":"index.md"}
+- memory_write: {"name":"index.md","content":"记忆内容"}
+- memory_search: {"query":"关键词"}
 
 路径必须使用工作区内相对路径。回答使用中文，保持直接、务实。
 """.strip()

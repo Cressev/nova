@@ -1090,3 +1090,56 @@ ui设置中添加可以填写apikey的地方，不需要重启就能生效。你
 - 临时 `.nova/hooks.json` 已删除，当前 `/api/runtime/config` 返回 `hooks_enabled=false`。本地网站：`http://127.0.0.1:8765`。
 
 ------ todo-list end at 2026/06/07/13:06:40 -----
+
+------ todo-list begin at 2026/06/07/17:15:49 -----
+
+用户请求：
+做真正的 approve/deny 接口和 pending tool call 续跑，然后补长命令 stdout/stderr 分片、取消/中断、后台 shell output/kill。像 codex 那样添加几个功能：长时间任务 agent 可以选择后台挂起执行别的任务，可以查看任务执行情况。用户使用 /ps 指令也可以查看正在后台运行的程序。支持用户在执行过程中再次发送请求，添加到队列中，当该轮工具调用结束后添加进入消息中发送。补齐 codex 支持的 / 命令并实现完整功能。记忆能力。同时完成飞书 Base 文档中新的需求。
+
+制定清单：
+- [x] 1. 读取问题表和当前代码
+  - [x] 1.1 用 lark-cli 读取 Base 问题表，确认 3 条待解决 UI/记忆问题
+  - [x] 1.2 检查 runtime、ToolExecutor、WorkspaceTools、Memory、main API 和前端现状
+- [x] 2. TDD 补运行时控制测试
+  - [x] 2.1 pending approval approve/deny API
+  - [x] 2.2 ProcessManager stdout/stderr 分片和后台 kill
+  - [x] 2.3 会话运行中消息排队
+  - [x] 2.4 memory API 读写和注入源状态
+- [x] 3. 实现后端
+  - [x] 3.1 新增 PendingApprovalStore
+  - [x] 3.2 新增 ProcessManager
+  - [x] 3.3 ToolExecutor 接入 shell 分片和 background
+  - [x] 3.4 Stream API 接入 pending approval、队列和 tool_output runtime_event
+  - [x] 3.5 新增 approvals/processes/memory API
+  - [x] 3.6 扩展 slash 命令和系统提示
+- [x] 4. 实现前端
+  - [x] 4.1 审批按钮调用真实 approve/deny
+  - [x] 4.2 工具卡片追加 stdout/stderr 分片
+  - [x] 4.3 运行中再次发送进入队列并即时显示
+  - [x] 4.4 工具 hover/focus tooltip 展示详情
+  - [x] 4.5 Memory 面板只展示真实注入上下文并支持长期记忆文件编辑/新增
+  - [x] 4.6 设置下拉 option 高对比修复
+- [x] 5. 验证和交付
+  - [x] 5.1 后端单测、前端脚本、JS/Python 编译、diff 检查
+  - [x] 5.2 Playwright 真实验证 approve 续跑、/ps、tooltip、memory、select 样式
+  - [x] 5.3 飞书 Base 只回写解释和解决方案，不改状态
+  - [x] 5.4 更新 CURRENT.md、PROGRESS.md、TODOList.md、log.md、user-queries.md
+  - [x] 5.5 提交、推送、服务保持启动并给出下一步建议
+
+执行问题记录：
+- Playwright `screenshot` 需要使用 `--filename` 参数，已按 CLI help 重试成功。
+- TestClient 不适合验证真实并发流，单测改为直接验证 active session 入队分支，真实浏览器后续可通过运行中再次发送继续验收。
+
+交付记录：
+- 新增真实 approve/deny API：`GET /api/approvals/pending`、`POST /api/approvals/{id}/approve`、`POST /api/approvals/{id}/deny`。
+- 新增 shell 进程管理：stdout/stderr 分片、前台超时终止、后台 job list/get/kill、`/api/processes`。
+- `shell_command` 支持 `background: true`，`/ps`/`/jobs` 查看后台任务，`/stop`/`/kill` 终止后台任务。
+- 同一会话运行中再次发送消息会进入队列并立即显示。
+- Slash 命令扩展到 `/status`、`/model`、`/tools`、`/permissions`、`/approvals`、`/sandbox`、`/memory`、`/remember`、`/ps`、`/jobs`、`/stop`、`/kill`、`/review`、`/plan`、`/compact`、`/clear`、`/help`。
+- 新增 `.nova/memory` 长期记忆能力和 `memory_read`、`memory_write`、`memory_search` 工具。
+- 修复 Base 新需求：select option 颜色、工具 hover 详情、真实注入上下文和长期记忆文件编辑/新增。
+- 验证通过：`PYTHONPATH=src python3 -m unittest discover -s tests` 68 tests；三个前端 node 测试；`node --check static/app.js`；`python3 -m py_compile src/nova_gateway/*.py`；`git diff --check`。
+- Playwright 验证截图：`output/playwright/nova-runtime-approval-ps-memory.png`。
+- 本地网站：`http://127.0.0.1:8765`。
+
+------ todo-list end at 2026/06/07/17:15:49 -----

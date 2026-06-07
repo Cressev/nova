@@ -239,6 +239,39 @@ TOOL_SPECS: dict[str, ToolSpec] = {
         risk="medium",
         interrupt_behavior="cancel",
     ),
+    "memory_read": ToolSpec(
+        name="memory_read",
+        description="读取 .nova/memory 中的长期记忆文件。",
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={"name": "index.md"},
+        category="memory",
+        risk="low",
+        interrupt_behavior="cancel",
+    ),
+    "memory_write": ToolSpec(
+        name="memory_write",
+        description="写入 .nova/memory 中的长期记忆文件。",
+        read_only=False,
+        supports_parallel=False,
+        permission="write",
+        schema={"name": "index.md", "content": "记忆内容"},
+        category="memory",
+        risk="medium",
+        interrupt_behavior="block",
+    ),
+    "memory_search": ToolSpec(
+        name="memory_search",
+        description="搜索 .nova/memory 中的长期记忆。",
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={"query": "关键词"},
+        category="memory",
+        risk="low",
+        interrupt_behavior="cancel",
+    ),
 }
 
 
@@ -276,6 +309,9 @@ class WorkspaceTools:
             "todo_write": self.todo_write,
             "web_fetch": self.web_fetch,
             "web_search": self.web_search,
+            "memory_read": self.memory_read,
+            "memory_write": self.memory_write,
+            "memory_search": self.memory_search,
         }
         handler = handlers.get(name)
         if handler is None:
@@ -740,6 +776,55 @@ class WorkspaceTools:
             output=content,
             ok=200 <= int(status) < 400,
             data={"query": query, "url": url, "status": int(status), "bytes": len(content.encode("utf-8"))},
+        )
+
+    def memory_read(self, arguments: dict[str, Any]) -> ToolResult:
+        name = Path(str(arguments.get("name") or "index.md")).name
+        path = self.project_root / ".nova" / "memory" / name
+        content = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+        return ToolResult(
+            tool="memory_read",
+            title=f"读取记忆 {name}",
+            output=content or "记忆文件不存在或为空",
+            data={"name": name, "path": str(path), "exists": path.exists()},
+        )
+
+    def memory_write(self, arguments: dict[str, Any]) -> ToolResult:
+        name = Path(str(arguments.get("name") or "index.md")).name
+        if not name.endswith(".md"):
+            name = f"{name}.md"
+        content = str(arguments.get("content") or "")
+        path = self.project_root / ".nova" / "memory" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        return ToolResult(
+            tool="memory_write",
+            title=f"写入记忆 {name}",
+            output=f"已写入 {name}，字符数 {len(content)}",
+            data={"name": name, "path": str(path), "bytes": len(content.encode("utf-8"))},
+        )
+
+    def memory_search(self, arguments: dict[str, Any]) -> ToolResult:
+        query = str(arguments.get("query") or "").strip()
+        if not query:
+            raise ToolExecutionError("memory_search 需要 query")
+        memory_dir = self.project_root / ".nova" / "memory"
+        lines: list[str] = []
+        if memory_dir.is_dir():
+            for path in sorted(memory_dir.glob("*.md")):
+                content = path.read_text(encoding="utf-8", errors="replace")
+                for number, line in enumerate(content.splitlines(), start=1):
+                    if query.lower() in line.lower():
+                        lines.append(f"{path.name}:{number}: {line}")
+                        if len(lines) >= 50:
+                            break
+                if len(lines) >= 50:
+                    break
+        return ToolResult(
+            tool="memory_search",
+            title=f"搜索记忆 {query}",
+            output="\n".join(lines) or "未找到匹配记忆",
+            data={"query": query, "count": len(lines)},
         )
 
     def _resolve_workspace_path(self, value: str) -> Path:

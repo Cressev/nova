@@ -1000,6 +1000,15 @@ code {
   background: rgba(242, 184, 97, 0.09);
 }
 
+.permission-event.approved {
+  border-color: rgba(66, 222, 153, 0.38);
+}
+
+.permission-event.denied {
+  border-color: rgba(255, 107, 97, 0.44);
+  background: rgba(255, 107, 97, 0.1);
+}
+
 .tool-event-head,
 .permission-event-head {
   display: grid;
@@ -1090,6 +1099,12 @@ code {
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.tool-stream-output {
+  border: 1px solid rgba(115, 201, 244, 0.18);
+  background: rgba(0, 0, 0, 0.24);
+  color: #d8eee7;
 }
 
 .permission-actions {
@@ -1528,9 +1543,49 @@ body.inspector-collapsed .inspector-toggle {
 }
 
 .tool-chip {
+  position: relative;
   grid-template-columns: minmax(0, 1fr) auto;
   color: var(--text);
   text-align: left;
+}
+
+.tool-tooltip {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  display: none;
+  width: min(320px, 70vw);
+  border: 1px solid rgba(115, 201, 244, 0.26);
+  border-radius: 8px;
+  padding: 9px;
+  background: #111715;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.38);
+  color: var(--text);
+  font-style: normal;
+}
+
+.tool-chip:hover .tool-tooltip,
+.tool-chip:focus-visible .tool-tooltip {
+  display: grid;
+  gap: 6px;
+}
+
+.tool-tooltip b,
+.tool-tooltip small {
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.tool-tooltip code {
+  max-height: 140px;
+  overflow: auto;
+  border-radius: 6px;
+  padding: 6px;
+  background: rgba(0, 0, 0, 0.24);
+  color: #b7d9ff;
+  font-size: 10px;
+  white-space: pre-wrap;
 }
 
 .tool-chip strong,
@@ -1564,6 +1619,20 @@ body.inspector-collapsed .inspector-toggle {
 
 .memory-row.ignored strong {
   color: var(--amber);
+}
+
+.memory-row[tabindex] {
+  cursor: pointer;
+}
+
+.memory-add {
+  min-height: 30px;
+  border: 1px dashed rgba(115, 201, 244, 0.28);
+  border-radius: 8px;
+  background: rgba(115, 201, 244, 0.06);
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 850;
 }
 
 .workspace-dialog {
@@ -1818,6 +1887,11 @@ body.inspector-collapsed .inspector-toggle {
   font-size: 12px;
 }
 
+.setting-field select option {
+  background: #111715;
+  color: #eef7f2;
+}
+
 .setting-field small {
   color: var(--muted);
   font-size: 10px;
@@ -2031,8 +2105,8 @@ body.inspector-collapsed .inspector-toggle {
     max-width: 100%;
   }
 
-  .tool-event,
-  .permission-event {
+.tool-event,
+.permission-event {
     width: 100%;
   }
 

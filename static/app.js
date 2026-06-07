@@ -111,11 +111,21 @@ function writeStorageBool(key, value) {
 
 const BUILTIN_COMMANDS = [
   { name: "/status", description: "查看网关、权限和 Git 状态" },
+  { name: "/model", description: "查看模型与 Base URL" },
   { name: "/tools", description: "列出当前可用工具和并行能力" },
   { name: "/permissions", description: "查看权限模式和限制" },
+  { name: "/approvals", description: "查看审批策略" },
+  { name: "/sandbox", description: "查看沙箱模式" },
   { name: "/memory", description: "查看项目记忆注入状态" },
+  { name: "/remember", description: "写入长期记忆" },
+  { name: "/ps", description: "查看后台任务" },
+  { name: "/jobs", description: "查看后台任务" },
+  { name: "/stop", description: "终止后台任务" },
+  { name: "/kill", description: "终止后台任务" },
   { name: "/review", description: "读取当前 diff 摘要" },
   { name: "/plan", description: "先拆解任务再执行" },
+  { name: "/compact", description: "查看上下文压缩策略" },
+  { name: "/clear", description: "创建空线程提示" },
   { name: "/help", description: "查看内置指令说明" },
 ];
 let commandMatches = [];
@@ -518,8 +528,13 @@ function renderTools(items) {
     node.innerHTML = `
       <strong>${escapeHtml(item.name)}</strong>
       <span>${item.supports_parallel ? "并行" : item.permission}</span>
+      <em class="tool-tooltip">
+        <b>${escapeHtml(item.description || item.name)}</b>
+        <small>权限：${escapeHtml(item.permission || "-")} · 并行：${item.supports_parallel ? "支持" : "不支持"} · 风险：${escapeHtml(item.risk || "-")}</small>
+        <code>${escapeHtml(JSON.stringify(item.schema || {}, null, 2))}</code>
+      </em>
     `;
-    node.title = item.description;
+    node.setAttribute("aria-label", `${item.name}：${item.description || ""}`);
     node.addEventListener("click", () => {
       messageEl.value = `/tools`;
       autoResizeTextarea();
@@ -532,11 +547,13 @@ function renderTools(items) {
 function renderMemory(memory) {
   memoryStateEl.textContent = memory.enabled ? "已启用" : "关闭";
   memoryListEl.innerHTML = "";
-  const globalSource = memory.global ? [memory.global] : [];
-  const projectSource = memory.project ? [memory.project] : [];
-  appendMemoryGroup("给开发 Agent：全局", globalSource);
-  appendMemoryGroup("给开发 Agent：项目", projectSource);
-  appendMemoryGroup("只给 Nova 开发过程", memory.development_state || []);
+  appendMemoryGroup("真实注入上下文", memory.injected_sources || []);
+  const addButton = document.createElement("button");
+  addButton.type = "button";
+  addButton.className = "memory-add";
+  addButton.textContent = "添加记忆文件";
+  addButton.addEventListener("click", addMemoryFile);
+  memoryListEl.appendChild(addButton);
 }
 
 function appendMemoryGroup(title, items) {
@@ -551,8 +568,52 @@ function appendMemoryGroup(title, items) {
       <span title="${escapeHtml(item.path)}">${escapeHtml(shortPath(item.path))}</span>
       <strong>${memoryLabel(item)}</strong>
     `;
+    if (item.injected && item.scope === "长期记忆" && item.path && item.name?.endsWith(".md")) {
+      row.tabIndex = 0;
+      row.title = "点击查看和编辑";
+      row.addEventListener("click", () => editMemoryFile(item.name));
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          editMemoryFile(item.name);
+        }
+      });
+    }
     memoryListEl.appendChild(row);
   }
+}
+
+async function editMemoryFile(name) {
+  try {
+    const file = await api(`/api/memory/files/${encodeURIComponent(name)}`);
+    const next = window.prompt(`编辑 ${name}`, file.content || "");
+    if (next === null) {
+      return;
+    }
+    await api("/api/memory/files", {
+      method: "POST",
+      body: JSON.stringify({ name, content: next }),
+    });
+    await loadRuntimePanels();
+    streamStateEl.textContent = `已更新记忆 ${name}`;
+  } catch (error) {
+    streamStateEl.textContent = `记忆编辑失败：${error instanceof Error ? error.message : "未知错误"}`;
+  }
+}
+
+async function addMemoryFile() {
+  const name = window.prompt("记忆文件名，例如 user.md / project.md / soul.md");
+  if (!name) {
+    return;
+  }
+  const content = window.prompt(`写入 ${name} 的内容`, "");
+  if (content === null) {
+    return;
+  }
+  await api("/api/memory/files", {
+    method: "POST",
+    body: JSON.stringify({ name, content }),
+  });
+  await loadRuntimePanels();
 }
 
 function memoryLabel(item) {
@@ -994,6 +1055,21 @@ function finishToolEvent(node, event, options = {}) {
   }
 }
 
+function appendToolOutput(node, event) {
+  if (!node) {
+    return;
+  }
+  let output = node.querySelector(".tool-stream-output");
+  if (!output) {
+    output = document.createElement("pre");
+    output.className = "tool-stream-output";
+    node.appendChild(output);
+  }
+  const label = event.stream === "stderr" ? "stderr" : "stdout";
+  output.textContent += `[${label}] ${event.chunk || ""}`;
+  output.scrollTop = output.scrollHeight;
+}
+
 function appendPermissionEvent(event, beforeNode = null, options = {}) {
   const args = JSON.stringify(event.arguments || {}, null, 2);
   const node = document.createElement("article");
@@ -1012,11 +1088,13 @@ function appendPermissionEvent(event, beforeNode = null, options = {}) {
       <pre>${escapeHtml(args)}</pre>
     </details>
     <div class="permission-actions">
-      <button type="button" disabled>允许</button>
-      <button type="button" disabled>拒绝</button>
-      <small>审批执行接口下一步接入</small>
+      <button type="button" data-action="approve">允许</button>
+      <button type="button" data-action="deny">拒绝</button>
+      <small>approve/deny 会真实续跑该工具调用</small>
     </div>
   `;
+  node.querySelector('[data-action="approve"]').addEventListener("click", () => processApproval(node, true));
+  node.querySelector('[data-action="deny"]').addEventListener("click", () => processApproval(node, false));
   if (beforeNode?.parentElement === messagesEl) {
     messagesEl.insertBefore(node, beforeNode);
   } else {
@@ -1026,6 +1104,47 @@ function appendPermissionEvent(event, beforeNode = null, options = {}) {
     scrollMessagesToBottom();
   }
   return node;
+}
+
+async function processApproval(node, approved) {
+  const callId = node.dataset.callId;
+  if (!callId) {
+    return;
+  }
+  node.querySelectorAll("button").forEach((button) => {
+    button.disabled = true;
+  });
+  try {
+    const response = await api(`/api/approvals/${encodeURIComponent(callId)}/${approved ? "approve" : "deny"}`, {
+      method: "POST",
+      body: JSON.stringify(approved ? {} : { reason: "用户在页面拒绝执行" }),
+    });
+    node.classList.toggle("approved", approved);
+    node.classList.toggle("denied", !approved);
+    node.querySelector(".permission-event-head em").textContent = approved ? "已允许" : "已拒绝";
+    if (approved) {
+      const activeToolNodes = new Map();
+      for (const event of response.events || []) {
+        if (event.type === "tool_start") {
+          const toolNode = appendToolEvent(event, node.nextSibling);
+          activeToolNodes.set(event.call_id || event.tool || "tool", toolNode);
+        }
+        if (event.type === "tool_output") {
+          appendToolOutput(activeToolNodes.get(event.call_id || event.tool || "tool"), event);
+        }
+        if (event.type === "tool_done") {
+          finishToolEvent(activeToolNodes.get(event.call_id || event.tool || "tool"), event);
+        }
+      }
+    }
+    await Promise.all([loadRuntimePanels(), refreshStatusline()]);
+  } catch (error) {
+    node.querySelector(".permission-event-head em").textContent = "审批失败";
+    node.querySelectorAll("button").forEach((button) => {
+      button.disabled = false;
+    });
+    streamStateEl.textContent = `审批失败：${error instanceof Error ? error.message : "未知错误"}`;
+  }
 }
 
 function roleLabel(role) {
@@ -1642,12 +1761,33 @@ document.addEventListener("click", (event) => {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const content = messageEl.value.trim();
-  if (!content || state.sending) {
+  if (!content) {
+    return;
+  }
+  if (state.sending) {
+    try {
+      const sessionId = await ensureSession();
+      const queued = await fetch(`/api/chat/sessions/${sessionId}/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      if (queued.status !== 202) {
+        throw new Error(await queued.text());
+      }
+      const payload = await queued.json();
+      appendMessage(payload.message);
+      messageEl.value = "";
+      autoResizeTextarea();
+      streamStateEl.textContent = "消息已排队，当前工具轮结束后进入上下文";
+    } catch (error) {
+      streamStateEl.textContent = `排队失败：${error instanceof Error ? error.message : "未知错误"}`;
+    }
     return;
   }
   state.sending = true;
-  sendButtonEl.disabled = true;
-  sendButtonEl.querySelector(".send-label").textContent = "生成中";
+  sendButtonEl.disabled = false;
+  sendButtonEl.querySelector(".send-label").textContent = "排队";
   streamStateEl.textContent = "正在连接模型";
 
   let assistantNode = null;
@@ -1768,6 +1908,10 @@ async function streamAssistant(sessionId, content, assistantNode) {
         activeToolNodes.delete(key);
         streamStateEl.textContent = event.ok ? "工具完成，继续推理" : "工具失败，继续处理";
       },
+      onToolOutput: (event) => {
+        const key = event.call_id || event.tool || "tool";
+        appendToolOutput(activeToolNodes.get(key), event);
+      },
       onPermissionRequest: (event) => {
         streamStateEl.textContent = `${event.tool || "工具"} 等待审批`;
         appendPermissionEvent(event, assistantNode);
@@ -1800,6 +1944,10 @@ async function streamAssistant(sessionId, content, assistantNode) {
         finishToolEvent(activeToolNodes.get(key), event);
         activeToolNodes.delete(key);
         streamStateEl.textContent = event.ok ? "工具完成，继续推理" : "工具失败，继续处理";
+      },
+      onToolOutput: (event) => {
+        const key = event.call_id || event.tool || "tool";
+        appendToolOutput(activeToolNodes.get(key), event);
       },
       onPermissionRequest: (event) => {
         streamStateEl.textContent = `${event.tool || "工具"} 等待审批`;
@@ -1842,6 +1990,9 @@ function consumeStreamLines(buffer, assistantNode, handlers) {
     if (event.type === "tool_done") {
       handlers.onToolDone?.(event);
     }
+    if (event.type === "tool_output") {
+      handlers.onToolOutput?.(event);
+    }
     if (event.type === "permission_request") {
       handlers.onPermissionRequest?.(event);
     }
@@ -1862,6 +2013,15 @@ function consumeStreamLines(buffer, assistantNode, handlers) {
       if (event.message) {
         updateMessageMeta(assistantNode, event.message);
       }
+    }
+    if (event.type === "queued_message") {
+      appendMessage(event.message || {
+        id: `queued_${Date.now()}`,
+        role: "user",
+        content: "排队消息",
+        created_at: new Date().toISOString(),
+      });
+      handlers.onStatus?.({ status: "新消息已排队" });
     }
     if (event.type === "error") {
       ok = false;

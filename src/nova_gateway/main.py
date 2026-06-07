@@ -8,14 +8,16 @@ import sys
 import threading
 import time
 from collections.abc import AsyncIterator
+from contextlib import contextmanager
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .agent_runtime import CodexLikeAgentRuntime
 from .agent_tools import WorkspaceTools
+from .tool_executor import ToolExecutor
 from .models import (
     ChatEvent,
     ChatMessage,
@@ -39,6 +41,8 @@ from .models import (
     WorkspaceStatus,
     new_id,
 )
+from .pending_approvals import PendingApprovalStore
+from .process_manager import ProcessManager
 from .provider import BigModelProvider, ProviderError
 from .runtime import DemoAgentRuntime
 from .settings import load_settings
@@ -60,6 +64,11 @@ provider = BigModelProvider(
     model=settings.provider_model,
     api_key_file=settings.runtime_secret_file,
 )
+pending_approvals = PendingApprovalStore()
+process_manager = ProcessManager()
+_active_session_turns: set[str] = set()
+_queued_session_messages: dict[str, list[ChatMessage]] = {}
+_runtime_override = None
 
 app = FastAPI(title="Nova Gateway", version=__version__)
 app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
@@ -75,6 +84,8 @@ def _workspace_tools() -> WorkspaceTools:
 
 
 def _agent_runtime() -> CodexLikeAgentRuntime:
+    if _runtime_override is not None:
+        return _runtime_override
     return CodexLikeAgentRuntime(
         provider=provider,
         project_root=workspace_manager.current_root,
@@ -85,11 +96,27 @@ def _agent_runtime() -> CodexLikeAgentRuntime:
         approval_policy=settings.approval_policy,
         network_access=settings.network_access,
         tool_hooks_file=settings.tool_hooks_file,
+        process_manager=process_manager,
     )
+
+
+@contextmanager
+def patch_runtime_for_test(runtime):
+    global _runtime_override
+    old = _runtime_override
+    _runtime_override = runtime
+    try:
+        yield
+    finally:
+        _runtime_override = old
 
 
 def _demo_runtime() -> DemoAgentRuntime:
     return DemoAgentRuntime(store=store, project_root=workspace_manager.current_root)
+
+
+def app_module_tool_executor(tools: WorkspaceTools) -> ToolExecutor:
+    return ToolExecutor(tools, process_manager=process_manager)
 
 
 @app.get("/", include_in_schema=False)
@@ -269,6 +296,97 @@ async def tool_list() -> dict:
 @app.get("/api/memory/status")
 async def memory_status() -> dict:
     return _agent_runtime().memory.status()
+
+
+@app.get("/api/memory/files/{name}")
+async def memory_file(name: str) -> dict:
+    return _agent_runtime().memory.read_file(name)
+
+
+@app.post("/api/memory/files")
+async def write_memory_file(payload: dict) -> dict:
+    name = str(payload.get("name") or "index.md")
+    content = str(payload.get("content") or "")
+    return _agent_runtime().memory.write_file(name, content)
+
+
+@app.post("/api/memory/remember")
+async def remember(payload: dict) -> dict:
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text is required")
+    return _agent_runtime().memory.append_fact(text)
+
+
+@app.get("/api/approvals/pending")
+async def list_pending_approvals(session_id: str | None = Query(default=None, max_length=80)) -> dict:
+    return {"items": [item.as_dict() for item in pending_approvals.list_pending(session_id=session_id)]}
+
+
+@app.post("/api/approvals/{approval_id}/approve")
+async def approve_tool_call(approval_id: str) -> dict:
+    item = pending_approvals.approve(approval_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Approval not found")
+    tools = WorkspaceTools(
+        workspace_manager.current_root,
+        permission_mode="workspace_write",
+        sandbox_mode=settings.sandbox_mode,
+        network_access=settings.network_access,
+    )
+    executor = app_module_tool_executor(tools)
+    events, result_json = executor.run_one_stream(item.call_id, item.tool, item.arguments)
+    for event in events:
+        runtime_event = _runtime_event_from_agent_event(
+            event,
+            _event_builder_for_existing_turn(item.session_id, item.turn_id),
+        )
+        if runtime_event is not None:
+            _persist_runtime_event(runtime_event)
+    return {"ok": True, "status": "approved", "approval": item.as_dict(), "events": events, "result_json": result_json}
+
+
+@app.post("/api/approvals/{approval_id}/deny")
+async def deny_tool_call(approval_id: str, payload: dict | None = None) -> dict:
+    reason = str((payload or {}).get("reason") or "用户拒绝执行")
+    item = pending_approvals.deny(approval_id, reason=reason)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Approval not found")
+    event = _event_builder_for_existing_turn(item.session_id, item.turn_id)(
+        "permission.denied",
+        category="permission",
+        phase="denied",
+        status="failed",
+        title=f"已拒绝：{item.tool}",
+        message=reason,
+        tool=item.tool,
+        call_id=item.call_id,
+        arguments=item.arguments,
+        data={"permission": item.permission},
+    )
+    _persist_runtime_event(event)
+    return {"ok": True, "status": "denied", "approval": item.as_dict(), "event": event}
+
+
+@app.get("/api/processes")
+async def list_processes() -> dict:
+    return {"items": process_manager.list_jobs()}
+
+
+@app.get("/api/processes/{job_id}")
+async def get_process(job_id: str) -> dict:
+    job = process_manager.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Process not found")
+    return job
+
+
+@app.delete("/api/processes/{job_id}")
+async def kill_process(job_id: str) -> dict:
+    try:
+        return process_manager.kill(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Process not found") from exc
 
 
 @app.get("/api/workspaces")
@@ -511,9 +629,22 @@ async def create_chat_message(session_id: str, payload: ChatMessageCreate) -> Ch
 async def stream_chat_message(
     session_id: str,
     payload: ChatMessageCreate,
-) -> StreamingResponse:
+) -> Response:
     if _get_current_chat_session(session_id) is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
+    if session_id in _active_session_turns:
+        queued = ChatMessage(
+            session_id=session_id,
+            role=ChatRole.USER,
+            content=payload.content,
+        )
+        store.add_chat_message(queued)
+        _queued_session_messages.setdefault(session_id, []).append(queued)
+        return JSONResponse(
+            status_code=202,
+            content={"ok": True, "status": "queued", "message": queued.model_dump(mode="json")},
+        )
+    _active_session_turns.add(session_id)
 
     async def emit() -> AsyncIterator[str]:
         turn_id = new_id("turn")
@@ -597,6 +728,16 @@ async def stream_chat_message(
                 runtime = _runtime_event_from_agent_event(event, runtime_event)
                 if runtime is not None:
                     yield _ndjson({"type": "runtime_event", "event": runtime})
+                if event["type"] == "permission_request":
+                    pending_approvals.create(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        call_id=str(event.get("call_id") or runtime.get("id") if runtime else new_id("tool")),
+                        tool=str(event.get("tool") or "tool"),
+                        arguments=event.get("arguments") if isinstance(event.get("arguments"), dict) else {},
+                        permission=str(event.get("permission") or ""),
+                        reason=str(event.get("message") or "执行工具前需要用户确认。"),
+                    )
                 if event["type"] == "assistant_delta":
                     answer_parts.append(event["delta"])
                     yield _ndjson(event)
@@ -631,6 +772,16 @@ async def stream_chat_message(
                 )
             )
             yield _ndjson({"type": "runtime_event", "event": completed})
+            for queued in _queued_session_messages.pop(session_id, []):
+                queued_event = runtime_event(
+                    "turn.queued_message",
+                    category="turn",
+                    phase="queued",
+                    title="已收到排队消息",
+                    message=queued.content,
+                    data={"message_id": queued.id, "task_id": task.id},
+                )
+                yield _ndjson({"type": "queued_message", "message": queued.model_dump(mode="json"), "event": queued_event})
             yield _ndjson(
                 {
                     "type": "assistant_done",
@@ -694,6 +845,8 @@ async def stream_chat_message(
             )
             yield _ndjson({"type": "runtime_event", "event": failed})
             yield _ndjson({"type": "error", "message": error_message.model_dump(mode="json")})
+        finally:
+            _active_session_turns.discard(session_id)
 
     return StreamingResponse(emit(), media_type="application/x-ndjson")
 
@@ -768,6 +921,24 @@ def _runtime_event_from_agent_event(event: dict, build_event) -> dict | None:
             output=str(event.get("output") or ""),
             data=event.get("data") if isinstance(event.get("data"), dict) else {},
         )
+    if event_type == "tool_output":
+        stream = str(event.get("stream") or "stdout")
+        chunk = str(event.get("chunk") or "")
+        return build_event(
+            "tool.output",
+            category="tool",
+            phase="output",
+            status="running",
+            title=f"{event.get('tool') or 'tool'} {stream}",
+            message=chunk,
+            tool=str(event.get("tool") or "tool"),
+            call_id=str(event.get("call_id") or new_id("tool")),
+            output=chunk,
+            data={
+                "stream": stream,
+                **(event.get("data") if isinstance(event.get("data"), dict) else {}),
+            },
+        )
     if event_type == "permission_request":
         return build_event(
             "permission.requested",
@@ -829,6 +1000,47 @@ def _runtime_event_from_agent_event(event: dict, build_event) -> dict | None:
             message=status,
         )
     return None
+
+
+def _event_builder_for_existing_turn(session_id: str, turn_id: str):
+    sequence = len([event for event in store.list_chat_events(session_id) if event.turn_id == turn_id])
+
+    def build_event(
+        event_type: str,
+        *,
+        category: str,
+        phase: str,
+        title: str,
+        message: str | None = None,
+        status: str = "ok",
+        tool: str | None = None,
+        call_id: str | None = None,
+        arguments: dict | None = None,
+        output: str | None = None,
+        data: dict | None = None,
+        persist: bool = False,
+    ) -> dict:
+        nonlocal sequence
+        sequence += 1
+        return {
+            "id": call_id or new_id("evt"),
+            "session_id": session_id,
+            "turn_id": turn_id,
+            "sequence": sequence,
+            "event_type": event_type,
+            "category": category,
+            "phase": phase,
+            "status": status,
+            "title": title,
+            "message": message or title,
+            "tool": tool,
+            "call_id": call_id,
+            "arguments": arguments or {},
+            "output": output,
+            "data": data or {},
+        }
+
+    return build_event
 
 
 def _persist_runtime_event(event: dict) -> None:
