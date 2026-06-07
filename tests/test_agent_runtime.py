@@ -183,6 +183,30 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertTrue(start["call_id"].startswith("tool_"))
         self.assertEqual(start["call_id"], done["call_id"])
 
+    def test_ask_permission_emits_permission_request_for_shell(self) -> None:
+        runtime = CodexLikeAgentRuntime(
+            provider=BigModelProvider(),
+            project_root=Path(self.tmpdir.name),
+            permission_mode="ask",
+        )
+
+        async def collect_events() -> list[dict]:
+            return [
+                event
+                async for event in runtime._run_tool_calls(
+                    [{"tool": "shell_command", "arguments": {"command": "pwd", "workdir": "."}}]
+                )
+            ]
+
+        events = asyncio.run(collect_events())
+        request = next(event for event in events if event["type"] == "permission_request")
+        result = next(event for event in events if event["type"] == "tool_result_json")
+
+        self.assertEqual(request["tool"], "shell_command")
+        self.assertEqual(request["permission"], "shell")
+        self.assertEqual(request["arguments"]["command"], "pwd")
+        self.assertIn("permission_request", result["result_json"])
+
     def test_final_stream_tool_calls_are_executed_not_rendered_as_text(self) -> None:
         async def fake_stream(_messages):
             yield '<tool_calls>[{"tool":"shell_command","arguments":{"command":"pwd","workdir":".","timeout_ms":5000}}]</tool_calls>'

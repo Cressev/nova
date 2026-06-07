@@ -814,6 +814,22 @@ function appendStoredEvent(event) {
     );
     return;
   }
+  if (event.type === "permission" || event.event_type === "permission.requested") {
+    appendPermissionEvent(
+      {
+        call_id: event.id,
+        tool: event.tool,
+        permission: event.data?.permission,
+        title: event.title,
+        message: event.message,
+        arguments: event.arguments || {},
+        data: event.data || {},
+      },
+      null,
+      { autoscroll: false },
+    );
+    return;
+  }
   if (event.type === "status") {
     appendStatusEvent(event.title, { autoscroll: false });
   }
@@ -945,6 +961,40 @@ function finishToolEvent(node, event, options = {}) {
   if (options.autoscroll !== false) {
     scrollMessagesToBottom();
   }
+}
+
+function appendPermissionEvent(event, beforeNode = null, options = {}) {
+  const args = JSON.stringify(event.arguments || {}, null, 2);
+  const node = document.createElement("article");
+  node.className = "permission-event pending";
+  node.dataset.callId = event.call_id || "";
+  node.dataset.tool = event.tool || "";
+  node.innerHTML = `
+    <div class="permission-event-head">
+      <span>${escapeHtml(event.permission || event.data?.permission || "审批")}</span>
+      <strong>${escapeHtml(event.title || `需要审批：${event.tool || "工具"}`)}</strong>
+      <em>待确认</em>
+    </div>
+    <p>${escapeHtml(event.message || "执行该工具前需要用户确认。")}</p>
+    <details open>
+      <summary>请求参数</summary>
+      <pre>${escapeHtml(args)}</pre>
+    </details>
+    <div class="permission-actions">
+      <button type="button" disabled>允许</button>
+      <button type="button" disabled>拒绝</button>
+      <small>审批执行接口下一步接入</small>
+    </div>
+  `;
+  if (beforeNode?.parentElement === messagesEl) {
+    messagesEl.insertBefore(node, beforeNode);
+  } else {
+    messagesEl.appendChild(node);
+  }
+  if (options.autoscroll !== false) {
+    scrollMessagesToBottom();
+  }
+  return node;
 }
 
 function roleLabel(role) {
@@ -1449,7 +1499,11 @@ function turnProcessNodes(assistantNode) {
   const nodes = [];
   let node = assistantNode.previousElementSibling;
   while (node && !(node.classList.contains("message") && node.classList.contains("user"))) {
-    if (node.classList.contains("tool-event") || node.classList.contains("agent-status")) {
+    if (
+      node.classList.contains("tool-event")
+      || node.classList.contains("permission-event")
+      || node.classList.contains("agent-status")
+    ) {
       nodes.push(node);
     }
     node = node.previousElementSibling;
@@ -1486,8 +1540,8 @@ function ensureTurnProcessControl(assistantNode, processNodes, count) {
   }
   control.hidden = processNodes.length === 0;
   control.textContent = assistantNode.classList.contains("turn-process-collapsed")
-    ? `展开本轮过程 · ${count} 个工具`
-    : `收起本轮过程 · ${count} 个工具`;
+    ? `展开本轮过程 · ${count} 个事件`
+    : `收起本轮过程 · ${count} 个事件`;
 }
 
 function updateTurnToolControl(assistantNode) {
@@ -1496,7 +1550,9 @@ function updateTurnToolControl(assistantNode) {
     return;
   }
   const processNodes = turnProcessNodes(assistantNode);
-  const count = processNodes.filter((node) => node.classList.contains("tool-event")).length;
+  const count = processNodes.filter((node) => (
+    node.classList.contains("tool-event") || node.classList.contains("permission-event")
+  )).length;
   const hasProcess = processNodes.length > 0;
   button.hidden = !hasProcess;
   button.textContent = assistantNode.classList.contains("turn-process-collapsed") ? "展开过程" : "收起过程";
@@ -1674,6 +1730,11 @@ async function streamAssistant(sessionId, content, assistantNode) {
         activeToolNodes.delete(key);
         streamStateEl.textContent = event.ok ? "工具完成，继续推理" : "工具失败，继续处理";
       },
+      onPermissionRequest: (event) => {
+        streamStateEl.textContent = `${event.tool || "工具"} 等待审批`;
+        appendPermissionEvent(event, assistantNode);
+        updateTurnToolControl(assistantNode);
+      },
       onStatus: (event) => {
         streamStateEl.textContent = event.status || "运行中";
         appendStatusEvent(event.status || "运行中", { beforeNode: assistantNode });
@@ -1701,6 +1762,11 @@ async function streamAssistant(sessionId, content, assistantNode) {
         finishToolEvent(activeToolNodes.get(key), event);
         activeToolNodes.delete(key);
         streamStateEl.textContent = event.ok ? "工具完成，继续推理" : "工具失败，继续处理";
+      },
+      onPermissionRequest: (event) => {
+        streamStateEl.textContent = `${event.tool || "工具"} 等待审批`;
+        appendPermissionEvent(event, assistantNode);
+        updateTurnToolControl(assistantNode);
       },
       onStatus: (event) => {
         streamStateEl.textContent = event.status || "运行中";
@@ -1737,6 +1803,9 @@ function consumeStreamLines(buffer, assistantNode, handlers) {
     }
     if (event.type === "tool_done") {
       handlers.onToolDone?.(event);
+    }
+    if (event.type === "permission_request") {
+      handlers.onPermissionRequest?.(event);
     }
     if (event.type === "agent_status") {
       handlers.onStatus?.(event);

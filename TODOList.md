@@ -1011,3 +1011,41 @@ ui设置中添加可以填写apikey的地方，不需要重启就能生效。你
 - 本地网站：`http://127.0.0.1:8765`。
 
 ------ todo-list end at 2026/06/07/11:50:40 -----
+
+------ todo-list begin at 2026/06/07/12:04:00 -----
+
+用户请求：
+现在在开发，所以你默认给我填上api，要不然我每次都要重新填。然后立即开始下一步开发
+
+制定清单：
+- [x] 1. 确认开发 API Key 状态
+  - [x] 1.1 检查本地服务 provider 状态
+  - [x] 1.2 确认 runtime secret 已让 provider 默认 configured=true
+- [x] 2. TDD 补权限审批事件测试
+  - [x] 2.1 Runtime ask 模式下写入/shell 工具生成 permission_request
+  - [x] 2.2 Stream API 将 permission_request 映射为 runtime_event 并持久化
+  - [x] 2.3 前端流解析能消费 permission_request
+- [x] 3. 实现第一版审批请求卡片
+  - [x] 3.1 Runtime 区分“需要审批”和普通执行失败
+  - [x] 3.2 Runtime 输出 permission_request，不执行受限工具
+  - [x] 3.3 API runtime event 增加 permission.requested
+  - [x] 3.4 前端实时和历史 timeline 展示审批请求
+- [x] 4. 验证和交付
+  - [x] 4.1 自动化测试、JS 检查、Python 编译
+  - [x] 4.2 Playwright 真实验证 ask 模式审批卡片
+  - [x] 4.3 更新 CURRENT.md、PROGRESS.md、log.md、user-queries.md
+  - [x] 4.4 提交、推送、服务保持启动并给出下一步建议
+
+执行问题记录：
+暂无
+
+交付记录：
+- 开发 API Key 已确认通过 `.nova/runtime-secrets.json` 默认生效，`/api/provider` 返回 `configured=true`、`api_key_source=runtime`，未写入代码和 Git。
+- ask 权限模式下 shell/write 工具现在先生成 `permission_request`，不会直接执行受限工具。
+- 流式 API 将权限请求映射为统一 `runtime_event`：`permission.requested`，并持久化为 chat timeline 的 `permission` 类型。
+- 前端实时流和历史 timeline 都能展示“需要审批”卡片，包含工具名、权限级别、请求参数和待确认状态；审批按钮先保持禁用，真正 approve/deny 接口下一步接入。
+- 验证通过：`PYTHONPATH=src python3 -m unittest discover -s tests`、`node tests/frontend_runtime_events.test.js`、`node tests/frontend_session_groups.test.js`、`node tests/frontend_permission_events.test.js`、`node --check static/app.js`、`python3 -m py_compile src/nova_gateway/*.py`。
+- Playwright 真实验证：临时切到 ask 后发送“你不会调用命令行工具吗”，页面出现 `shell_command` 审批卡片和参数；截图 `.playwright-cli/page-2026-06-07T04-27-38-205Z.png` 已真实查看。
+- 验证后已恢复 `workspace_write`，本地服务保持启动：`http://127.0.0.1:8765`。
+
+------ todo-list end at 2026/06/07/12:36:00 -----

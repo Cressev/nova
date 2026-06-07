@@ -729,6 +729,22 @@ def _runtime_event_from_agent_event(event: dict, build_event) -> dict | None:
             output=str(event.get("output") or ""),
             data=event.get("data") if isinstance(event.get("data"), dict) else {},
         )
+    if event_type == "permission_request":
+        return build_event(
+            "permission.requested",
+            category="permission",
+            phase="requested",
+            status="pending",
+            title=str(event.get("title") or f"需要审批：{event.get('tool') or '工具'}"),
+            message=str(event.get("message") or "执行工具前需要用户确认。"),
+            tool=str(event.get("tool") or "tool"),
+            call_id=str(event.get("call_id") or new_id("tool")),
+            arguments=event.get("arguments") if isinstance(event.get("arguments"), dict) else {},
+            data={
+                "permission": str(event.get("permission") or ""),
+                **(event.get("data") if isinstance(event.get("data"), dict) else {}),
+            },
+        )
     if event_type == "agent_status":
         status = str(event.get("status") or "运行中")
         return build_event(
@@ -748,7 +764,15 @@ def _persist_runtime_event(event: dict) -> None:
         ChatEvent(
             id=str(event.get("id") or new_id("evt")),
             session_id=str(event["session_id"]),
-            type="tool" if category == "tool" else "turn" if category == "turn" else "status",
+            type=(
+                "tool"
+                if category == "tool"
+                else "turn"
+                if category == "turn"
+                else "permission"
+                if category == "permission"
+                else "status"
+            ),
             event_type=str(event.get("event_type") or ""),
             phase=str(event.get("phase") or ""),
             turn_id=str(event.get("turn_id") or ""),

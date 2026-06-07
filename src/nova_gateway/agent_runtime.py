@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from uuid import uuid4
 
-from .agent_tools import ToolExecutionError, WorkspaceTools, tool_result_as_json
+from .agent_tools import TOOL_SPECS, ToolExecutionError, WorkspaceTools, tool_result_as_json
 from .memory import ProjectMemory
 from .models import ChatMessage, ChatRole
 from .provider import BigModelProvider, ProviderError
@@ -449,6 +449,11 @@ class CodexLikeAgentRuntime:
             return
 
         for call_id, name, arguments in normalized:
+            if self._requires_permission_request(name):
+                event = self._permission_request_event(call_id, name, arguments)
+                yield event
+                yield {"type": "tool_result_json", "result_json": self._permission_result_json(event)}
+                continue
             yield {
                 "type": "tool_start",
                 "call_id": call_id,
@@ -494,6 +499,39 @@ class CodexLikeAgentRuntime:
                 },
                 result_json,
             )
+
+    def _requires_permission_request(self, tool_name: str) -> bool:
+        spec = TOOL_SPECS.get(tool_name)
+        return bool(self.permission_mode == "ask" and spec and spec.permission != "read")
+
+    def _permission_request_event(self, call_id: str, tool_name: str, arguments: dict) -> dict:
+        spec = TOOL_SPECS.get(tool_name)
+        permission = spec.permission if spec else "unknown"
+        return {
+            "type": "permission_request",
+            "call_id": call_id,
+            "tool": tool_name,
+            "permission": permission,
+            "title": f"需要审批：{tool_name}",
+            "message": f"执行 {tool_name} 前需要用户确认。",
+            "arguments": arguments,
+            "data": {"reason": "ask 模式需要审批"},
+        }
+
+    def _permission_result_json(self, event: dict) -> str:
+        return json.dumps(
+            {
+                "tool": event.get("tool"),
+                "ok": False,
+                "permission_request": True,
+                "permission": event.get("permission"),
+                "title": event.get("title"),
+                "output": event.get("message"),
+                "arguments": event.get("arguments") if isinstance(event.get("arguments"), dict) else {},
+                "data": event.get("data") if isinstance(event.get("data"), dict) else {},
+            },
+            ensure_ascii=False,
+        )
 
     def _normalize_tool_call(self, tool_call: dict) -> tuple[str, dict]:
         function_call = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}

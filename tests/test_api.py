@@ -374,6 +374,60 @@ class ApiTest(unittest.TestCase):
             sorted(event.get("sequence") for event in stored_events),
         )
 
+    def test_stream_maps_permission_request_runtime_event(self) -> None:
+        async def fake_agent_stream(messages):
+            yield {
+                "type": "permission_request",
+                "call_id": "tool_needs_shell",
+                "tool": "shell_command",
+                "permission": "shell",
+                "title": "需要审批：shell_command",
+                "message": "执行命令前需要用户确认。",
+                "arguments": {"command": "pwd"},
+                "data": {"reason": "ask 模式需要审批"},
+            }
+            yield {"type": "assistant_delta", "delta": "需要审批"}
+            yield {"type": "assistant_done_content", "content": "需要审批"}
+
+        session_response = self.client.post(
+            "/api/chat/sessions",
+            json={"title": "权限事件测试"},
+        )
+        session = session_response.json()
+
+        class FakeRuntime:
+            stream = staticmethod(fake_agent_stream)
+
+        with patch.object(app_module, "_agent_runtime", lambda: FakeRuntime()):
+            with self.client.stream(
+                "POST",
+                f"/api/chat/sessions/{session['id']}/stream",
+                json={"content": "执行 pwd"},
+            ) as response:
+                self.assertEqual(response.status_code, 200)
+                lines = [line for line in response.iter_lines() if line.strip()]
+
+        runtime_events = [
+            app_module.json.loads(line)["event"]
+            for line in lines
+            if app_module.json.loads(line).get("type") == "runtime_event"
+        ]
+        permission_events = [
+            event for event in runtime_events if event["event_type"] == "permission.requested"
+        ]
+        self.assertEqual(len(permission_events), 1)
+        self.assertEqual(permission_events[0]["tool"], "shell_command")
+        self.assertEqual(permission_events[0]["arguments"], {"command": "pwd"})
+
+        timeline = self.client.get(f"/api/chat/sessions/{session['id']}/timeline")
+        stored = [
+            item["item"]
+            for item in timeline.json()["items"]
+            if item["kind"] == "event" and item["item"].get("event_type") == "permission.requested"
+        ]
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(stored[0]["type"], "permission")
+
 
 if __name__ == "__main__":
     unittest.main()
