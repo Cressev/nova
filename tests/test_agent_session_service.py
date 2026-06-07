@@ -54,6 +54,41 @@ class AgentSessionServiceTest(unittest.TestCase):
     def test_main_uses_agent_session_service_for_pending_approvals(self) -> None:
         self.assertIs(app_module.pending_approvals, app_module.agent_sessions.pending_approvals)
 
+    def test_turn_runtime_tracks_tools_background_cancel_and_final_answer(self) -> None:
+        service = AgentSessionService()
+
+        service.start_turn("chat_a", turn_id="turn_a", user_message_id="msg_user", task_id="task_a")
+        service.record_tool_call(
+            "chat_a",
+            turn_id="turn_a",
+            call_id="tool_read",
+            tool="read_file",
+            arguments={"path": "README.md"},
+            status="running",
+        )
+        service.record_tool_call(
+            "chat_a",
+            turn_id="turn_a",
+            call_id="tool_read",
+            tool="read_file",
+            status="completed",
+            output="Nova",
+        )
+        service.record_background_job("chat_a", turn_id="turn_a", job_id="proc_123", call_id="tool_shell")
+        service.request_cancel("chat_a")
+        service.complete_turn("chat_a", message_id="msg_assistant", content="完成")
+
+        state = service.runtime_state("chat_a")
+
+        self.assertFalse(state["active"])
+        self.assertEqual(state["current_turn"]["turn_id"], "turn_a")
+        self.assertEqual(state["current_turn"]["status"], "completed")
+        self.assertTrue(state["cancel_requested"])
+        self.assertEqual(state["final_answer"]["message_id"], "msg_assistant")
+        self.assertEqual(state["tool_calls"][0]["call_id"], "tool_read")
+        self.assertEqual(state["tool_calls"][0]["status"], "completed")
+        self.assertEqual(state["background_job_ids"], ["proc_123"])
+
 
 if __name__ == "__main__":
     unittest.main()

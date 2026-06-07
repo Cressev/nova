@@ -438,6 +438,7 @@ async def cancel_tool_call(call_id: str) -> dict:
         job = process_manager.cancel_call(call_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Tool call not found") from exc
+    agent_sessions.request_cancel_for_call(call_id)
     return {"ok": True, "status": job["status"], "job": job}
 
 
@@ -602,18 +603,17 @@ async def chat_runtime_state(session_id: str) -> dict:
     session = _get_current_chat_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
+    runtime = agent_sessions.runtime_state(session_id)
     return {
         "session": session.model_dump(mode="json"),
         "timeline": {"items": _chat_timeline_items(session_id)},
+        "runtime": runtime,
         "pending_approvals": [
             item.as_dict() for item in agent_sessions.list_pending_approvals(session_id=session_id)
         ],
         "processes": process_manager.list_jobs(),
         "active": agent_sessions.is_active(session_id),
-        "queued_messages": [
-            message.model_dump(mode="json")
-            for message in agent_sessions.queued_session_messages.get(session_id, [])
-        ],
+        "queued_messages": runtime["queued_messages"],
     }
 
 
@@ -771,6 +771,7 @@ async def stream_chat_message(
                 }
                 if persist:
                     _persist_runtime_event(event)
+                agent_sessions.record_runtime_event(event)
                 return event
 
             if emit_user:
@@ -792,6 +793,12 @@ async def stream_chat_message(
                     message="Nova 正在调用 GLM-4.7 生成流式回复。",
                     data={"session_id": session_id},
                 )
+            )
+            agent_sessions.start_turn(
+                session_id,
+                turn_id=turn_id,
+                user_message_id=user_message.id,
+                task_id=task.id,
             )
             started = runtime_event(
                 "turn.started",
@@ -837,6 +844,11 @@ async def stream_chat_message(
                     content="".join(answer_parts),
                 )
                 store.add_chat_message(assistant_message)
+                agent_sessions.complete_turn(
+                    session_id,
+                    message_id=assistant_message.id,
+                    content=assistant_message.content,
+                )
                 completed = runtime_event(
                     "turn.completed",
                     category="turn",
@@ -862,6 +874,7 @@ async def stream_chat_message(
                     }
                 )
             except ProviderError as exc:
+                agent_sessions.fail_turn(session_id, reason=str(exc))
                 failed = runtime_event(
                     "turn.failed",
                     category="turn",
@@ -891,6 +904,7 @@ async def stream_chat_message(
                 yield _ndjson({"type": "error", "message": error_message.model_dump(mode="json")})
             except Exception as exc:
                 detail = str(exc) or repr(exc)
+                agent_sessions.fail_turn(session_id, reason=f"{type(exc).__name__}: {detail}")
                 failed = runtime_event(
                     "turn.failed",
                     category="turn",

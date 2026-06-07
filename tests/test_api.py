@@ -582,6 +582,41 @@ class ApiTest(unittest.TestCase):
             self.assertEqual(payload["pending_approvals"][0]["id"], "tool_restore")
             self.assertTrue(any(item["id"] == job["id"] for item in payload["processes"]))
 
+    def test_session_runtime_state_exposes_agent_session_turn_runtime(self) -> None:
+        session = self.client.post("/api/chat/sessions", json={"title": "运行态"}).json()
+        app_module.agent_sessions.start_turn(
+            session["id"],
+            turn_id="turn_state",
+            user_message_id="msg_user",
+            task_id="task_state",
+        )
+        app_module.agent_sessions.record_tool_call(
+            session["id"],
+            turn_id="turn_state",
+            call_id="tool_state",
+            tool="read_file",
+            arguments={"path": "README.md"},
+            status="running",
+        )
+        app_module.agent_sessions.record_background_job(
+            session["id"],
+            turn_id="turn_state",
+            job_id="proc_state",
+            call_id="tool_state",
+        )
+        app_module.agent_sessions.request_cancel(session["id"])
+        app_module.agent_sessions.complete_turn(session["id"], message_id="msg_assistant", content="完成")
+
+        response = self.client.get(f"/api/chat/sessions/{session['id']}/runtime-state")
+
+        self.assertEqual(response.status_code, 200)
+        runtime = response.json()["runtime"]
+        self.assertEqual(runtime["current_turn"]["turn_id"], "turn_state")
+        self.assertEqual(runtime["tool_calls"][0]["call_id"], "tool_state")
+        self.assertEqual(runtime["background_job_ids"], ["proc_state"])
+        self.assertTrue(runtime["cancel_requested"])
+        self.assertEqual(runtime["final_answer"]["message_id"], "msg_assistant")
+
 
 if __name__ == "__main__":
     unittest.main()
