@@ -125,6 +125,22 @@ class RuntimeControlTest(unittest.TestCase):
             self.assertEqual(read.status_code, 200)
             self.assertIn("用户偏好", read.json()["content"])
 
+    def test_memory_status_separates_global_and_project_persona_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_root = app_module.workspace_manager.current_root
+            app_module.workspace_manager.current_root = Path(tmpdir).resolve()
+            self.addCleanup(lambda: setattr(app_module.workspace_manager, "current_root", old_root))
+
+            status = self.client.get("/api/memory/status").json()
+            sources = status["injected_sources"]
+            scopes = {item["scope"] for item in sources}
+            names = {item["name"] for item in sources}
+
+            self.assertIn("全局人格", scopes)
+            self.assertIn("项目人格", scopes)
+            self.assertIn("soul.md", names)
+            self.assertIn("tools.md", names)
+
 
 if __name__ == "__main__":
     unittest.main()

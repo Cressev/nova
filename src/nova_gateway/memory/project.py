@@ -18,7 +18,8 @@ class ProjectMemory:
         self.project_agent_file = self.project_root / "AGENTS.md"
         self.development_state_files = ["CURRENT.md", "PROGRESS.md", "TODOList.md", "log.md"]
         self.memory_dir = self.project_root / ".nova" / "memory"
-        self.memory_files = ["index.md", "user.md", "project.md", "session.md"]
+        self.global_memory_dir = Path.home() / ".nova" / "memory"
+        self.memory_files = ["index.md", "user.md", "project.md", "session.md", "soul.md", "tools.md"]
 
     def context(self) -> str:
         # 只注入“给开发 Agent 的指令”。Nova 自身开发状态文件只给外层 Codex 看，不塞进产品内 Agent。
@@ -63,17 +64,19 @@ class ProjectMemory:
         }
 
     def injected_memory_sources(self) -> list[dict[str, Any]]:
-        return [
-            self._source_status("长期记忆", self.memory_dir / filename, injected=True)
-            for filename in self.memory_files
-        ]
+        sources: list[dict[str, Any]] = []
+        for filename in self.memory_files:
+            sources.append(self._source_status("全局人格", self.global_memory_dir / filename, injected=True))
+        for filename in self.memory_files:
+            sources.append(self._source_status("项目人格", self.memory_dir / filename, injected=True))
+        return sources
 
     def memory_file_statuses(self) -> list[dict[str, Any]]:
         files = {filename: self.memory_dir / filename for filename in self.memory_files}
         if self.memory_dir.is_dir():
             for path in sorted(self.memory_dir.glob("*.md")):
                 files.setdefault(path.name, path)
-        return [self._source_status("长期记忆", path, injected=True) for path in files.values()]
+        return [self._source_status("项目人格", path, injected=True) for path in files.values()]
 
     def read_file(self, name: str) -> dict[str, Any]:
         path = self._resolve_memory_file(name)

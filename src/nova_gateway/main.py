@@ -647,204 +647,210 @@ async def stream_chat_message(
     agent_sessions.mark_active(session_id)
 
     async def emit() -> AsyncIterator[str]:
-        turn_id = new_id("turn")
-        sequence = 0
+        async def run_turn(user_message: ChatMessage, *, emit_user: bool) -> AsyncIterator[str]:
+            turn_id = new_id("turn")
+            sequence = 0
 
-        def runtime_event(
-            event_type: str,
-            *,
-            category: str,
-            phase: str,
-            title: str,
-            message: str | None = None,
-            status: str = "ok",
-            tool: str | None = None,
-            call_id: str | None = None,
-            arguments: dict | None = None,
-            output: str | None = None,
-            data: dict | None = None,
-            persist: bool = True,
-        ) -> dict:
-            nonlocal sequence
-            sequence += 1
-            event = {
-                "id": call_id or new_id("evt"),
-                "session_id": session_id,
-                "turn_id": turn_id,
-                "sequence": sequence,
-                "event_type": event_type,
-                "category": category,
-                "phase": phase,
-                "status": status,
-                "title": title,
-                "message": message or title,
-                "tool": tool,
-                "call_id": call_id,
-                "arguments": arguments or {},
-                "output": output,
-                "data": data or {},
-            }
-            if persist:
-                _persist_runtime_event(event)
-            return event
+            def runtime_event(
+                event_type: str,
+                *,
+                category: str,
+                phase: str,
+                title: str,
+                message: str | None = None,
+                status: str = "ok",
+                tool: str | None = None,
+                call_id: str | None = None,
+                arguments: dict | None = None,
+                output: str | None = None,
+                data: dict | None = None,
+                persist: bool = True,
+            ) -> dict:
+                nonlocal sequence
+                sequence += 1
+                event = {
+                    "id": call_id or new_id("evt"),
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "sequence": sequence,
+                    "event_type": event_type,
+                    "category": category,
+                    "phase": phase,
+                    "status": status,
+                    "title": title,
+                    "message": message or title,
+                    "tool": tool,
+                    "call_id": call_id,
+                    "arguments": arguments or {},
+                    "output": output,
+                    "data": data or {},
+                }
+                if persist:
+                    _persist_runtime_event(event)
+                return event
 
-        user_message = ChatMessage(
+            if emit_user:
+                store.add_chat_message(user_message)
+                yield _ndjson({"type": "user_message", "message": user_message.model_dump(mode="json")})
+
+            task = store.create_task(
+                Task(
+                    id=new_id("task"),
+                    prompt=user_message.content,
+                    workspace=str(workspace_manager.current_root),
+                )
+            )
+            store.add_event(
+                TimelineEvent(
+                    task_id=task.id,
+                    type="chat_stream_started",
+                    title="开始流式回复",
+                    message="Nova 正在调用 GLM-4.7 生成流式回复。",
+                    data={"session_id": session_id},
+                )
+            )
+            started = runtime_event(
+                "turn.started",
+                category="turn",
+                phase="started",
+                title="开始处理用户请求",
+                message=user_message.content,
+                data={"message_id": user_message.id, "task_id": task.id},
+            )
+            yield _ndjson({"type": "runtime_event", "event": started})
+
+            answer_parts: list[str] = []
+            try:
+                history = [message for message in store.list_chat_messages(session_id) if message.id != user_message.id]
+                turn_messages = [*history, user_message]
+                async for event in _agent_runtime().stream(turn_messages):
+                    runtime = _runtime_event_from_agent_event(event, runtime_event)
+                    if runtime is not None:
+                        yield _ndjson({"type": "runtime_event", "event": runtime})
+                    if event["type"] == "permission_request":
+                        pending_approvals.create(
+                            session_id=session_id,
+                            turn_id=turn_id,
+                            call_id=str(event.get("call_id") or (runtime.get("id") if runtime else new_id("tool"))),
+                            tool=str(event.get("tool") or "tool"),
+                            arguments=event.get("arguments") if isinstance(event.get("arguments"), dict) else {},
+                            permission=str(event.get("permission") or ""),
+                            reason=str(event.get("message") or "执行工具前需要用户确认。"),
+                        )
+                    if event["type"] == "assistant_delta":
+                        answer_parts.append(event["delta"])
+                        yield _ndjson(event)
+                        continue
+                    if event["type"] == "assistant_done_content":
+                        if not answer_parts and event.get("content"):
+                            answer_parts.append(event["content"])
+                        continue
+                    yield _ndjson(event)
+
+                assistant_message = ChatMessage(
+                    session_id=session_id,
+                    role=ChatRole.ASSISTANT,
+                    content="".join(answer_parts),
+                )
+                store.add_chat_message(assistant_message)
+                completed = runtime_event(
+                    "turn.completed",
+                    category="turn",
+                    phase="completed",
+                    title="本轮回复完成",
+                    message="Nova 已完成本次运行。",
+                    data={"message_id": assistant_message.id, "task_id": task.id},
+                )
+                store.add_event(
+                    TimelineEvent(
+                        task_id=task.id,
+                        type="assistant_stream_completed",
+                        title="流式回复完成",
+                        message="GLM-4.7 已完成本次流式回复。",
+                        data={"session_id": session_id, "message_id": assistant_message.id},
+                    )
+                )
+                yield _ndjson({"type": "runtime_event", "event": completed})
+                yield _ndjson(
+                    {
+                        "type": "assistant_done",
+                        "message": assistant_message.model_dump(mode="json"),
+                    }
+                )
+            except ProviderError as exc:
+                failed = runtime_event(
+                    "turn.failed",
+                    category="turn",
+                    phase="failed",
+                    status="failed",
+                    title="模型调用失败",
+                    message=str(exc),
+                    data={"task_id": task.id},
+                )
+                error_message = ChatMessage(
+                    session_id=session_id,
+                    role=ChatRole.ERROR,
+                    content=str(exc),
+                )
+                store.add_chat_message(error_message)
+                store.add_event(
+                    TimelineEvent(
+                        task_id=task.id,
+                        type="assistant_stream_failed",
+                        title="流式回复失败",
+                        message=str(exc),
+                        status="error",
+                        data={"session_id": session_id},
+                    )
+                )
+                yield _ndjson({"type": "runtime_event", "event": failed})
+                yield _ndjson({"type": "error", "message": error_message.model_dump(mode="json")})
+            except Exception as exc:
+                detail = str(exc) or repr(exc)
+                failed = runtime_event(
+                    "turn.failed",
+                    category="turn",
+                    phase="failed",
+                    status="failed",
+                    title="运行时异常",
+                    message=f"{type(exc).__name__}: {detail}",
+                    data={"task_id": task.id},
+                )
+                error_message = ChatMessage(
+                    session_id=session_id,
+                    role=ChatRole.ERROR,
+                    content=f"Nova 运行时异常：{type(exc).__name__}: {detail}",
+                )
+                store.add_chat_message(error_message)
+                store.add_event(
+                    TimelineEvent(
+                        task_id=task.id,
+                        type="assistant_runtime_failed",
+                        title="运行时异常",
+                        message=detail,
+                        status="error",
+                        data={"session_id": session_id},
+                    )
+                )
+                yield _ndjson({"type": "runtime_event", "event": failed})
+                yield _ndjson({"type": "error", "message": error_message.model_dump(mode="json")})
+
+        first_message = ChatMessage(
             session_id=session_id,
             role=ChatRole.USER,
             content=payload.content,
         )
-        store.add_chat_message(user_message)
-        yield _ndjson({"type": "user_message", "message": user_message.model_dump(mode="json")})
-
-        task = store.create_task(
-            Task(
-                id=new_id("task"),
-                prompt=payload.content,
-                workspace=str(workspace_manager.current_root),
-            )
-        )
-        store.add_event(
-            TimelineEvent(
-                task_id=task.id,
-                type="chat_stream_started",
-                title="开始流式回复",
-                message="Nova 正在调用 GLM-4.7 生成流式回复。",
-                data={"session_id": session_id},
-            )
-        )
-        started = runtime_event(
-            "turn.started",
-            category="turn",
-            phase="started",
-            title="开始处理用户请求",
-            message=payload.content,
-            data={"message_id": user_message.id, "task_id": task.id},
-        )
-        yield _ndjson({"type": "runtime_event", "event": started})
-
-        answer_parts: list[str] = []
         try:
-            async for event in _agent_runtime().stream(store.list_chat_messages(session_id)):
-                runtime = _runtime_event_from_agent_event(event, runtime_event)
-                if runtime is not None:
-                    yield _ndjson({"type": "runtime_event", "event": runtime})
-                if event["type"] == "permission_request":
-                    pending_approvals.create(
-                        session_id=session_id,
-                        turn_id=turn_id,
-                        call_id=str(event.get("call_id") or runtime.get("id") if runtime else new_id("tool")),
-                        tool=str(event.get("tool") or "tool"),
-                        arguments=event.get("arguments") if isinstance(event.get("arguments"), dict) else {},
-                        permission=str(event.get("permission") or ""),
-                        reason=str(event.get("message") or "执行工具前需要用户确认。"),
-                    )
-                if event["type"] == "assistant_delta":
-                    answer_parts.append(event["delta"])
-                    yield _ndjson(event)
-                    continue
-                if event["type"] == "assistant_done_content":
-                    if not answer_parts and event.get("content"):
-                        answer_parts.append(event["content"])
-                    continue
-                yield _ndjson(event)
-
-            assistant_message = ChatMessage(
-                session_id=session_id,
-                role=ChatRole.ASSISTANT,
-                content="".join(answer_parts),
-            )
-            store.add_chat_message(assistant_message)
-            completed = runtime_event(
-                "turn.completed",
-                category="turn",
-                phase="completed",
-                title="本轮回复完成",
-                message="Nova 已完成本次运行。",
-                data={"message_id": assistant_message.id, "task_id": task.id},
-            )
-            store.add_event(
-                TimelineEvent(
-                    task_id=task.id,
-                    type="assistant_stream_completed",
-                    title="流式回复完成",
-                    message="GLM-4.7 已完成本次流式回复。",
-                    data={"session_id": session_id, "message_id": assistant_message.id},
-                )
-            )
-            yield _ndjson({"type": "runtime_event", "event": completed})
-            for queued in agent_sessions.drain_queued_messages(session_id):
-                queued_event = runtime_event(
-                    "turn.queued_message",
-                    category="turn",
-                    phase="queued",
-                    title="已收到排队消息",
-                    message=queued.content,
-                    data={"message_id": queued.id, "task_id": task.id},
-                )
-                yield _ndjson({"type": "queued_message", "message": queued.model_dump(mode="json"), "event": queued_event})
-            yield _ndjson(
-                {
-                    "type": "assistant_done",
-                    "message": assistant_message.model_dump(mode="json"),
-                }
-            )
-        except ProviderError as exc:
-            failed = runtime_event(
-                "turn.failed",
-                category="turn",
-                phase="failed",
-                status="failed",
-                title="模型调用失败",
-                message=str(exc),
-                data={"task_id": task.id},
-            )
-            error_message = ChatMessage(
-                session_id=session_id,
-                role=ChatRole.ERROR,
-                content=str(exc),
-            )
-            store.add_chat_message(error_message)
-            store.add_event(
-                TimelineEvent(
-                    task_id=task.id,
-                    type="assistant_stream_failed",
-                    title="流式回复失败",
-                    message=str(exc),
-                    status="error",
-                    data={"session_id": session_id},
-                )
-            )
-            yield _ndjson({"type": "runtime_event", "event": failed})
-            yield _ndjson({"type": "error", "message": error_message.model_dump(mode="json")})
-        except Exception as exc:
-            detail = str(exc) or repr(exc)
-            failed = runtime_event(
-                "turn.failed",
-                category="turn",
-                phase="failed",
-                status="failed",
-                title="运行时异常",
-                message=f"{type(exc).__name__}: {detail}",
-                data={"task_id": task.id},
-            )
-            error_message = ChatMessage(
-                session_id=session_id,
-                role=ChatRole.ERROR,
-                content=f"Nova 运行时异常：{type(exc).__name__}: {detail}",
-            )
-            store.add_chat_message(error_message)
-            store.add_event(
-                TimelineEvent(
-                    task_id=task.id,
-                    type="assistant_runtime_failed",
-                    title="运行时异常",
-                    message=detail,
-                    status="error",
-                    data={"session_id": session_id},
-                )
-            )
-            yield _ndjson({"type": "runtime_event", "event": failed})
-            yield _ndjson({"type": "error", "message": error_message.model_dump(mode="json")})
+            async for chunk in run_turn(first_message, emit_user=True):
+                yield chunk
+            while True:
+                queued_messages = agent_sessions.drain_queued_messages(session_id)
+                if not queued_messages:
+                    break
+                for queued in queued_messages:
+                    yield _ndjson({"type": "queued_message", "message": queued.model_dump(mode="json")})
+                    async for chunk in run_turn(queued, emit_user=False):
+                        yield chunk
         finally:
             agent_sessions.mark_idle(session_id)
 

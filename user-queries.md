@@ -429,3 +429,11 @@ ui设置中添加可以填写apikey的地方，不需要重启就能生效。你
 [Recieve:26/06/07-16:55:00 CST]
 
 [Done:26/06/07-17:15:49 CST | 本次提交]
+
+---
+
+https://jcnu7fvwv6c8.feishu.cn/docx/WetFdF7Nqos7jrxxvxgcbeXSnqg 清单开发完对应的就勾选完成；立即开始五天计划开发，边开发边测试，测试包括 UI 交互和显示，多记录 log。
+
+[Recieve:26/06/07-20:00:00 CST]
+
+[Done:26/06/07-20:15:57 CST | 本次提交]

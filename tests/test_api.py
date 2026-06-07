@@ -466,6 +466,51 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(len(stored), 1)
         self.assertEqual(stored[0]["type"], "permission")
 
+    def test_stream_processes_queued_messages_after_current_turn(self) -> None:
+        seen_prompts: list[str] = []
+
+        async def fake_agent_stream(messages):
+            last_user = next(message.content for message in reversed(messages) if message.role == app_module.ChatRole.USER)
+            seen_prompts.append(last_user)
+            yield {"type": "assistant_delta", "delta": f"回复：{last_user}"}
+            yield {"type": "assistant_done_content", "content": f"回复：{last_user}"}
+
+        session_response = self.client.post(
+            "/api/chat/sessions",
+            json={"title": "队列续跑"},
+        )
+        session = session_response.json()
+        queued_message = app_module.ChatMessage(
+            session_id=session["id"],
+            role=app_module.ChatRole.USER,
+            content="第二条",
+        )
+        app_module.store.add_chat_message(queued_message)
+        app_module.agent_sessions.enqueue_message(session["id"], queued_message)
+        self.addCleanup(lambda: app_module.agent_sessions.drain_queued_messages(session["id"]))
+
+        class FakeRuntime:
+            stream = staticmethod(fake_agent_stream)
+
+        with patch.object(app_module, "_agent_runtime", lambda: FakeRuntime()):
+            with self.client.stream(
+                "POST",
+                f"/api/chat/sessions/{session['id']}/stream",
+                json={"content": "第一条"},
+            ) as response:
+                self.assertEqual(response.status_code, 200)
+                lines = [line for line in response.iter_lines() if line.strip()]
+
+        events = [app_module.json.loads(line) for line in lines]
+        self.assertEqual(seen_prompts, ["第一条", "第二条"])
+        self.assertEqual(
+            [event["message"]["content"] for event in events if event["type"] == "assistant_done"],
+            ["回复：第一条", "回复：第二条"],
+        )
+        queued_events = [event for event in events if event["type"] == "queued_message"]
+        self.assertEqual(len(queued_events), 1)
+        self.assertEqual(queued_events[0]["message"]["id"], queued_message.id)
+
 
 if __name__ == "__main__":
     unittest.main()

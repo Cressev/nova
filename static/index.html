@@ -196,6 +196,27 @@
         </div>
       </form>
     </dialog>
+    <dialog id="memory-dialog" class="memory-dialog">
+      <form method="dialog" class="memory-dialog-panel">
+        <div class="dialog-title">
+          <strong id="memory-dialog-title">记忆文件</strong>
+          <button id="memory-dialog-close" type="button" aria-label="关闭">×</button>
+        </div>
+        <label class="memory-dialog-field">
+          <span>Markdown 文件名</span>
+          <input id="memory-dialog-name" placeholder="user.md / project.md / soul.md" autocomplete="off" />
+        </label>
+        <label class="memory-dialog-field">
+          <span>内容</span>
+          <textarea id="memory-dialog-content" spellcheck="false"></textarea>
+        </label>
+        <div id="memory-dialog-state" class="workspace-dialog-state">仅支持 .md 记忆文件</div>
+        <div class="workspace-dialog-actions">
+          <button id="memory-dialog-cancel" type="button">取消</button>
+          <button id="memory-dialog-save" type="button">保存</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="settings-dialog" class="settings-dialog">
       <form method="dialog" class="settings-panel">
         <div class="dialog-title">

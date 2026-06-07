@@ -879,6 +879,24 @@ code {
   background: linear-gradient(145deg, rgba(66, 222, 153, 0.2), rgba(66, 222, 153, 0.1));
 }
 
+.message.user.queued {
+  border-style: dashed;
+  border-color: rgba(240, 190, 96, 0.58);
+  background: linear-gradient(145deg, rgba(240, 190, 96, 0.18), rgba(66, 222, 153, 0.08));
+}
+
+.message-queue-badge {
+  border: 1px solid rgba(240, 190, 96, 0.5);
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: rgba(240, 190, 96, 0.12);
+  color: #f4cf83;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
 .message.assistant,
 .message.error {
   justify-self: start;
@@ -1551,7 +1569,6 @@ body.inspector-collapsed .inspector-toggle {
 
 .tool-tooltip {
   position: absolute;
-  right: 0;
   bottom: calc(100% + 6px);
   z-index: 20;
   display: none;
@@ -1565,8 +1582,15 @@ body.inspector-collapsed .inspector-toggle {
   font-style: normal;
 }
 
-.tool-chip:hover .tool-tooltip,
-.tool-chip:focus-visible .tool-tooltip {
+.tool-tooltip.align-left {
+  right: 0;
+}
+
+.tool-tooltip.align-right {
+  left: 0;
+}
+
+.tool-tooltip.visible {
   display: grid;
   gap: 6px;
 }
@@ -1643,6 +1667,69 @@ body.inspector-collapsed .inspector-toggle {
   background: rgba(18, 22, 20, 0.98);
   color: var(--text);
   box-shadow: var(--shadow);
+}
+
+.memory-dialog {
+  width: min(720px, calc(100vw - 32px));
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 0;
+  background: rgba(18, 22, 20, 0.98);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.memory-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(6px);
+}
+
+.memory-dialog-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  padding: 14px;
+}
+
+.memory-dialog-field {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+}
+
+.memory-dialog-field span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.memory-dialog-field input,
+.memory-dialog-field textarea {
+  box-sizing: border-box;
+  grid-area: auto;
+  justify-self: stretch;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px;
+  outline: 0;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text);
+}
+
+.memory-dialog-field textarea {
+  min-height: 280px;
+  resize: vertical;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .workspace-dialog::backdrop {

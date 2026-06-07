@@ -74,11 +74,20 @@ const settingsStatuslineEl = document.querySelector("#settings-statusline");
 const settingsSaveEl = document.querySelector("#settings-save");
 const settingsRestartEl = document.querySelector("#settings-restart");
 const settingsNoteEl = document.querySelector("#settings-note");
+const memoryDialogEl = document.querySelector("#memory-dialog");
+const memoryDialogTitleEl = document.querySelector("#memory-dialog-title");
+const memoryDialogNameEl = document.querySelector("#memory-dialog-name");
+const memoryDialogContentEl = document.querySelector("#memory-dialog-content");
+const memoryDialogStateEl = document.querySelector("#memory-dialog-state");
+const memoryDialogCloseEl = document.querySelector("#memory-dialog-close");
+const memoryDialogCancelEl = document.querySelector("#memory-dialog-cancel");
+const memoryDialogSaveEl = document.querySelector("#memory-dialog-save");
 const sidebarToggleEl = document.querySelector("#sidebar-toggle");
 const inspectorToggleEl = document.querySelector("#inspector-toggle");
 const statuslineToggleEl = document.querySelector("#statusline-toggle");
 let workspaceSuggestTimer = null;
 let workspaceDialogTimer = null;
+const TOOL_TOOLTIP_DELAY_MS = 1000;
 
 function readStorageList(key, fallback = []) {
   try {
@@ -119,8 +128,6 @@ const BUILTIN_COMMANDS = [
   { name: "/memory", description: "查看项目记忆注入状态" },
   { name: "/remember", description: "写入长期记忆" },
   { name: "/ps", description: "查看后台任务" },
-  { name: "/jobs", description: "查看后台任务" },
-  { name: "/stop", description: "终止后台任务" },
   { name: "/kill", description: "终止后台任务" },
   { name: "/review", description: "读取当前 diff 摘要" },
   { name: "/plan", description: "先拆解任务再执行" },
@@ -319,18 +326,6 @@ function renderSettings() {
     ${renderSettingsField("provider_base_url", "Base URL", pending.provider_base_url ?? config.base_url ?? "", "text")}
     ${renderSettingsField("context_window_tokens", "上下文窗口", pending.context_window_tokens ?? config.context_window_tokens ?? line.context_window_tokens ?? 128000, "number")}
     <label class="setting-field">
-      <span>权限模式</span>
-      <select name="permission_mode">
-        ${renderPermissionOption("workspace_write", "工作区写入", pending.permission_mode ?? config.permission_mode)}
-        ${renderPermissionOption("ask", "需要确认", pending.permission_mode ?? config.permission_mode)}
-        ${renderPermissionOption("read_only", "只读", pending.permission_mode ?? config.permission_mode)}
-        ${renderPermissionOption("plan", "计划模式", pending.permission_mode ?? config.permission_mode)}
-        ${renderPermissionOption("accept_edits", "自动接受编辑", pending.permission_mode ?? config.permission_mode)}
-        ${renderPermissionOption("dont_ask", "不询问", pending.permission_mode ?? config.permission_mode)}
-        ${renderPermissionOption("bypass_permissions", "跳过权限", pending.permission_mode ?? config.permission_mode)}
-      </select>
-    </label>
-    <label class="setting-field">
       <span>沙箱模式</span>
       <select name="sandbox_mode">
         ${renderPermissionOption("read_only", "只读", pending.sandbox_mode ?? config.sandbox_mode)}
@@ -345,7 +340,6 @@ function renderSettings() {
         ${renderPermissionOption("on_failure", "失败时询问", pending.approval_policy ?? config.approval_policy)}
         ${renderPermissionOption("on_request", "每次请求询问", pending.approval_policy ?? config.approval_policy)}
         ${renderPermissionOption("never", "永不询问", pending.approval_policy ?? config.approval_policy)}
-        ${renderPermissionOption("granular", "细粒度", pending.approval_policy ?? config.approval_policy)}
       </select>
     </label>
     <label class="setting-field setting-field-inline">
@@ -388,6 +382,19 @@ function renderSettingsField(name, label, value, type) {
       <input name="${escapeHtml(name)}" type="${escapeHtml(type)}" value="${escapeHtml(String(value))}" />
     </label>
   `;
+}
+
+function derivePermissionMode(sandboxMode, approvalPolicy) {
+  if (sandboxMode === "read_only") {
+    return "read_only";
+  }
+  if (approvalPolicy === "on_request" || approvalPolicy === "untrusted") {
+    return "ask";
+  }
+  if (sandboxMode === "danger_full_access" && approvalPolicy === "never") {
+    return "bypass_permissions";
+  }
+  return "workspace_write";
 }
 
 function renderPermissionOption(value, label, selectedValue) {
@@ -540,8 +547,39 @@ function renderTools(items) {
       autoResizeTextarea();
       messageEl.focus();
     });
+    bindToolTooltip(node);
     toolListEl.appendChild(node);
   }
+}
+
+function hideToolTooltip(node) {
+  const tooltip = node.querySelector(".tool-tooltip");
+  clearTimeout(Number(node.dataset.tooltipTimer || 0));
+  node.dataset.tooltipTimer = "";
+  tooltip?.classList.remove("visible", "align-left", "align-right");
+}
+
+function scheduleToolTooltip(node) {
+  const tooltip = node.querySelector(".tool-tooltip");
+  if (!tooltip) {
+    return;
+  }
+  hideToolTooltip(node);
+  const timer = window.setTimeout(() => {
+    const rect = node.getBoundingClientRect();
+    const preferLeft = rect.left + 320 > window.innerWidth - 16;
+    tooltip.classList.toggle("align-left", preferLeft);
+    tooltip.classList.toggle("align-right", !preferLeft);
+    tooltip.classList.add("visible");
+  }, TOOL_TOOLTIP_DELAY_MS);
+  node.dataset.tooltipTimer = String(timer);
+}
+
+function bindToolTooltip(node) {
+  node.addEventListener("mouseenter", () => scheduleToolTooltip(node));
+  node.addEventListener("mouseleave", () => hideToolTooltip(node));
+  node.addEventListener("focus", () => scheduleToolTooltip(node));
+  node.addEventListener("blur", () => hideToolTooltip(node));
 }
 
 function renderMemory(memory) {
@@ -568,7 +606,7 @@ function appendMemoryGroup(title, items) {
       <span title="${escapeHtml(item.path)}">${escapeHtml(shortPath(item.path))}</span>
       <strong>${memoryLabel(item)}</strong>
     `;
-    if (item.injected && item.scope === "长期记忆" && item.path && item.name?.endsWith(".md")) {
+    if (item.injected && item.scope === "项目人格" && item.path && item.name?.endsWith(".md")) {
       row.tabIndex = 0;
       row.title = "点击查看和编辑";
       row.addEventListener("click", () => editMemoryFile(item.name));
@@ -585,35 +623,55 @@ function appendMemoryGroup(title, items) {
 async function editMemoryFile(name) {
   try {
     const file = await api(`/api/memory/files/${encodeURIComponent(name)}`);
-    const next = window.prompt(`编辑 ${name}`, file.content || "");
-    if (next === null) {
-      return;
-    }
-    await api("/api/memory/files", {
-      method: "POST",
-      body: JSON.stringify({ name, content: next }),
-    });
-    await loadRuntimePanels();
-    streamStateEl.textContent = `已更新记忆 ${name}`;
+    openMemoryDialog({ name, content: file.content || "", mode: "edit" });
   } catch (error) {
     streamStateEl.textContent = `记忆编辑失败：${error instanceof Error ? error.message : "未知错误"}`;
   }
 }
 
 async function addMemoryFile() {
-  const name = window.prompt("记忆文件名，例如 user.md / project.md / soul.md");
-  if (!name) {
+  openMemoryDialog({ name: "soul.md", content: "", mode: "create" });
+}
+
+function normalizeMemoryFileName(name) {
+  const cleaned = String(name || "").trim().replaceAll("\\", "/").split("/").pop();
+  if (!cleaned) {
+    return "";
+  }
+  return cleaned.endsWith(".md") ? cleaned : `${cleaned}.md`;
+}
+
+function openMemoryDialog({ name, content, mode }) {
+  memoryDialogTitleEl.textContent = mode === "create" ? "添加记忆文件" : `编辑 ${name}`;
+  memoryDialogNameEl.value = normalizeMemoryFileName(name);
+  memoryDialogNameEl.disabled = mode !== "create";
+  memoryDialogContentEl.value = content || "";
+  memoryDialogStateEl.textContent = "仅支持 .md 文件；保存后会进入当前项目 .nova/memory。";
+  memoryDialogSaveEl.disabled = false;
+  memoryDialogEl.showModal();
+  memoryDialogContentEl.focus();
+}
+
+async function saveMemoryDialog() {
+  const name = normalizeMemoryFileName(memoryDialogNameEl.value);
+  if (!name || !name.endsWith(".md")) {
+    memoryDialogStateEl.textContent = "请输入 .md 文件名。";
     return;
   }
-  const content = window.prompt(`写入 ${name} 的内容`, "");
-  if (content === null) {
-    return;
+  memoryDialogSaveEl.disabled = true;
+  memoryDialogStateEl.textContent = "正在保存记忆文件";
+  try {
+    await api("/api/memory/files", {
+      method: "POST",
+      body: JSON.stringify({ name, content: memoryDialogContentEl.value }),
+    });
+    memoryDialogEl.close();
+    await loadRuntimePanels();
+    streamStateEl.textContent = `已更新记忆 ${name}`;
+  } catch (error) {
+    memoryDialogStateEl.textContent = `保存失败：${error instanceof Error ? error.message : "未知错误"}`;
+    memoryDialogSaveEl.disabled = false;
   }
-  await api("/api/memory/files", {
-    method: "POST",
-    body: JSON.stringify({ name, content }),
-  });
-  await loadRuntimePanels();
 }
 
 function memoryLabel(item) {
@@ -963,16 +1021,30 @@ function appendTurnDivider(message) {
 }
 
 function appendMessage(message, options = {}) {
+  if (message.id) {
+    const existing = messagesEl.querySelector(`[data-message-id="${CSS.escape(message.id)}"]`);
+    if (existing) {
+      existing.classList.toggle("queued", Boolean(options.queued));
+      updateMessage(existing, message.content || "");
+      updateMessageMeta(existing, message);
+      const badge = existing.querySelector(".message-queue-badge");
+      if (badge) {
+        badge.hidden = !options.queued;
+      }
+      return existing;
+    }
+  }
   const targetId = options.showDivider && message.role === "user"
     ? appendTurnDivider(message)
     : `message-${message.id || Date.now()}`;
   const node = document.createElement("article");
-  node.className = `message ${message.role}`;
+  node.className = `message ${message.role}${options.queued ? " queued" : ""}`;
   node.id = targetId;
   node.dataset.messageId = message.id || "";
   node.innerHTML = `
     <div class="message-head">
       <div class="message-role">${roleLabel(message.role)}</div>
+      ${message.role === "user" ? `<span class="message-queue-badge" ${options.queued ? "" : "hidden"}>queue</span>` : ""}
       ${message.role === "assistant" ? '<button class="turn-tools-toggle" type="button" hidden>收起过程</button>' : ""}
     </div>
     <div class="message-content">${escapeHtml(message.content || "")}</div>
@@ -1301,6 +1373,16 @@ settingsCloseEl.addEventListener("click", () => {
   settingsDialogEl.close();
 });
 
+memoryDialogCloseEl.addEventListener("click", () => {
+  memoryDialogEl.close();
+});
+
+memoryDialogCancelEl.addEventListener("click", () => {
+  memoryDialogEl.close();
+});
+
+memoryDialogSaveEl.addEventListener("click", saveMemoryDialog);
+
 settingsSaveEl.addEventListener("click", async () => {
   const payload = collectRuntimeSettings();
   const secrets = collectRuntimeSecrets();
@@ -1374,13 +1456,15 @@ for (const button of document.querySelectorAll("[data-settings-section]")) {
 
 function collectRuntimeSettings() {
   const form = settingsDialogEl.querySelector(".settings-panel");
+  const sandboxMode = form.querySelector('[name="sandbox_mode"]').value;
+  const approvalPolicy = form.querySelector('[name="approval_policy"]').value;
   return {
     provider_model: form.querySelector('[name="provider_model"]').value.trim(),
     provider_base_url: form.querySelector('[name="provider_base_url"]').value.trim(),
     context_window_tokens: Number(form.querySelector('[name="context_window_tokens"]').value),
-    permission_mode: form.querySelector('[name="permission_mode"]').value,
-    sandbox_mode: form.querySelector('[name="sandbox_mode"]').value,
-    approval_policy: form.querySelector('[name="approval_policy"]').value,
+    permission_mode: derivePermissionMode(sandboxMode, approvalPolicy),
+    sandbox_mode: sandboxMode,
+    approval_policy: approvalPolicy,
     network_access: form.querySelector('[name="network_access"]').checked,
     max_tool_rounds: Number(form.querySelector('[name="max_tool_rounds"]').value),
   };
@@ -1776,7 +1860,7 @@ form.addEventListener("submit", async (event) => {
         throw new Error(await queued.text());
       }
       const payload = await queued.json();
-      appendMessage(payload.message);
+      appendMessage(payload.message, { queued: true });
       messageEl.value = "";
       autoResizeTextarea();
       streamStateEl.textContent = "消息已排队，当前工具轮结束后进入上下文";
@@ -1860,12 +1944,13 @@ async function streamAssistant(sessionId, content, assistantNode) {
   let assistantText = "";
   let ok = true;
   const activeToolNodes = new Map();
+  let currentAssistantNode = assistantNode;
   const handleRuntimeEvent = (event) => {
     // runtime_event 是后端统一运行时协议；旧事件仍负责渲染工具详情，避免实时视图重复。
     if (event.event_type === "turn.started") {
       streamStateEl.textContent = event.title || "Nova 正在处理";
-      appendStatusEvent(event.title || "开始处理用户请求", { beforeNode: assistantNode });
-      updateTurnToolControl(assistantNode);
+      appendStatusEvent(event.title || "开始处理用户请求", { beforeNode: currentAssistantNode });
+      updateTurnToolControl(currentAssistantNode);
       return;
     }
     if (event.event_type === "turn.completed") {
@@ -1874,14 +1959,34 @@ async function streamAssistant(sessionId, content, assistantNode) {
     }
     if (event.event_type === "turn.failed") {
       streamStateEl.textContent = event.title || "请求失败";
-      appendStatusEvent(event.message || event.title || "请求失败", { beforeNode: assistantNode });
-      updateTurnToolControl(assistantNode);
+      appendStatusEvent(event.message || event.title || "请求失败", { beforeNode: currentAssistantNode });
+      updateTurnToolControl(currentAssistantNode);
       return;
     }
     if (event.event_type?.startsWith("hook.")) {
-      appendStatusEvent(event.title || "Hook 事件", { beforeNode: assistantNode });
-      updateTurnToolControl(assistantNode);
+      appendStatusEvent(event.title || "Hook 事件", { beforeNode: currentAssistantNode });
+      updateTurnToolControl(currentAssistantNode);
     }
+  };
+  const handleQueuedMessage = (event) => {
+    const message = event.message || {
+      id: `queued_${Date.now()}`,
+      role: "user",
+      content: "排队消息",
+      created_at: new Date().toISOString(),
+    };
+    appendMessage(message, { queued: false });
+    currentAssistantNode = appendMessage({
+      id: `local_assistant_${Date.now()}`,
+      role: "assistant",
+      content: "",
+      created_at: null,
+    });
+    currentAssistantNode.classList.add("streaming");
+    assistantText = "";
+    activeToolNodes.clear();
+    streamStateEl.textContent = "正在处理排队消息";
+    return currentAssistantNode;
   };
 
   while (true) {
@@ -1893,14 +1998,14 @@ async function streamAssistant(sessionId, content, assistantNode) {
     const result = consumeStreamLines(buffer, assistantNode, {
       onDelta: (delta) => {
         assistantText += delta;
-        updateMessage(assistantNode, assistantText);
+        updateMessage(currentAssistantNode, assistantText);
         streamStateEl.textContent = "Nova 正在输出";
       },
       onToolStart: (event) => {
         streamStateEl.textContent = `工具执行：${event.tool}`;
-        const node = appendToolEvent(event, assistantNode);
+        const node = appendToolEvent(event, currentAssistantNode);
         activeToolNodes.set(event.call_id || event.tool || "tool", node);
-        updateTurnToolControl(assistantNode);
+        updateTurnToolControl(currentAssistantNode);
       },
       onToolDone: (event) => {
         const key = event.call_id || event.tool || "tool";
@@ -1914,15 +2019,16 @@ async function streamAssistant(sessionId, content, assistantNode) {
       },
       onPermissionRequest: (event) => {
         streamStateEl.textContent = `${event.tool || "工具"} 等待审批`;
-        appendPermissionEvent(event, assistantNode);
-        updateTurnToolControl(assistantNode);
+        appendPermissionEvent(event, currentAssistantNode);
+        updateTurnToolControl(currentAssistantNode);
       },
       onStatus: (event) => {
         streamStateEl.textContent = event.status || "运行中";
-        appendStatusEvent(event.status || "运行中", { beforeNode: assistantNode });
-        updateTurnToolControl(assistantNode);
+        appendStatusEvent(event.status || "运行中", { beforeNode: currentAssistantNode });
+        updateTurnToolControl(currentAssistantNode);
       },
       onRuntimeEvent: handleRuntimeEvent,
+      onQueuedMessage: handleQueuedMessage,
     });
     buffer = result.rest;
     ok = ok && result.ok;
@@ -1932,12 +2038,12 @@ async function streamAssistant(sessionId, content, assistantNode) {
     const result = consumeStreamLines(`${buffer}\n`, assistantNode, {
       onDelta: (delta) => {
         assistantText += delta;
-        updateMessage(assistantNode, assistantText);
+        updateMessage(currentAssistantNode, assistantText);
       },
       onToolStart: (event) => {
-        const node = appendToolEvent(event, assistantNode);
+        const node = appendToolEvent(event, currentAssistantNode);
         activeToolNodes.set(event.call_id || event.tool || "tool", node);
-        updateTurnToolControl(assistantNode);
+        updateTurnToolControl(currentAssistantNode);
       },
       onToolDone: (event) => {
         const key = event.call_id || event.tool || "tool";
@@ -1951,15 +2057,16 @@ async function streamAssistant(sessionId, content, assistantNode) {
       },
       onPermissionRequest: (event) => {
         streamStateEl.textContent = `${event.tool || "工具"} 等待审批`;
-        appendPermissionEvent(event, assistantNode);
-        updateTurnToolControl(assistantNode);
+        appendPermissionEvent(event, currentAssistantNode);
+        updateTurnToolControl(currentAssistantNode);
       },
       onStatus: (event) => {
         streamStateEl.textContent = event.status || "运行中";
-        appendStatusEvent(event.status || "运行中", { beforeNode: assistantNode });
-        updateTurnToolControl(assistantNode);
+        appendStatusEvent(event.status || "运行中", { beforeNode: currentAssistantNode });
+        updateTurnToolControl(currentAssistantNode);
       },
       onRuntimeEvent: handleRuntimeEvent,
+      onQueuedMessage: handleQueuedMessage,
     });
     ok = ok && result.ok;
   }
@@ -2015,12 +2122,10 @@ function consumeStreamLines(buffer, assistantNode, handlers) {
       }
     }
     if (event.type === "queued_message") {
-      appendMessage(event.message || {
-        id: `queued_${Date.now()}`,
-        role: "user",
-        content: "排队消息",
-        created_at: new Date().toISOString(),
-      });
+      const nextAssistantNode = handlers.onQueuedMessage?.(event);
+      if (nextAssistantNode) {
+        assistantNode = nextAssistantNode;
+      }
       handlers.onStatus?.({ status: "新消息已排队" });
     }
     if (event.type === "error") {

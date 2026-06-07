@@ -695,7 +695,7 @@ class CodexLikeAgentRuntime:
             return "请点击左侧“新对话”创建空线程；Nova 不会自动删除已有历史。"
         return (
             "可用内置指令：/status、/model、/tools、/permissions、/approvals、/sandbox、"
-            "/memory、/remember、/ps、/jobs、/stop、/kill、/review、/plan、/compact、/clear、/help。"
+            "/memory、/remember、/ps、/kill、/review、/plan、/compact、/clear、/help。"
         )
 
     def _system_prompt(self) -> str:
