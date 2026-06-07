@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from typing import Any
+from typing import Any, Iterator
 
 from ..processes.manager import ProcessManager
 from .hooks import HookOutcome, ToolHookRunner
@@ -137,8 +137,28 @@ class ToolExecutor:
         *,
         parallel: bool = False,
     ) -> tuple[list[dict], str]:
+        events: list[dict] = []
+        result_json = ""
+        for event in self.iter_one_stream(call_id, tool_name, arguments, parallel=parallel):
+            if event["type"] == "tool_result_json":
+                result_json = str(event["result_json"])
+            else:
+                events.append(event)
+        return events, result_json
+
+    def iter_one_stream(
+        self,
+        call_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        parallel: bool = False,
+    ) -> Iterator[dict[str, Any]]:
         if tool_name != "shell_command":
-            return self.run_one(call_id, tool_name, arguments, parallel=parallel)
+            events, result_json = self.run_one(call_id, tool_name, arguments, parallel=parallel)
+            yield from events
+            yield {"type": "tool_result_json", "result_json": result_json}
+            return
 
         events: list[dict] = []
         current_arguments = dict(arguments)
@@ -148,7 +168,10 @@ class ToolExecutor:
                 current_arguments.update(outcome.updated_input)
             if outcome.permission_decision == "deny":
                 reason = outcome.reason or "PreToolUse hook 拒绝执行"
-                return self._failed_tool(events, call_id, tool_name, current_arguments, reason, {"hook": outcome.name})
+                failed_events, result_json = self._failed_tool(events, call_id, tool_name, current_arguments, reason, {"hook": outcome.name})
+                yield from failed_events
+                yield {"type": "tool_result_json", "result_json": result_json}
+                return
             if outcome.permission_decision == "ask":
                 event = {
                     "type": "permission_request",
@@ -161,23 +184,28 @@ class ToolExecutor:
                     "data": {"reason": "PreToolUse hook 要求审批", "hook": outcome.name},
                 }
                 events.append(event)
-                return events, self._permission_result_json(event)
+                yield from events
+                yield {"type": "tool_result_json", "result_json": self._permission_result_json(event)}
+                return
 
         try:
             command, workdir, timeout_ms = self._prepare_shell(current_arguments)
         except (ToolExecutionError, OSError, ValueError) as exc:
-            return self._failed_tool(events, call_id, tool_name, current_arguments, str(exc), {})
+            failed_events, result_json = self._failed_tool(events, call_id, tool_name, current_arguments, str(exc), {})
+            yield from failed_events
+            yield {"type": "tool_result_json", "result_json": result_json}
+            return
 
-        events.append(
-            {
-                "type": "tool_start",
-                "call_id": call_id,
-                "tool": tool_name,
-                "arguments": current_arguments,
-                "title": self._tool_title(tool_name, current_arguments),
-                "parallel": parallel,
-            }
-        )
+        start_event = {
+            "type": "tool_start",
+            "call_id": call_id,
+            "tool": tool_name,
+            "arguments": current_arguments,
+            "title": self._tool_title(tool_name, current_arguments),
+            "parallel": parallel,
+        }
+        yield from events
+        yield start_event
         if bool(current_arguments.get("background")):
             job = self.process_manager.start_background(command, cwd=workdir)
             result_json = json.dumps(
@@ -190,18 +218,17 @@ class ToolExecutor:
                 },
                 ensure_ascii=False,
             )
-            events.append(
-                {
-                    "type": "tool_done",
-                    "call_id": call_id,
-                    "tool": tool_name,
-                    "ok": True,
-                    "title": f"后台执行：{command}",
-                    "output": f"已在后台启动 {job['id']}：{command}",
-                    "data": {"job": job, "background": True},
-                }
-            )
-            return events, result_json
+            yield {
+                "type": "tool_done",
+                "call_id": call_id,
+                "tool": tool_name,
+                "ok": True,
+                "title": f"后台执行：{command}",
+                "output": f"已在后台启动 {job['id']}：{command}",
+                "data": {"job": job, "background": True},
+            }
+            yield {"type": "tool_result_json", "result_json": result_json}
+            return
 
         done_event: dict[str, Any] | None = None
         for event in self.process_manager.run_foreground(
@@ -214,12 +241,16 @@ class ToolExecutor:
             if event["type"] == "tool_done":
                 done_event = event
             else:
-                events.append(event)
+                yield event
         if done_event is None:
-            return self._failed_tool(events, call_id, tool_name, current_arguments, "shell 未返回完成事件", {})
+            failed_events, result_json = self._failed_tool([], call_id, tool_name, current_arguments, "shell 未返回完成事件", {})
+            yield from failed_events
+            yield {"type": "tool_result_json", "result_json": result_json}
+            return
 
+        hook_events: list[dict] = []
         self._run_hooks(
-            events,
+            hook_events,
             "PostToolUse" if done_event.get("ok") else "PostToolUseFailure",
             call_id,
             tool_name,
@@ -227,7 +258,8 @@ class ToolExecutor:
             tool_response={"ok": done_event.get("ok"), "output": done_event.get("output"), "data": done_event.get("data") or {}},
             error=None if done_event.get("ok") else str(done_event.get("output") or ""),
         )
-        events.append(done_event)
+        yield from hook_events
+        yield done_event
         result_json = json.dumps(
             {
                 "tool": tool_name,
@@ -238,7 +270,7 @@ class ToolExecutor:
             },
             ensure_ascii=False,
         )
-        return events, result_json
+        yield {"type": "tool_result_json", "result_json": result_json}
 
     def _run_hooks(
         self,

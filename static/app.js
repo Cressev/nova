@@ -1085,11 +1085,15 @@ function appendToolEvent(event, beforeNode = null, options = {}) {
       <strong>${escapeHtml(event.title || "工具执行中")}</strong>
       <em>${event.parallel ? "并行" : "运行中"}</em>
     </div>
+    <div class="tool-actions">
+      <button class="tool-cancel" type="button" data-action="cancel-tool">取消</button>
+    </div>
     <details open>
       <summary>调用参数</summary>
       <pre>${escapeHtml(node.dataset.arguments)}</pre>
     </details>
   `;
+  node.querySelector('[data-action="cancel-tool"]').addEventListener("click", () => cancelToolCall(node));
   if (beforeNode?.parentElement === messagesEl) {
     messagesEl.insertBefore(node, beforeNode);
   } else {
@@ -1101,17 +1105,45 @@ function appendToolEvent(event, beforeNode = null, options = {}) {
   return node;
 }
 
+async function cancelToolCall(node) {
+  const callId = node.dataset.callId;
+  if (!callId) {
+    return;
+  }
+  const button = node.querySelector('[data-action="cancel-tool"]');
+  if (button) {
+    button.disabled = true;
+    button.textContent = "取消中";
+  }
+  try {
+    await api(`/api/tool-calls/${encodeURIComponent(callId)}/cancel`, { method: "POST" });
+    node.className = "tool-event failed";
+    const status = node.querySelector(".tool-event-head em");
+    if (status) {
+      status.textContent = "已取消";
+    }
+    streamStateEl.textContent = "已请求取消工具调用";
+  } catch (error) {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "取消";
+    }
+    streamStateEl.textContent = `取消失败：${error instanceof Error ? error.message : "未知错误"}`;
+  }
+}
+
 function finishToolEvent(node, event, options = {}) {
   if (!node) {
     node = appendToolEvent(event);
   }
   node.className = `tool-event ${event.ok ? "ok" : "failed"}`;
   const args = node.dataset.arguments || "{}";
+  const statusLabel = event.data?.status === "cancelled" ? "已取消" : (event.ok ? "完成" : "失败");
   node.innerHTML = `
     <div class="tool-event-head">
       <span>${escapeHtml(event.tool || "tool")}</span>
       <strong>${escapeHtml(event.title || "工具完成")}</strong>
-      <em>${event.ok ? "完成" : "失败"}</em>
+      <em>${statusLabel}</em>
     </div>
     <details class="tool-args" open>
       <summary>调用参数</summary>

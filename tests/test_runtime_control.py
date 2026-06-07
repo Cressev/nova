@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -93,6 +94,101 @@ class RuntimeControlTest(unittest.TestCase):
             self.assertTrue(any(item["id"] == job["id"] for item in jobs))
             killed = manager.kill(job["id"])
             self.assertEqual(killed["status"], "killed")
+
+    def test_process_manager_emits_foreground_output_before_process_exits(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = ProcessManager(chunk_size=1024)
+            self.addCleanup(manager.kill_all)
+            events: list[dict] = []
+
+            def consume_until_first_output() -> None:
+                for event in manager.run_foreground(
+                    "python3 -u -c 'import time; print(\"ready\", flush=True); time.sleep(20)'",
+                    cwd=Path(tmpdir),
+                    timeout_ms=60000,
+                    call_id="tool_stream_early",
+                ):
+                    events.append(event)
+                    if event["type"] == "tool_output":
+                        break
+
+            thread = threading.Thread(target=consume_until_first_output)
+            thread.start()
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline and not events:
+                time.sleep(0.05)
+            saw_output_before_cancel = any(
+                event["type"] == "tool_output" and "ready" in event["chunk"]
+                for event in events
+            )
+            try:
+                manager.cancel_call("tool_stream_early")
+            except KeyError:
+                pass
+            thread.join(timeout=5)
+
+            self.assertTrue(saw_output_before_cancel)
+
+    def test_process_manager_cancels_foreground_job_by_call_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = ProcessManager(chunk_size=8)
+            self.addCleanup(manager.kill_all)
+            events: list[dict] = []
+
+            def consume() -> None:
+                events.extend(
+                    manager.run_foreground(
+                        "python3 -u -c 'import time; print(\"started\", flush=True); time.sleep(20)'",
+                        cwd=Path(tmpdir),
+                        timeout_ms=60000,
+                        call_id="tool_cancel_me",
+                    )
+                )
+
+            thread = threading.Thread(target=consume)
+            thread.start()
+            time.sleep(0.3)
+
+            cancelled = manager.cancel_call("tool_cancel_me")
+
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(cancelled["status"], "cancelled")
+            done = next(event for event in events if event["type"] == "tool_done")
+            self.assertFalse(done["ok"])
+            self.assertEqual(done["data"]["status"], "cancelled")
+            self.assertIn("命令已取消", done["output"])
+
+    def test_tool_call_cancel_endpoint_terminates_running_foreground_job(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_process_manager = app_module.process_manager
+            app_module.process_manager = ProcessManager(chunk_size=8)
+            self.addCleanup(lambda: setattr(app_module, "process_manager", old_process_manager))
+            self.addCleanup(lambda: app_module.process_manager.kill_all())
+            events: list[dict] = []
+
+            def consume() -> None:
+                events.extend(
+                    app_module.process_manager.run_foreground(
+                        "python3 -u -c 'import time; print(\"started\", flush=True); time.sleep(20)'",
+                        cwd=Path(tmpdir),
+                        timeout_ms=60000,
+                        call_id="tool_api_cancel",
+                    )
+                )
+
+            thread = threading.Thread(target=consume)
+            thread.start()
+            time.sleep(0.3)
+
+            response = self.client.post("/api/tool-calls/tool_api_cancel/cancel")
+
+            thread.join(timeout=5)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["status"], "cancelled")
+            self.assertFalse(thread.is_alive())
+            done = next(event for event in events if event["type"] == "tool_done")
+            self.assertEqual(done["data"]["status"], "cancelled")
 
     def test_chat_stream_queues_message_while_session_running(self) -> None:
         session = self.client.post("/api/chat/sessions", json={"title": "队列"}).json()

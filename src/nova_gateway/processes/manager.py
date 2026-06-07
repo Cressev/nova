@@ -23,6 +23,7 @@ class ProcessJob:
     command: str
     cwd: str
     process: subprocess.Popen[str]
+    call_id: str | None = None
     status: str = "running"
     stdout: list[str] = field(default_factory=list)
     stderr: list[str] = field(default_factory=list)
@@ -35,6 +36,7 @@ class ProcessJob:
             "id": self.id,
             "command": self.command,
             "cwd": self.cwd,
+            "call_id": self.call_id,
             "status": self.status,
             "exit_code": self.exit_code,
             "created_at": self.created_at,
@@ -52,6 +54,7 @@ class ProcessManager:
     def __init__(self, *, chunk_size: int = 1024) -> None:
         self.chunk_size = chunk_size
         self._jobs: dict[str, ProcessJob] = {}
+        self._jobs_by_call_id: dict[str, str] = {}
         self._lock = threading.Lock()
 
     def run_foreground(
@@ -64,13 +67,14 @@ class ProcessManager:
         tool: str = "shell_command",
     ) -> Iterator[dict[str, Any]]:
         call_id = call_id or f"tool_{uuid4().hex[:12]}"
-        job = self._start(command, cwd=cwd)
+        job = self._start(command, cwd=cwd, call_id=call_id)
         output_queue: queue.Queue[tuple[str, str | None]] = queue.Queue()
         readers = [
             self._start_reader(job, "stdout", output_queue),
             self._start_reader(job, "stderr", output_queue),
         ]
         deadline = time.monotonic() + max(timeout_ms, 1) / 1000
+        next_heartbeat = time.monotonic() + 0.25
         timed_out = False
 
         while True:
@@ -88,8 +92,17 @@ class ProcessManager:
                     "chunk": chunk,
                     "data": {"job_id": job.id},
                 }
+            elif time.monotonic() >= next_heartbeat:
+                next_heartbeat = time.monotonic() + 0.25
+                yield {
+                    "type": "tool_heartbeat",
+                    "call_id": call_id,
+                    "tool": tool,
+                    "data": {"job_id": job.id, "status": job.status},
+                }
             if job.process.poll() is not None:
-                self._finish(job, "completed" if job.process.returncode == 0 else "failed")
+                terminal_status = job.status if job.status in {"cancelled", "killed"} else None
+                self._finish(job, terminal_status or ("completed" if job.process.returncode == 0 else "failed"))
                 for reader in readers:
                     if reader is not None:
                         reader.join(timeout=0.4)
@@ -120,15 +133,17 @@ class ProcessManager:
         stdout = "".join(job.stdout)
         stderr = "".join(job.stderr)
         output = "\n".join(part.strip() for part in [stdout, stderr] if part.strip())
+        if job.status == "cancelled":
+            output = f"{output}\n命令已取消".strip()
         if len(output) > 24000:
             output = output[:24000] + "\n...[输出已截断]"
         yield {
             "type": "tool_done",
             "call_id": call_id,
             "tool": tool,
-            "ok": job.exit_code == 0 and not timed_out,
+            "ok": job.exit_code == 0 and not timed_out and job.status == "completed",
             "title": f"执行命令：{command}",
-            "output": output or f"命令退出码：{job.exit_code}",
+            "output": output or ("命令已取消" if job.status == "cancelled" else f"命令退出码：{job.exit_code}"),
             "data": {"exit_code": job.exit_code, "workdir": str(cwd), "job_id": job.id, "status": job.status},
         }
 
@@ -163,6 +178,16 @@ class ProcessManager:
         self._finish(job, "killed")
         return job.as_dict(include_output=True)
 
+    def cancel_call(self, call_id: str) -> dict[str, Any]:
+        with self._lock:
+            job_id = self._jobs_by_call_id.get(call_id)
+            job = self._jobs.get(job_id or "")
+        if job is None:
+            raise KeyError(call_id)
+        self._terminate(job)
+        self._finish(job, "cancelled")
+        return job.as_dict(include_output=True)
+
     def kill_all(self) -> None:
         with self._lock:
             jobs = list(self._jobs.values())
@@ -171,7 +196,7 @@ class ProcessManager:
                 self._terminate(job)
                 self._finish(job, "killed")
 
-    def _start(self, command: str, *, cwd: Path) -> ProcessJob:
+    def _start(self, command: str, *, cwd: Path, call_id: str | None = None) -> ProcessJob:
         process = subprocess.Popen(
             command,
             cwd=cwd,
@@ -184,9 +209,11 @@ class ProcessManager:
             start_new_session=(os.name != "nt"),
             bufsize=1,
         )
-        job = ProcessJob(id=f"proc_{uuid4().hex[:12]}", command=command, cwd=str(cwd), process=process)
+        job = ProcessJob(id=f"proc_{uuid4().hex[:12]}", command=command, cwd=str(cwd), process=process, call_id=call_id)
         with self._lock:
             self._jobs[job.id] = job
+            if call_id:
+                self._jobs_by_call_id[call_id] = job.id
         return job
 
     def _start_reader(
@@ -200,11 +227,17 @@ class ProcessManager:
             return None
 
         def read() -> None:
+            buffer: list[str] = []
             while True:
-                chunk = pipe.read(self.chunk_size)
-                if not chunk:
+                char = pipe.read(1)
+                if not char:
+                    if buffer:
+                        output_queue.put((stream, "".join(buffer)))
                     break
-                output_queue.put((stream, chunk))
+                buffer.append(char)
+                if char == "\n" or len(buffer) >= self.chunk_size:
+                    output_queue.put((stream, "".join(buffer)))
+                    buffer.clear()
 
         thread = threading.Thread(target=read, daemon=True)
         thread.start()

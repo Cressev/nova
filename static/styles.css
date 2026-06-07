@@ -1035,6 +1035,26 @@ code {
   gap: 8px;
 }
 
+.tool-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tool-cancel {
+  min-height: 26px;
+  border: 1px solid rgba(255, 107, 97, 0.34);
+  border-radius: 7px;
+  padding: 3px 9px;
+  background: rgba(255, 107, 97, 0.1);
+  color: #ffaaa4;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.tool-cancel:disabled {
+  opacity: 0.58;
+}
+
 .tool-event-head span,
 .permission-event-head span {
   min-width: 64px;

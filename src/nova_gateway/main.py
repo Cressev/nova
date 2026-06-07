@@ -389,6 +389,15 @@ async def kill_process(job_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Process not found") from exc
 
 
+@app.post("/api/tool-calls/{call_id}/cancel")
+async def cancel_tool_call(call_id: str) -> dict:
+    try:
+        job = process_manager.cancel_call(call_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Tool call not found") from exc
+    return {"ok": True, "status": job["status"], "job": job}
+
+
 @app.get("/api/workspaces")
 async def workspace_list(q: str | None = Query(default=None, max_length=1200)) -> dict:
     return workspace_manager.status(query=q)

@@ -395,6 +395,15 @@ class CodexLikeAgentRuntime:
             "terminal",
             "command line",
         ]
+        explicit_command = re.search(
+            r"(?:执行命令|调用命令|shell|terminal|command line)\s*[:：]\s*(?P<command>.+)",
+            content,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if explicit_command is not None:
+            command = explicit_command.group("command").strip()
+            if command:
+                return [{"tool": "shell_command", "arguments": {"command": command, "workdir": ".", "timeout_ms": 120000}}]
         if any(intent in normalized for intent in shell_intents):
             return [{"tool": "shell_command", "arguments": {"command": "pwd", "workdir": ".", "timeout_ms": 5000}}]
         if "文档目录" in normalized or "文档集" in normalized:
@@ -466,10 +475,8 @@ class CodexLikeAgentRuntime:
                 for hook_event in hook_events:
                     yield hook_event
                 if hook_decision == "allow":
-                    events, result_json = self.executor.run_one_stream(call_id, name, arguments)
-                    for event in events:
+                    async for event in self._iter_executor_events(call_id, name, arguments):
                         yield event
-                    yield {"type": "tool_result_json", "result_json": result_json}
                     continue
                 if hook_decision == "deny":
                     result_json = json.dumps(
@@ -491,10 +498,17 @@ class CodexLikeAgentRuntime:
                 yield event
                 yield {"type": "tool_result_json", "result_json": self._permission_result_json(event)}
                 continue
-            events, result_json = self.executor.run_one_stream(call_id, name, arguments)
-            for event in events:
+            async for event in self._iter_executor_events(call_id, name, arguments):
                 yield event
-            yield {"type": "tool_result_json", "result_json": result_json}
+
+    async def _iter_executor_events(self, call_id: str, name: str, arguments: dict) -> AsyncIterator[dict]:
+        iterator = self.executor.iter_one_stream(call_id, name, arguments)
+        sentinel = object()
+        while True:
+            event = await asyncio.to_thread(next, iterator, sentinel)
+            if event is sentinel:
+                break
+            yield event
 
     def _requires_permission_request(self, tool_name: str) -> bool:
         spec = TOOL_SPECS.get(tool_name)

@@ -122,6 +122,12 @@ class AgentRuntimeTest(unittest.TestCase):
             [{"tool": "shell_command", "arguments": {"command": "pwd", "workdir": ".", "timeout_ms": 5000}}],
         )
 
+    def test_direct_shell_intent_uses_command_after_colon(self) -> None:
+        calls = self.runtime._direct_tool_calls_from_user("执行命令：python3 --version")
+
+        self.assertEqual(calls[0]["tool"], "shell_command")
+        self.assertEqual(calls[0]["arguments"]["command"], "python3 --version")
+
     def test_wifi_password_request_routes_to_shell_tool(self) -> None:
         calls = self.runtime._direct_tool_calls_from_user("我的wifi密码是多少")
 
@@ -182,6 +188,36 @@ class AgentRuntimeTest(unittest.TestCase):
 
         self.assertTrue(start["call_id"].startswith("tool_"))
         self.assertEqual(start["call_id"], done["call_id"])
+
+    def test_shell_tool_start_streams_before_long_command_finishes_and_can_cancel(self) -> None:
+        async def collect_events() -> list[dict]:
+            generator = self.runtime._run_tool_calls(
+                [
+                    {
+                        "tool": "shell_command",
+                        "arguments": {
+                            "command": "python3 -u -c 'import time; print(\"ready\", flush=True); time.sleep(20)'",
+                            "workdir": ".",
+                            "timeout_ms": 60000,
+                        },
+                    }
+                ]
+            )
+            first = await anext(generator)
+            self.assertEqual(first["type"], "tool_start")
+            remaining_task = asyncio.create_task(_collect_async(generator))
+            await asyncio.sleep(0.1)
+            self.runtime.process_manager.cancel_call(first["call_id"])
+            return [first, *(await remaining_task)]
+
+        async def _collect_async(generator) -> list[dict]:
+            return [event async for event in generator]
+
+        events = asyncio.run(collect_events())
+        done = next(event for event in events if event["type"] == "tool_done")
+
+        self.assertFalse(done["ok"])
+        self.assertEqual(done["data"]["status"], "cancelled")
 
     def test_parallel_readonly_tools_use_executor_hooks(self) -> None:
         hook_file = Path(self.tmpdir.name, ".nova-hooks.json")
