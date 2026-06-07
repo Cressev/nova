@@ -1339,6 +1339,9 @@ async function processApproval(node, approved) {
           finishToolEvent(activeToolNodes.get(event.call_id || event.tool || "tool"), event);
         }
       }
+    } else if (response.message) {
+      appendMessage(response.message);
+      streamStateEl.textContent = "已拒绝工具调用，Nova 已给出替代路径";
     }
     await Promise.all([loadRuntimePanels(), refreshStatusline()]);
   } catch (error) {

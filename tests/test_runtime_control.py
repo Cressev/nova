@@ -68,6 +68,23 @@ class RuntimeControlTest(unittest.TestCase):
             denied = self.client.post("/api/approvals/tool_deny/deny", json={"reason": "不允许"})
             self.assertEqual(denied.status_code, 200)
             self.assertEqual(denied.json()["status"], "denied")
+            denied_payload = denied.json()
+            self.assertIn("message", denied_payload)
+            self.assertEqual(denied_payload["message"]["role"], "assistant")
+            self.assertIn("不允许", denied_payload["message"]["content"])
+            self.assertIn("替代", denied_payload["message"]["content"])
+
+            messages = self.client.get(f"/api/chat/sessions/{session['id']}/messages").json()
+            self.assertEqual(messages[-1]["id"], denied_payload["message"]["id"])
+            self.assertEqual(messages[-1]["role"], "assistant")
+
+            timeline = self.client.get(f"/api/chat/sessions/{session['id']}/timeline").json()["items"]
+            self.assertTrue(
+                any(
+                    item["kind"] == "event" and item["item"].get("event_type") == "permission.denied"
+                    for item in timeline
+                )
+            )
 
     def test_process_manager_streams_output_and_kills_background_jobs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

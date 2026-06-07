@@ -365,7 +365,26 @@ async def deny_tool_call(approval_id: str, payload: dict | None = None) -> dict:
         data={"permission": item.permission},
     )
     _persist_runtime_event(event)
-    return {"ok": True, "status": "denied", "approval": item.as_dict(), "event": event}
+    assistant_message = ChatMessage(
+        session_id=item.session_id,
+        role=ChatRole.ASSISTANT,
+        content=_denied_tool_alternative_message(
+            tool=item.tool,
+            arguments=item.arguments,
+            reason=reason,
+        ),
+    )
+    try:
+        store.add_chat_message(assistant_message)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Chat session not found") from None
+    return {
+        "ok": True,
+        "status": "denied",
+        "approval": item.as_dict(),
+        "event": event,
+        "message": assistant_message.model_dump(mode="json"),
+    }
 
 
 @app.get("/api/processes")
@@ -1027,6 +1046,22 @@ def _runtime_event_from_agent_event(event: dict, build_event) -> dict | None:
             message=status,
         )
     return None
+
+
+def _denied_tool_alternative_message(*, tool: str, arguments: dict, reason: str) -> str:
+    command = ""
+    if tool == "shell_command":
+        command = str(arguments.get("command") or "").strip()
+    target = command or json.dumps(arguments, ensure_ascii=False)
+    target_line = f"这次被拒绝的是 `{tool}`"
+    if target:
+        target_line += f"：`{target}`"
+    return (
+        f"已按你的选择停止执行工具。拒绝原因：{reason}。\n\n"
+        f"{target_line}。我不会继续绕过这个权限，也不会擅自执行等价的高风险操作。\n\n"
+        "替代路径：我可以先基于当前上下文做只读分析，给出预计影响、需要执行的命令和风险点；"
+        "如果你确认某一步可以执行，再重新发起对应工具调用并等待你的授权。"
+    )
 
 
 def _event_builder_for_existing_turn(session_id: str, turn_id: str):
