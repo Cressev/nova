@@ -106,6 +106,10 @@ class WorkspaceToolsTest(unittest.TestCase):
 
         self.assertIn("-Nova 工具测试", result.output)
         self.assertIn("+Nova 新内容", result.output)
+        self.assertEqual(result.data["diff"]["files"], ["README.md"])
+        self.assertEqual(result.data["diff"]["additions"], 1)
+        self.assertEqual(result.data["diff"]["deletions"], 1)
+        self.assertIn("+Nova 新内容", result.data["diff"]["preview"])
         self.assertEqual((self.root / "README.md").read_text(encoding="utf-8"), "Nova 新内容\n")
 
     def test_edit_file_alias_and_multi_edit(self) -> None:

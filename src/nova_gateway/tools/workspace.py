@@ -528,7 +528,7 @@ class WorkspaceTools:
             tool="replace_in_file",
             title=f"修改 {self._display(path)}",
             output=diff[:24000],
-            data={"path": self._display(path)},
+            data={"path": self._display(path), "diff": self._diff_summary(diff, fallback_path=self._display(path))},
         )
 
     def edit_file(self, arguments: dict[str, Any]) -> ToolResult:
@@ -575,7 +575,7 @@ class WorkspaceTools:
             tool="multi_edit",
             title=f"批量修改 {self._display(path)}",
             output=diff[:24000],
-            data={"path": self._display(path), "edits": applied},
+            data={"path": self._display(path), "edits": applied, "diff": self._diff_summary(diff, fallback_path=self._display(path))},
         )
 
     def create_file(self, arguments: dict[str, Any]) -> ToolResult:
@@ -613,7 +613,11 @@ class WorkspaceTools:
             tool="write_file",
             title=f"写入 {self._display(path)}",
             output=output[:24000],
-            data={"path": self._display(path), "bytes": len(content.encode("utf-8"))},
+            data={
+                "path": self._display(path),
+                "bytes": len(content.encode("utf-8")),
+                "diff": self._diff_summary(output, fallback_path=self._display(path)) if before else None,
+            },
         )
 
     def git_status(self, _arguments: dict[str, Any]) -> ToolResult:
@@ -685,7 +689,7 @@ class WorkspaceTools:
             title="应用补丁",
             output=result.stdout.strip() or result.stderr.strip() or "补丁已应用",
             ok=result.returncode == 0,
-            data={"exit_code": result.returncode},
+            data={"exit_code": result.returncode, "diff": self._diff_summary(patch_text)},
         )
 
     def todo_write(self, arguments: dict[str, Any]) -> ToolResult:
@@ -855,6 +859,34 @@ class WorkspaceTools:
             return path.resolve().relative_to(self.project_root).as_posix()
         except ValueError:
             return str(path.resolve())
+
+    def _diff_summary(self, diff_text: str, *, fallback_path: str | None = None) -> dict[str, Any]:
+        files: list[str] = []
+        additions = 0
+        deletions = 0
+        for line in diff_text.splitlines():
+            if line.startswith("+++ b/"):
+                path = line.removeprefix("+++ b/")
+                if path not in files:
+                    files.append(path)
+                continue
+            if line.startswith("--- a/"):
+                path = line.removeprefix("--- a/")
+                if path != "/dev/null" and path not in files:
+                    files.append(path)
+                continue
+            if line.startswith("+") and not line.startswith("+++"):
+                additions += 1
+            if line.startswith("-") and not line.startswith("---"):
+                deletions += 1
+        if not files and fallback_path:
+            files.append(fallback_path)
+        return {
+            "files": files,
+            "additions": additions,
+            "deletions": deletions,
+            "preview": diff_text[:8000],
+        }
 
     def _is_allowed_shell_command(self, command: str) -> bool:
         lowered = command.strip().lower()

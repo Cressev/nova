@@ -389,6 +389,18 @@ async def kill_process(job_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Process not found") from exc
 
 
+@app.post("/api/tool-calls/retry")
+async def retry_tool_call(payload: dict) -> dict:
+    tool = str(payload.get("tool") or "").strip()
+    arguments = payload.get("arguments") if isinstance(payload.get("arguments"), dict) else {}
+    if not tool:
+        raise HTTPException(status_code=400, detail="tool is required")
+    executor = app_module_tool_executor(_workspace_tools())
+    call_id = new_id("tool")
+    events, result_json = executor.run_one_stream(call_id, tool, arguments)
+    return {"ok": True, "call_id": call_id, "events": events, "result_json": result_json}
+
+
 @app.post("/api/tool-calls/{call_id}/cancel")
 async def cancel_tool_call(call_id: str) -> dict:
     try:

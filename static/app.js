@@ -942,6 +942,7 @@ function appendStoredEvent(event) {
         arguments: event.arguments || {},
         title: event.title,
         parallel: event.parallel,
+        data: event.data || {},
       },
       null,
       { autoscroll: false },
@@ -1079,12 +1080,15 @@ function appendToolEvent(event, beforeNode = null, options = {}) {
   node.dataset.callId = event.call_id || "";
   node.dataset.tool = event.tool || "";
   node.dataset.arguments = JSON.stringify(event.arguments || {}, null, 2);
+  node.dataset.argumentsRaw = JSON.stringify(event.arguments || {});
+  node.dataset.toolData = JSON.stringify(event.data || {});
   node.innerHTML = `
     <div class="tool-event-head">
       <span>${escapeHtml(event.tool || "tool")}</span>
       <strong>${escapeHtml(event.title || "工具执行中")}</strong>
       <em>${event.parallel ? "并行" : "运行中"}</em>
     </div>
+    ${renderToolMetadata(event.data || {})}
     <div class="tool-actions">
       <button class="tool-cancel" type="button" data-action="cancel-tool">取消</button>
     </div>
@@ -1138,6 +1142,11 @@ function finishToolEvent(node, event, options = {}) {
   }
   node.className = `tool-event ${event.ok ? "ok" : "failed"}`;
   const args = node.dataset.arguments || "{}";
+  const rawArgs = node.dataset.argumentsRaw || args;
+  const data = event.data || {};
+  const retryButton = !event.ok && data.retryable
+    ? '<button class="tool-retry" type="button" data-action="retry-tool">重试</button>'
+    : "";
   const statusLabel = event.data?.status === "cancelled" ? "已取消" : (event.ok ? "完成" : "失败");
   node.innerHTML = `
     <div class="tool-event-head">
@@ -1145,17 +1154,107 @@ function finishToolEvent(node, event, options = {}) {
       <strong>${escapeHtml(event.title || "工具完成")}</strong>
       <em>${statusLabel}</em>
     </div>
+    ${renderToolMetadata(data)}
+    ${data.failure_reason ? `<div class="tool-failure">${escapeHtml(data.failure_reason)}</div>` : ""}
+    <div class="tool-actions">
+      ${retryButton}
+    </div>
     <details class="tool-args" open>
       <summary>调用参数</summary>
       <pre>${escapeHtml(args)}</pre>
     </details>
+    ${renderDiffPreview(data.diff)}
     <details class="tool-result">
       <summary>工具结果</summary>
       <pre>${escapeHtml(shortText(event.output || "", 4000))}</pre>
     </details>
   `;
+  node.dataset.argumentsRaw = rawArgs;
+  node.dataset.toolData = JSON.stringify(data);
+  node.querySelector('[data-action="retry-tool"]')?.addEventListener("click", () => retryToolCall(node));
   if (options.autoscroll !== false) {
     scrollMessagesToBottom();
+  }
+}
+
+function renderToolMetadata(data = {}) {
+  const spec = data.spec || {};
+  const items = [
+    ["权限", spec.permission || data.permission],
+    ["风险", spec.risk],
+    ["分类", spec.category],
+    ["耗时", typeof data.duration_ms === "number" ? `${data.duration_ms} ms` : ""],
+  ].filter(([, value]) => value !== undefined && value !== null && value !== "");
+  if (items.length === 0 && !spec.schema) {
+    return "";
+  }
+  const meta = items.map(([label, value]) => `
+    <div>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(String(value))}</strong>
+    </div>
+  `).join("");
+  const schema = spec.schema
+    ? `<details class="tool-schema"><summary>输入 Schema</summary><pre>${escapeHtml(JSON.stringify(spec.schema, null, 2))}</pre></details>`
+    : "";
+  return `<div class="tool-meta-grid">${meta}</div>${schema}`;
+}
+
+function renderDiffPreview(diff) {
+  if (!diff || !Array.isArray(diff.files)) {
+    return "";
+  }
+  const files = diff.files.length > 0 ? diff.files.join(", ") : "未知文件";
+  const summary = `${files} · +${diff.additions || 0} / -${diff.deletions || 0}`;
+  return `
+    <details class="tool-diff-preview" open>
+      <summary>Diff preview：${escapeHtml(summary)}</summary>
+      <pre>${escapeHtml(shortText(diff.preview || "", 6000))}</pre>
+    </details>
+  `;
+}
+
+async function retryToolCall(node) {
+  const tool = node.dataset.tool;
+  if (!tool) {
+    return;
+  }
+  let args = {};
+  try {
+    args = JSON.parse(node.dataset.argumentsRaw || node.dataset.arguments || "{}");
+  } catch {
+    args = {};
+  }
+  const button = node.querySelector('[data-action="retry-tool"]');
+  if (button) {
+    button.disabled = true;
+    button.textContent = "重试中";
+  }
+  try {
+    const response = await api("/api/tool-calls/retry", {
+      method: "POST",
+      body: JSON.stringify({ tool, arguments: args }),
+    });
+    const activeToolNodes = new Map();
+    for (const event of response.events || []) {
+      if (event.type === "tool_start") {
+        const toolNode = appendToolEvent(event, node.nextSibling);
+        activeToolNodes.set(event.call_id || event.tool || "tool", toolNode);
+      }
+      if (event.type === "tool_output") {
+        appendToolOutput(activeToolNodes.get(event.call_id || event.tool || "tool"), event);
+      }
+      if (event.type === "tool_done") {
+        finishToolEvent(activeToolNodes.get(event.call_id || event.tool || "tool"), event);
+      }
+    }
+    streamStateEl.textContent = "工具已重试";
+  } catch (error) {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "重试";
+    }
+    streamStateEl.textContent = `重试失败：${error instanceof Error ? error.message : "未知错误"}`;
   }
 }
 

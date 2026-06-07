@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from typing import Any, Iterator
 
 from ..processes.manager import ProcessManager
 from .hooks import HookOutcome, ToolHookRunner
-from .workspace import ToolExecutionError, WorkspaceTools, tool_result_as_json
+from .workspace import TOOL_SPECS, ToolExecutionError, WorkspaceTools, tool_result_as_json
 
 
 class ToolExecutor:
@@ -84,6 +85,7 @@ class ToolExecutor:
                     ensure_ascii=False,
                 )
 
+        started_at = time.perf_counter()
         events.append(
             {
                 "type": "tool_start",
@@ -92,6 +94,7 @@ class ToolExecutor:
                 "arguments": current_arguments,
                 "title": self._tool_title(tool_name, current_arguments),
                 "parallel": parallel,
+                "data": {"spec": self._tool_spec_data(tool_name)},
             }
         )
         try:
@@ -106,7 +109,7 @@ class ToolExecutor:
                 current_arguments,
                 error=message,
             )
-            return self._failed_tool(events, call_id, tool_name, current_arguments, message, {})
+            return self._failed_tool(events, call_id, tool_name, current_arguments, message, {}, started_at=started_at)
 
         self._run_hooks(
             events,
@@ -124,7 +127,7 @@ class ToolExecutor:
                 "ok": result.ok,
                 "title": result.title,
                 "output": result.output,
-                "data": result.data or {},
+                "data": self._tool_done_data(tool_name, result.data or {}, started_at=started_at, ok=result.ok),
             }
         )
         return events, tool_result_as_json(result)
@@ -196,6 +199,7 @@ class ToolExecutor:
             yield {"type": "tool_result_json", "result_json": result_json}
             return
 
+        started_at = time.perf_counter()
         start_event = {
             "type": "tool_start",
             "call_id": call_id,
@@ -203,6 +207,7 @@ class ToolExecutor:
             "arguments": current_arguments,
             "title": self._tool_title(tool_name, current_arguments),
             "parallel": parallel,
+            "data": {"spec": self._tool_spec_data(tool_name)},
         }
         yield from events
         yield start_event
@@ -214,7 +219,7 @@ class ToolExecutor:
                     "title": f"后台执行：{command}",
                     "ok": True,
                     "output": f"已在后台启动 {job['id']}：{command}",
-                    "data": {"job": job},
+                    "data": self._tool_done_data(tool_name, {"job": job, "background": True}, started_at=started_at, ok=True),
                 },
                 ensure_ascii=False,
             )
@@ -225,7 +230,7 @@ class ToolExecutor:
                 "ok": True,
                 "title": f"后台执行：{command}",
                 "output": f"已在后台启动 {job['id']}：{command}",
-                "data": {"job": job, "background": True},
+                "data": self._tool_done_data(tool_name, {"job": job, "background": True}, started_at=started_at, ok=True),
             }
             yield {"type": "tool_result_json", "result_json": result_json}
             return
@@ -259,6 +264,13 @@ class ToolExecutor:
             error=None if done_event.get("ok") else str(done_event.get("output") or ""),
         )
         yield from hook_events
+        done_event["data"] = self._tool_done_data(
+            tool_name,
+            done_event.get("data") if isinstance(done_event.get("data"), dict) else {},
+            started_at=started_at,
+            ok=bool(done_event.get("ok")),
+            failure_reason=None if done_event.get("ok") else str(done_event.get("output") or ""),
+        )
         yield done_event
         result_json = json.dumps(
             {
@@ -331,9 +343,19 @@ class ToolExecutor:
         arguments: dict[str, Any],
         message: str,
         data: dict[str, Any],
+        *,
+        started_at: float | None = None,
     ) -> tuple[list[dict], str]:
+        enriched_data = self._tool_done_data(
+            tool_name,
+            data,
+            started_at=started_at,
+            ok=False,
+            failure_reason=message,
+            arguments=arguments,
+        )
         result_json = json.dumps(
-            {"tool": tool_name, "ok": False, "error": message, "data": data},
+            {"tool": tool_name, "ok": False, "error": message, "data": enriched_data},
             ensure_ascii=False,
         )
         events.append(
@@ -345,7 +367,7 @@ class ToolExecutor:
                 "ok": False,
                 "title": f"{tool_name} 执行失败",
                 "output": message,
-                "data": data,
+                "data": enriched_data,
             }
         )
         return events, result_json
@@ -383,3 +405,40 @@ class ToolExecutor:
     def _tool_title(self, tool_name: str, arguments: dict[str, Any]) -> str:
         target = arguments.get("path") or arguments.get("query") or arguments.get("command") or arguments.get("url") or ""
         return f"{tool_name} {target}".strip()
+
+    def _tool_spec_data(self, tool_name: str) -> dict[str, Any]:
+        spec = TOOL_SPECS.get(tool_name)
+        if spec is None:
+            return {"name": tool_name, "permission": "unknown", "risk": "unknown", "schema": {}}
+        return {
+            "name": spec.name,
+            "description": spec.description,
+            "permission": spec.permission,
+            "risk": spec.risk,
+            "category": spec.category,
+            "schema": spec.schema,
+            "supports_parallel": spec.supports_parallel,
+            "interrupt_behavior": spec.interrupt_behavior,
+        }
+
+    def _tool_done_data(
+        self,
+        tool_name: str,
+        data: dict[str, Any],
+        *,
+        started_at: float | None,
+        ok: bool,
+        failure_reason: str | None = None,
+        arguments: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        enriched = {key: value for key, value in data.items() if value is not None}
+        enriched["spec"] = self._tool_spec_data(tool_name)
+        if started_at is not None:
+            enriched["duration_ms"] = max(0, int((time.perf_counter() - started_at) * 1000))
+        if not ok:
+            enriched["failure_reason"] = failure_reason or "工具执行失败"
+            enriched["retryable"] = True
+            if tool_name == "apply_patch" and "diff" not in enriched and isinstance(arguments, dict):
+                patch_text = str(arguments.get("patch") or "")
+                enriched["diff"] = self.tools._diff_summary(patch_text) if patch_text else None
+        return enriched
