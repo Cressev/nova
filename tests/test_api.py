@@ -267,6 +267,85 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(tool_events[0]["output"], "Nova")
         self.assertEqual(tool_events[0]["status"], "ok")
 
+    def test_stream_emits_runtime_event_backbone(self) -> None:
+        async def fake_agent_stream(messages):
+            yield {"type": "agent_status", "status": "模型决策中"}
+            yield {
+                "type": "tool_start",
+                "call_id": "tool_test_status",
+                "tool": "git_status",
+                "title": "读取 Git 状态",
+                "arguments": {},
+            }
+            yield {
+                "type": "tool_done",
+                "call_id": "tool_test_status",
+                "tool": "git_status",
+                "ok": True,
+                "title": "Git 状态",
+                "output": "clean",
+                "data": {},
+            }
+            yield {"type": "assistant_delta", "delta": "完成"}
+            yield {"type": "assistant_done_content", "content": "完成"}
+
+        session_response = self.client.post(
+            "/api/chat/sessions",
+            json={"title": "运行时事件骨架"},
+        )
+        session = session_response.json()
+
+        class FakeRuntime:
+            stream = staticmethod(fake_agent_stream)
+
+        with patch.object(app_module, "_agent_runtime", lambda: FakeRuntime()):
+            with self.client.stream(
+                "POST",
+                f"/api/chat/sessions/{session['id']}/stream",
+                json={"content": "查看 git 状态"},
+            ) as response:
+                self.assertEqual(response.status_code, 200)
+                lines = [
+                    line
+                    for line in response.iter_lines()
+                    if line.strip()
+                ]
+
+        runtime_events = [
+            app_module.json.loads(line)["event"]
+            for line in lines
+            if app_module.json.loads(line).get("type") == "runtime_event"
+        ]
+        event_types = [event["event_type"] for event in runtime_events]
+        self.assertIn("turn.started", event_types)
+        self.assertIn("agent.status", event_types)
+        self.assertIn("tool.started", event_types)
+        self.assertIn("tool.completed", event_types)
+        self.assertIn("turn.completed", event_types)
+
+        turn_ids = {event["turn_id"] for event in runtime_events}
+        self.assertEqual(len(turn_ids), 1)
+        sequences = [event["sequence"] for event in runtime_events]
+        self.assertEqual(sequences, sorted(sequences))
+        self.assertEqual(sequences, list(range(1, len(sequences) + 1)))
+
+        timeline = self.client.get(f"/api/chat/sessions/{session['id']}/timeline")
+        self.assertEqual(timeline.status_code, 200)
+        stored_events = [
+            item["item"]
+            for item in timeline.json()["items"]
+            if item["kind"] == "event"
+        ]
+        stored_event_types = [event.get("event_type") for event in stored_events]
+        self.assertIn("turn.started", stored_event_types)
+        self.assertIn("tool.completed", stored_event_types)
+        self.assertIn("turn.completed", stored_event_types)
+        self.assertTrue(all(event.get("turn_id") for event in stored_events))
+        self.assertEqual(
+            [event.get("sequence") for event in stored_events],
+            sorted(event.get("sequence") for event in stored_events),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

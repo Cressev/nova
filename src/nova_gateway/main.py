@@ -458,6 +458,47 @@ async def stream_chat_message(
         raise HTTPException(status_code=404, detail="Chat session not found")
 
     async def emit() -> AsyncIterator[str]:
+        turn_id = new_id("turn")
+        sequence = 0
+
+        def runtime_event(
+            event_type: str,
+            *,
+            category: str,
+            phase: str,
+            title: str,
+            message: str | None = None,
+            status: str = "ok",
+            tool: str | None = None,
+            call_id: str | None = None,
+            arguments: dict | None = None,
+            output: str | None = None,
+            data: dict | None = None,
+            persist: bool = True,
+        ) -> dict:
+            nonlocal sequence
+            sequence += 1
+            event = {
+                "id": call_id or new_id("evt"),
+                "session_id": session_id,
+                "turn_id": turn_id,
+                "sequence": sequence,
+                "event_type": event_type,
+                "category": category,
+                "phase": phase,
+                "status": status,
+                "title": title,
+                "message": message or title,
+                "tool": tool,
+                "call_id": call_id,
+                "arguments": arguments or {},
+                "output": output,
+                "data": data or {},
+            }
+            if persist:
+                _persist_runtime_event(event)
+            return event
+
         user_message = ChatMessage(
             session_id=session_id,
             role=ChatRole.USER,
@@ -482,11 +523,22 @@ async def stream_chat_message(
                 data={"session_id": session_id},
             )
         )
+        started = runtime_event(
+            "turn.started",
+            category="turn",
+            phase="started",
+            title="开始处理用户请求",
+            message=payload.content,
+            data={"message_id": user_message.id, "task_id": task.id},
+        )
+        yield _ndjson({"type": "runtime_event", "event": started})
 
         answer_parts: list[str] = []
         try:
             async for event in _agent_runtime().stream(store.list_chat_messages(session_id)):
-                _persist_chat_event(session_id, event)
+                runtime = _runtime_event_from_agent_event(event, runtime_event)
+                if runtime is not None:
+                    yield _ndjson({"type": "runtime_event", "event": runtime})
                 if event["type"] == "assistant_delta":
                     answer_parts.append(event["delta"])
                     yield _ndjson(event)
@@ -503,6 +555,14 @@ async def stream_chat_message(
                 content="".join(answer_parts),
             )
             store.add_chat_message(assistant_message)
+            completed = runtime_event(
+                "turn.completed",
+                category="turn",
+                phase="completed",
+                title="本轮回复完成",
+                message="Nova 已完成本次运行。",
+                data={"message_id": assistant_message.id, "task_id": task.id},
+            )
             store.add_event(
                 TimelineEvent(
                     task_id=task.id,
@@ -512,6 +572,7 @@ async def stream_chat_message(
                     data={"session_id": session_id, "message_id": assistant_message.id},
                 )
             )
+            yield _ndjson({"type": "runtime_event", "event": completed})
             yield _ndjson(
                 {
                     "type": "assistant_done",
@@ -519,6 +580,15 @@ async def stream_chat_message(
                 }
             )
         except ProviderError as exc:
+            failed = runtime_event(
+                "turn.failed",
+                category="turn",
+                phase="failed",
+                status="failed",
+                title="模型调用失败",
+                message=str(exc),
+                data={"task_id": task.id},
+            )
             error_message = ChatMessage(
                 session_id=session_id,
                 role=ChatRole.ERROR,
@@ -535,9 +605,19 @@ async def stream_chat_message(
                     data={"session_id": session_id},
                 )
             )
+            yield _ndjson({"type": "runtime_event", "event": failed})
             yield _ndjson({"type": "error", "message": error_message.model_dump(mode="json")})
         except Exception as exc:
             detail = str(exc) or repr(exc)
+            failed = runtime_event(
+                "turn.failed",
+                category="turn",
+                phase="failed",
+                status="failed",
+                title="运行时异常",
+                message=f"{type(exc).__name__}: {detail}",
+                data={"task_id": task.id},
+            )
             error_message = ChatMessage(
                 session_id=session_id,
                 role=ChatRole.ERROR,
@@ -554,6 +634,7 @@ async def stream_chat_message(
                     data={"session_id": session_id},
                 )
             )
+            yield _ndjson({"type": "runtime_event", "event": failed})
             yield _ndjson({"type": "error", "message": error_message.model_dump(mode="json")})
 
     return StreamingResponse(emit(), media_type="application/x-ndjson")
@@ -597,45 +678,72 @@ def _estimate_session_tokens(session_id: str) -> dict:
     }
 
 
-def _persist_chat_event(session_id: str, event: dict) -> None:
+def _runtime_event_from_agent_event(event: dict, build_event) -> dict | None:
     event_type = event.get("type")
     if event_type == "tool_start":
-        store.upsert_chat_event(
-            ChatEvent(
-                id=str(event.get("call_id") or new_id("tool")),
-                session_id=session_id,
-                type="tool",
-                status="running",
-                title=str(event.get("title") or event.get("tool") or "工具执行中"),
-                tool=str(event.get("tool") or "tool"),
-                arguments=event.get("arguments") if isinstance(event.get("arguments"), dict) else {},
-                parallel=bool(event.get("parallel", False)),
-            )
+        return build_event(
+            "tool.started",
+            category="tool",
+            phase="started",
+            status="running",
+            title=str(event.get("title") or event.get("tool") or "工具执行中"),
+            message="工具已开始执行。",
+            tool=str(event.get("tool") or "tool"),
+            call_id=str(event.get("call_id") or new_id("tool")),
+            arguments=event.get("arguments") if isinstance(event.get("arguments"), dict) else {},
+            data={
+                "parallel": bool(event.get("parallel", False)),
+                **(event.get("data") if isinstance(event.get("data"), dict) else {}),
+            },
         )
-        return
     if event_type == "tool_done":
-        store.upsert_chat_event(
-            ChatEvent(
-                id=str(event.get("call_id") or new_id("tool")),
-                session_id=session_id,
-                type="tool",
-                status="ok" if event.get("ok", False) else "failed",
-                title=str(event.get("title") or event.get("tool") or "工具完成"),
-                tool=str(event.get("tool") or "tool"),
-                output=str(event.get("output") or ""),
-                data=event.get("data") if isinstance(event.get("data"), dict) else {},
-            )
+        ok = bool(event.get("ok", False))
+        return build_event(
+            "tool.completed",
+            category="tool",
+            phase="completed" if ok else "failed",
+            status="ok" if ok else "failed",
+            title=str(event.get("title") or event.get("tool") or "工具完成"),
+            message="工具执行完成。" if ok else "工具执行失败。",
+            tool=str(event.get("tool") or "tool"),
+            call_id=str(event.get("call_id") or new_id("tool")),
+            output=str(event.get("output") or ""),
+            data=event.get("data") if isinstance(event.get("data"), dict) else {},
         )
-        return
     if event_type == "agent_status":
-        store.upsert_chat_event(
-            ChatEvent(
-                session_id=session_id,
-                type="status",
-                status="ok",
-                title=str(event.get("status") or "运行中"),
-            )
+        status = str(event.get("status") or "运行中")
+        return build_event(
+            "agent.status",
+            category="status",
+            phase="update",
+            title=status,
+            message=status,
         )
+    return None
+
+
+def _persist_runtime_event(event: dict) -> None:
+    category = str(event.get("category") or "status")
+    status = str(event.get("status") or "ok")
+    store.upsert_chat_event(
+        ChatEvent(
+            id=str(event.get("id") or new_id("evt")),
+            session_id=str(event["session_id"]),
+            type="tool" if category == "tool" else "turn" if category == "turn" else "status",
+            event_type=str(event.get("event_type") or ""),
+            phase=str(event.get("phase") or ""),
+            turn_id=str(event.get("turn_id") or ""),
+            sequence=int(event.get("sequence") or 0),
+            status=status,
+            title=str(event.get("title") or event.get("event_type") or "运行事件"),
+            message=str(event.get("message") or event.get("title") or ""),
+            tool=str(event.get("tool")) if event.get("tool") else None,
+            arguments=event.get("arguments") if isinstance(event.get("arguments"), dict) else {},
+            output=str(event.get("output")) if event.get("output") is not None else None,
+            data=event.get("data") if isinstance(event.get("data"), dict) else {},
+            parallel=bool((event.get("data") or {}).get("parallel")) if isinstance(event.get("data"), dict) else False,
+        )
+    )
 
 
 def _ndjson(payload: dict) -> str:

@@ -209,8 +209,13 @@ class TaskStore:
                     merged = existing.model_copy(
                         update={
                             "type": event.type,
+                            "event_type": event.event_type or existing.event_type,
+                            "phase": event.phase or existing.phase,
+                            "turn_id": event.turn_id or existing.turn_id,
+                            "sequence": event.sequence if event.sequence is not None else existing.sequence,
                             "status": event.status,
                             "title": event.title or existing.title,
+                            "message": event.message if event.message is not None else existing.message,
                             "tool": event.tool or existing.tool,
                             "arguments": event.arguments or existing.arguments,
                             "output": event.output if event.output is not None else existing.output,

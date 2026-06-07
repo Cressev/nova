@@ -929,3 +929,42 @@ $superpowers 使用技能重新审视我们的开发历程和产品形态
 - 主提交：`29dd04e`
 
 ------ todo-list end at 2026/06/06/23:55:05 -----
+
+------ todo-list begin at 2026/06/07/10:29:48 -----
+
+用户请求：
+那么按照你的计划开始执行吧。
+
+制定清单：
+- [x] 1. 明确本轮 runtime event backbone 范围
+  - [x] 1.1 读取当前 runtime、store、API、前端 timeline 代码
+  - [x] 1.2 确定第一版事件协议字段和兼容策略
+- [x] 2. 按 TDD 补运行时事件骨架测试
+  - [x] 2.1 写 timeline 事件持久化和顺序测试
+  - [x] 2.2 写流式接口输出 turn/tool/permission 风格事件测试
+  - [x] 2.3 先运行测试并确认失败原因正确
+- [x] 3. 实现最小运行时事件骨架
+  - [x] 3.1 新增统一 RuntimeEvent 构造器
+  - [x] 3.2 将现有 agent_status/tool_start/tool_done 事件映射到统一事件
+  - [x] 3.3 持久化事件到 timeline，保留旧前端兼容字段
+  - [x] 3.4 前端基于统一事件展示工具状态和回合状态
+- [x] 4. 验证与交付
+  - [x] 4.1 运行单元测试、JS 语法检查和 Python 编译检查
+  - [x] 4.2 启动或确认本地服务，验证健康接口
+  - [x] 4.3 使用浏览器真实验证 timeline 和工具事件展示
+  - [x] 4.4 更新 CURRENT.md、PROGRESS.md、log.md、user-queries.md
+  - [x] 4.5 提交并推送远程仓库
+
+执行问题记录：
+暂无
+
+交付记录：
+- 后端新增 additive `runtime_event` NDJSON 事件，不破坏旧 `tool_start/tool_done/agent_status/assistant_delta` 消费链路。
+- 每轮请求生成稳定 `turn_id`，事件带递增 `sequence`、`event_type`、`phase`，并持久化到 chat timeline。
+- 前端已消费 `runtime_event`，实时展示 turn started/failed/completed 状态，历史回放可展示 turn 事件。
+- 新增前端 Node/Vm 轻量测试：`tests/frontend_runtime_events.test.js`。
+- 验证通过：`PYTHONPATH=src python3 -m unittest discover -s tests`、`node tests/frontend_runtime_events.test.js`、`node --check static/app.js`、`python3 -m py_compile src/nova_gateway/*.py`。
+- Playwright 真实验证：回车发送、用户消息立即出现、运行状态和错误兜底可见；截图 `output/playwright/runtime-event-backbone.png`。
+- 本地网站：`http://127.0.0.1:8765`。
+
+------ todo-list end at 2026/06/07/10:39:30 -----

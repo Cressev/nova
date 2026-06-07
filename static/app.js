@@ -744,6 +744,10 @@ async function loadMessages() {
 }
 
 function appendStoredEvent(event) {
+  if (event.type === "turn" || event.event_type?.startsWith("turn.")) {
+    appendStatusEvent(event.title || event.message || "运行状态更新", { autoscroll: false });
+    return;
+  }
   if (event.type === "tool") {
     const node = appendToolEvent(
       {
@@ -1566,6 +1570,24 @@ async function streamAssistant(sessionId, content, assistantNode) {
   let assistantText = "";
   let ok = true;
   const activeToolNodes = new Map();
+  const handleRuntimeEvent = (event) => {
+    // runtime_event 是后端统一运行时协议；旧事件仍负责渲染工具详情，避免实时视图重复。
+    if (event.event_type === "turn.started") {
+      streamStateEl.textContent = event.title || "Nova 正在处理";
+      appendStatusEvent(event.title || "开始处理用户请求", { beforeNode: assistantNode });
+      updateTurnToolControl(assistantNode);
+      return;
+    }
+    if (event.event_type === "turn.completed") {
+      streamStateEl.textContent = event.title || "回复完成";
+      return;
+    }
+    if (event.event_type === "turn.failed") {
+      streamStateEl.textContent = event.title || "请求失败";
+      appendStatusEvent(event.message || event.title || "请求失败", { beforeNode: assistantNode });
+      updateTurnToolControl(assistantNode);
+    }
+  };
 
   while (true) {
     const { value, done } = await reader.read();
@@ -1596,6 +1618,7 @@ async function streamAssistant(sessionId, content, assistantNode) {
         appendStatusEvent(event.status || "运行中", { beforeNode: assistantNode });
         updateTurnToolControl(assistantNode);
       },
+      onRuntimeEvent: handleRuntimeEvent,
     });
     buffer = result.rest;
     ok = ok && result.ok;
@@ -1623,6 +1646,7 @@ async function streamAssistant(sessionId, content, assistantNode) {
         appendStatusEvent(event.status || "运行中", { beforeNode: assistantNode });
         updateTurnToolControl(assistantNode);
       },
+      onRuntimeEvent: handleRuntimeEvent,
     });
     ok = ok && result.ok;
   }
@@ -1655,6 +1679,9 @@ function consumeStreamLines(buffer, assistantNode, handlers) {
     }
     if (event.type === "agent_status") {
       handlers.onStatus?.(event);
+    }
+    if (event.type === "runtime_event") {
+      handlers.onRuntimeEvent?.(event.event || {});
     }
     if (event.type === "assistant_done") {
       assistantNode.classList.remove("streaming");
