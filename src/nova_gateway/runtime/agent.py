@@ -11,6 +11,7 @@ from ..memory import ProjectMemory
 from ..models import ChatMessage, ChatRole
 from ..processes.manager import ProcessManager
 from ..providers.bigmodel import BigModelProvider, ProviderError
+from ..review import ReviewManager
 from ..skills import SkillManager
 from ..tools.executor import ToolExecutor
 from ..tools.hooks import ToolHookRunner
@@ -737,8 +738,16 @@ class CodexLikeAgentRuntime:
         if command == "/model":
             return f"模型：{self.provider.model}\nBase URL：{self.provider.base_url}\n已配置密钥：{'是' if self.provider.is_configured() else '否'}"
         if command == "/review":
-            diff = self.tools.git_diff({}).output
-            return f"当前 diff 摘要：\n{diff[:3000]}"
+            summary = ReviewManager(self.tools.project_root).summary()
+            risks = "\n".join(
+                f"- {item['severity']}：{item['title']}。{item['detail']}"
+                for item in summary.get("risks", [])
+            )
+            tests = "\n".join(
+                f"- {item['label']}：`{item['command']}`"
+                for item in summary.get("suggested_tests", [])
+            )
+            return f"{summary['summary']}\n\n风险：\n{risks or '- 暂无'}\n\n建议测试：\n{tests or '- 暂无'}"
         if command == "/plan":
             return "请在 /plan 后写目标和验收标准；Nova 会先拆步骤，再按步骤调用工具执行。"
         if command == "/compact":

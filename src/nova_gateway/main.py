@@ -23,6 +23,7 @@ from .memory import ProjectMemory
 from .mcp import McpManager
 from .providers.bigmodel import BigModelProvider, ProviderError
 from .processes.manager import ProcessManager
+from .review import ReviewManager
 from .runtime import CodexLikeAgentRuntime, DemoAgentRuntime
 from .runtime.commands import list_builtin_commands
 from .sessions import AgentSessionService, TaskStore
@@ -401,6 +402,28 @@ async def lsp_definition(path: str = Query(..., max_length=400), symbol: str = Q
         return LspManager(workspace_manager.current_root).definition(path=path, symbol=symbol)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/review/summary")
+async def review_summary() -> dict:
+    return ReviewManager(workspace_manager.current_root).summary()
+
+
+@app.post("/api/review/run-tests")
+async def review_run_tests(payload: dict | None = None) -> dict:
+    command = payload.get("command") if isinstance(payload, dict) else None
+    try:
+        return ReviewManager(workspace_manager.current_root).run_tests(command=command)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "ok": False,
+            "command": str(exc.cmd),
+            "exit_code": None,
+            "stdout": (exc.stdout or "")[-16000:] if isinstance(exc.stdout, str) else "",
+            "stderr": "测试命令超时，Review 已停止等待。",
+        }
 
 
 @app.post("/api/mcp/tools/{tool_name}/call")

@@ -138,7 +138,17 @@
         <section class="inspector-card">
           <div class="card-title">
             <span>Review</span>
-            <button class="ghost-button" type="button" data-prompt="/review">查看</button>
+            <button id="review-refresh" class="ghost-button" type="button">刷新</button>
+          </div>
+          <div class="review-panel">
+            <div class="review-head">
+              <strong id="review-state">加载中</strong>
+              <button id="review-run-tests" type="button">运行测试</button>
+            </div>
+            <pre id="review-summary" class="review-summary">Review summary 加载中</pre>
+            <div id="review-risks" class="review-risks"></div>
+            <div id="review-tests" class="review-tests"></div>
+            <pre id="review-test-output" class="review-test-output"></pre>
           </div>
           <div id="git-files" class="git-files"></div>
         </section>

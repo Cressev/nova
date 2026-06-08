@@ -45,6 +45,7 @@ const state = {
   commandSelectionIndex: -1,
   mcp: null,
   lsp: null,
+  review: null,
   skills: null,
 };
 
@@ -64,6 +65,13 @@ const workspacePathEl = document.querySelector("#workspace-path");
 const gitBranchEl = document.querySelector("#git-branch");
 const dirtyCountEl = document.querySelector("#dirty-count");
 const gitFilesEl = document.querySelector("#git-files");
+const reviewStateEl = document.querySelector("#review-state");
+const reviewSummaryEl = document.querySelector("#review-summary");
+const reviewRisksEl = document.querySelector("#review-risks");
+const reviewTestsEl = document.querySelector("#review-tests");
+const reviewRunTestsEl = document.querySelector("#review-run-tests");
+const reviewRefreshEl = document.querySelector("#review-refresh");
+const reviewTestOutputEl = document.querySelector("#review-test-output");
 const modeListEl = document.querySelector("#mode-list");
 const modePillEl = document.querySelector("#mode-pill");
 const skillCountEl = document.querySelector("#skill-count");
@@ -217,11 +225,12 @@ async function loadWorkspaceCandidates(query = "") {
 }
 
 async function loadRuntimePanels() {
-  const [config, tools, mcp, lsp, skills, memory, statusline, worktrees] = await Promise.all([
+  const [config, tools, mcp, lsp, review, skills, memory, statusline, worktrees] = await Promise.all([
     api("/api/runtime/config"),
     api("/api/tools"),
     api("/api/mcp/status"),
     api("/api/lsp/status"),
+    api("/api/review/summary"),
     api("/api/skills/status"),
     api("/api/memory/status"),
     loadStatuslineData(),
@@ -232,12 +241,14 @@ async function loadRuntimePanels() {
   state.statusline = statusline;
   state.mcp = mcp;
   state.lsp = lsp;
+  state.review = review;
   state.skills = skills;
   renderRuntimeConfig(config);
   renderWorktrees(worktrees);
   renderTools(tools.items || []);
   renderMcpPanel(mcp);
   renderLspPanel(lsp);
+  renderReviewPanel(review);
   renderSkillsPanel(skills);
   renderMemory(memory);
   renderStatusline();
@@ -786,6 +797,88 @@ function renderLspPanel(lsp) {
     card.querySelector('[data-action="lsp-diagnostics"]')?.addEventListener("click", () => runLspDiagnostics(card));
     card.querySelector('[data-action="lsp-definition"]')?.addEventListener("click", () => runLspDefinition(card));
     lspListEl.appendChild(card);
+  }
+}
+
+function renderReviewPanel(review) {
+  if (!reviewStateEl || !reviewSummaryEl || !reviewRisksEl || !reviewTestsEl) {
+    return;
+  }
+  const changedFiles = review?.changed_files || [];
+  const risks = review?.risks || [];
+  const suggestedTests = review?.suggested_tests || [];
+  const errors = Number(review?.diagnostics?.summary?.error || 0);
+  reviewStateEl.textContent = `${changedFiles.length} 文件 · ${risks.length} 风险 · ${errors} 错误`;
+  reviewStateEl.className = errors > 0 || risks.some((item) => item.severity === "high") ? "review-state warning" : "review-state ready";
+  reviewSummaryEl.textContent = review?.summary || "Review summary 暂无数据";
+  reviewRisksEl.innerHTML = risks.length === 0
+    ? '<small class="review-empty">暂无风险</small>'
+    : risks.map((item) => `
+      <article class="review-risk ${escapeHtml(item.severity || "info")}">
+        <strong>${escapeHtml(item.title || "风险")}</strong>
+        <span>${escapeHtml(item.detail || "")}</span>
+      </article>
+    `).join("");
+  reviewTestsEl.innerHTML = suggestedTests.length === 0
+    ? '<small class="review-empty">暂无建议测试</small>'
+    : suggestedTests.map((item, index) => `
+      <button type="button" class="review-test" data-review-test="${index}">
+        <strong>${escapeHtml(item.label || "测试")}</strong>
+        <span>${escapeHtml(item.command || "")}</span>
+      </button>
+    `).join("");
+  reviewTestsEl.querySelectorAll("[data-review-test]").forEach((button) => {
+    button.addEventListener("click", () => runReviewTests(button.dataset.reviewTest || "0"));
+  });
+}
+
+async function refreshReviewPanel() {
+  if (reviewStateEl) {
+    reviewStateEl.textContent = "刷新中";
+  }
+  try {
+    const review = await api("/api/review/summary");
+    state.review = review;
+    renderReviewPanel(review);
+    streamStateEl.textContent = "Review 已刷新";
+  } catch (error) {
+    if (reviewSummaryEl) {
+      reviewSummaryEl.textContent = `Review 读取失败：${error instanceof Error ? error.message : "未知错误"}`;
+    }
+  }
+}
+
+async function runReviewTests(index = "0") {
+  const selected = state.review?.suggested_tests?.[Number(index)] || state.review?.suggested_tests?.[0] || null;
+  if (reviewRunTestsEl) {
+    reviewRunTestsEl.disabled = true;
+  }
+  if (reviewTestOutputEl) {
+    reviewTestOutputEl.textContent = `正在运行：${selected?.command || "默认测试命令"}`;
+  }
+  try {
+    const payload = await api("/api/review/run-tests", {
+      method: "POST",
+      body: JSON.stringify(selected?.command ? { command: selected.command } : {}),
+    });
+    if (reviewTestOutputEl) {
+      reviewTestOutputEl.textContent = [
+        `${payload.ok ? "通过" : "失败"} · exit ${payload.exit_code ?? "-"}`,
+        `$ ${payload.command || ""}`,
+        payload.stdout ? `stdout:\n${payload.stdout}` : "",
+        payload.stderr ? `stderr:\n${payload.stderr}` : "",
+      ].filter(Boolean).join("\n\n");
+    }
+    streamStateEl.textContent = payload.ok ? "Review 测试通过" : "Review 测试失败";
+    await refreshReviewPanel();
+  } catch (error) {
+    if (reviewTestOutputEl) {
+      reviewTestOutputEl.textContent = `测试运行失败：${error instanceof Error ? error.message : "未知错误"}`;
+    }
+  } finally {
+    if (reviewRunTestsEl) {
+      reviewRunTestsEl.disabled = false;
+    }
   }
 }
 
@@ -2164,6 +2257,8 @@ memoryDialogSaveEl.addEventListener("click", saveMemoryDialog);
 worktreeCreateEl.addEventListener("click", createWorktreeFromPanel);
 worktreeDiffEl.addEventListener("click", showCurrentWorktreeDiff);
 worktreeCleanupEl.addEventListener("click", cleanupCurrentWorktree);
+reviewRefreshEl?.addEventListener("click", refreshReviewPanel);
+reviewRunTestsEl?.addEventListener("click", () => runReviewTests("0"));
 
 settingsSaveEl.addEventListener("click", async () => {
   const payload = collectRuntimeSettings();
