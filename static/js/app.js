@@ -44,6 +44,7 @@ const state = {
   commands: BUILTIN_COMMANDS,
   commandSelectionIndex: -1,
   mcp: null,
+  skills: null,
 };
 
 const healthEl = queryRequired("#health");
@@ -64,6 +65,8 @@ const dirtyCountEl = document.querySelector("#dirty-count");
 const gitFilesEl = document.querySelector("#git-files");
 const modeListEl = document.querySelector("#mode-list");
 const modePillEl = document.querySelector("#mode-pill");
+const skillCountEl = document.querySelector("#skill-count");
+const skillListEl = document.querySelector("#skill-list");
 const permissionsListEl = document.querySelector("#permissions-list");
 const testCommandEl = document.querySelector("#test-command");
 const serveCommandEl = document.querySelector("#serve-command");
@@ -211,10 +214,11 @@ async function loadWorkspaceCandidates(query = "") {
 }
 
 async function loadRuntimePanels() {
-  const [config, tools, mcp, memory, statusline, worktrees] = await Promise.all([
+  const [config, tools, mcp, skills, memory, statusline, worktrees] = await Promise.all([
     api("/api/runtime/config"),
     api("/api/tools"),
     api("/api/mcp/status"),
+    api("/api/skills/status"),
     api("/api/memory/status"),
     loadStatuslineData(),
     api("/api/worktrees"),
@@ -223,10 +227,12 @@ async function loadRuntimePanels() {
   state.worktrees = worktrees;
   state.statusline = statusline;
   state.mcp = mcp;
+  state.skills = skills;
   renderRuntimeConfig(config);
   renderWorktrees(worktrees);
   renderTools(tools.items || []);
   renderMcpPanel(mcp);
+  renderSkillsPanel(skills);
   renderMemory(memory);
   renderStatusline();
   renderSettings();
@@ -726,6 +732,68 @@ function renderMcpPanel(mcp) {
       button.addEventListener("click", () => callMcpDemoTool(button.dataset.mcpTool || MCP_DEMO_TOOL));
     });
     mcpListEl.appendChild(card);
+  }
+}
+
+function renderSkillsPanel(report) {
+  if (!skillCountEl || !skillListEl) {
+    return;
+  }
+  const skills = report?.skills || [];
+  skillCountEl.textContent = String(skills.length);
+  skillListEl.innerHTML = "";
+  if (skills.length === 0) {
+    skillListEl.textContent = "未发现技能";
+    return;
+  }
+  for (const skill of skills.slice(0, 18)) {
+    const card = document.createElement("article");
+    card.className = `skill-item ${skill.scope === "project" ? "project" : "global"}`;
+    card.dataset.skillName = skill.name || "";
+    card.dataset.skillScope = skill.scope || "";
+    card.innerHTML = `
+      <button class="skill-trigger" type="button" data-skill-name="${escapeHtml(skill.name || "")}">
+        <strong>${escapeHtml(skill.trigger || `$${skill.name || ""}`)}</strong>
+        <span>${escapeHtml(skill.scope || "-")}</span>
+      </button>
+      <small>${escapeHtml(skill.description || skill.preview || "无说明")}</small>
+      <div class="skill-actions">
+        <button type="button" data-action="use-skill" data-skill-name="${escapeHtml(skill.name || "")}">调用</button>
+        <button type="button" data-action="read-skill" data-skill-name="${escapeHtml(skill.name || "")}" data-skill-scope="${escapeHtml(skill.scope || "")}">查看</button>
+      </div>
+      <pre class="skill-content" hidden></pre>
+    `;
+    card.querySelectorAll('[data-action="use-skill"], .skill-trigger').forEach((button) => {
+      button.addEventListener("click", () => fillSkillCommand(skill.name || ""));
+    });
+    card.querySelector('[data-action="read-skill"]')?.addEventListener("click", () => readSkillCard(card));
+    skillListEl.appendChild(card);
+  }
+}
+
+function fillSkillCommand(skillName) {
+  if (!skillName) {
+    return;
+  }
+  messageEl.value = `$${skillName} `;
+  autoResizeTextarea();
+  messageEl.focus();
+}
+
+async function readSkillCard(card) {
+  const skillName = card.dataset.skillName || "";
+  const scope = card.dataset.skillScope || "";
+  const output = card.querySelector(".skill-content");
+  if (!skillName || !scope || !output) {
+    return;
+  }
+  output.hidden = false;
+  output.textContent = "读取 SKILL.md 中...";
+  try {
+    const detail = await api(`/api/skills/${encodeURIComponent(scope)}/${encodeURIComponent(skillName)}`);
+    output.textContent = detail.content || "SKILL.md 为空";
+  } catch (error) {
+    output.textContent = `读取失败：${error instanceof Error ? error.message : "未知错误"}`;
   }
 }
 

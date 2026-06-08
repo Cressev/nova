@@ -3,6 +3,8 @@ export const BUILTIN_COMMANDS = [
   { name: "/status", description: "查看网关、模型、权限、工作区和 Git 状态", group: "runtime" },
   { name: "/model", description: "查看模型与 Base URL", group: "config" },
   { name: "/tools", description: "列出当前可用工具和并行能力", group: "tools" },
+  { name: "/skills", description: "列出当前可用技能和触发方式", group: "skills" },
+  { name: "/skill", description: "读取并触发一个技能", argumentHint: "<技能名>", group: "skills" },
   { name: "/permissions", description: "查看权限模式和限制", group: "permissions" },
   { name: "/approvals", description: "查看审批策略", group: "permissions" },
   { name: "/sandbox", description: "查看沙箱模式", group: "permissions" },

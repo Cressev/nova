@@ -29,6 +29,8 @@ BUILTIN_COMMANDS: tuple[BuiltinCommand, ...] = (
     BuiltinCommand("/status", "查看网关、模型、权限、工作区和 Git 状态", group="runtime"),
     BuiltinCommand("/model", "查看当前模型、Base URL 和密钥配置状态", group="config"),
     BuiltinCommand("/tools", "列出当前可用工具、权限和并行能力", group="tools"),
+    BuiltinCommand("/skills", "列出当前可用技能，显示来源和触发方式", group="skills"),
+    BuiltinCommand("/skill", "读取并触发一个技能的 SKILL.md", "<技能名>", "skills"),
     BuiltinCommand("/permissions", "查看权限模式和限制", group="permissions"),
     BuiltinCommand("/approvals", "查看审批策略", group="permissions"),
     BuiltinCommand("/sandbox", "查看沙箱模式", group="permissions"),

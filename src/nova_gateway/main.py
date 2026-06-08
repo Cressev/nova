@@ -25,6 +25,7 @@ from .processes.manager import ProcessManager
 from .runtime import CodexLikeAgentRuntime, DemoAgentRuntime
 from .runtime.commands import list_builtin_commands
 from .sessions import AgentSessionService, TaskStore
+from .skills import SkillManager
 from .tools.executor import ToolExecutor
 from .tools.workspace import WorkspaceTools
 from .models import (
@@ -403,6 +404,19 @@ async def call_mcp_tool(tool_name: str, payload: dict) -> dict:
         "events": events,
         "result_json": result_payload,
     }
+
+
+@app.get("/api/skills/status")
+async def skills_status() -> dict:
+    return SkillManager(workspace_manager.current_root).status()
+
+
+@app.get("/api/skills/{scope}/{name}")
+async def skill_detail(scope: str, name: str) -> dict:
+    skill = SkillManager(workspace_manager.current_root).find(name, scope=scope)
+    if skill is None:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    return skill.as_detail()
 
 
 @app.get("/api/commands")

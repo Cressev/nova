@@ -288,6 +288,82 @@ body.sidebar-collapsed.inspector-collapsed .app-shell {
   font-size: 11px;
 }
 
+.skill-list {
+  display: grid;
+  gap: 6px;
+  max-height: 190px;
+  overflow: auto;
+}
+
+.skill-item {
+  display: grid;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.skill-item.project {
+  border-color: rgba(66, 222, 153, 0.3);
+}
+
+.skill-trigger,
+.skill-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.skill-trigger {
+  justify-content: space-between;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.skill-trigger strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-trigger span,
+.skill-item small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.skill-actions button {
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(14, 17, 16, 0.72);
+  color: var(--text);
+  font-size: 11px;
+}
+
+.skill-actions button:hover {
+  border-color: rgba(115, 201, 244, 0.42);
+}
+
+.skill-content {
+  max-height: 140px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 7px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--faint);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
 .project-card,
 .mode-card,
 .skills-card {

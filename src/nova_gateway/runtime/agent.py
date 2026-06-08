@@ -11,6 +11,7 @@ from ..memory import ProjectMemory
 from ..models import ChatMessage, ChatRole
 from ..processes.manager import ProcessManager
 from ..providers.bigmodel import BigModelProvider, ProviderError
+from ..skills import SkillManager
 from ..tools.executor import ToolExecutor
 from ..tools.hooks import ToolHookRunner
 from ..tools.workspace import TOOL_SPECS, WorkspaceTools
@@ -62,6 +63,13 @@ class CodexLikeAgentRuntime:
         messages: list[ChatMessage],
     ) -> AsyncIterator[dict]:
         latest_user = self._latest_user_content(messages)
+        if latest_user.startswith("$"):
+            yield {"type": "agent_status", "status": "读取技能 SKILL.md"}
+            text = self._skill_response_from_dollar(latest_user)
+            for chunk in self._chunk_text(text, 36):
+                yield {"type": "assistant_delta", "delta": chunk}
+            yield {"type": "assistant_done_content", "content": text}
+            return
         if latest_user.startswith("/"):
             yield {"type": "agent_status", "status": "处理内置指令"}
             async for event in self._handle_builtin_command(latest_user, messages):
@@ -651,6 +659,20 @@ class CodexLikeAgentRuntime:
                 for item in self.tools.list_specs()
             ]
             return "当前工具清单：\n" + "\n".join(rows)
+        if command == "/skills":
+            skills = SkillManager(self.tools.project_root).list_skills()
+            if not skills:
+                return "当前没有发现可用技能。项目级技能放在 `.nova/skills/<name>/SKILL.md`，全局技能放在 `~/.nova/skills/<name>/SKILL.md`。"
+            rows = [
+                f"- {skill.trigger}（{skill.scope}）：{skill.description or skill.name}；路径={skill.file_path}"
+                for skill in skills
+            ]
+            return "当前技能清单：\n" + "\n".join(rows)
+        if command == "/skill":
+            parts = raw_content.split(maxsplit=1)
+            if len(parts) < 2 or not parts[1].strip():
+                return "用法：/skill <技能名>。也可以直接输入 `$技能名` 触发。"
+            return self._skill_response(parts[1].strip())
         if command in {"/permissions", "/approvals", "/sandbox"}:
             return (
                 f"当前权限模式：{self.permission_mode}\n"
@@ -741,6 +763,26 @@ class CodexLikeAgentRuntime:
             return "请点击左侧“新对话”创建空线程；Nova 不会自动删除已有历史。"
         return builtin_help_text()
 
+    def _skill_response_from_dollar(self, raw_content: str) -> str:
+        name = raw_content[1:].split(maxsplit=1)[0].strip()
+        if not name:
+            return "用法：$技能名 [补充要求]"
+        return self._skill_response(name)
+
+    def _skill_response(self, name: str) -> str:
+        skill = SkillManager(self.tools.project_root).find(name)
+        if skill is None:
+            return f"未找到技能：{name}\n可用 `/skills` 查看当前发现的技能。"
+        return (
+            f"已加载技能：{skill.name}\n"
+            f"来源：{skill.scope}\n"
+            f"路径：{skill.file_path}\n"
+            f"触发方式：{skill.trigger}\n"
+            f"说明：{skill.description or '无'}\n\n"
+            "SKILL.md：\n"
+            f"{skill.content}"
+        )
+
     def _compact_response(self, result: dict) -> str:
         summary = str(result.get("summary") or "")
         preview = summary[:1200].rstrip()
@@ -754,6 +796,7 @@ class CodexLikeAgentRuntime:
 
     def _system_prompt(self) -> str:
         memory_context = self.memory.context()
+        skill_context = SkillManager(self.tools.project_root).skill_index_prompt()
         prompt = """
 你是 Nova 的 Codex-like 本地开发 Agent。你的工作方式要接近 Codex CLI：
 
@@ -767,6 +810,7 @@ class CodexLikeAgentRuntime:
 6. 不要请求执行破坏性命令；需要修改文件时优先使用 apply_patch、replace_in_file 或 create_file。
 7. 预计耗时较长的 shell 命令可以加 "background": true 后台执行；后台任务可由用户用 /ps 查看、/kill 终止。
 8. 需要长期记住用户偏好、项目事实或阶段总结时，调用 memory_write 提出候选事实；候选必须由用户确认后才会真正写入。查询长期记忆用 memory_read 或 memory_search。
+9. 当用户输入 $技能名 或请求明显匹配某个技能说明时，先引用对应技能；不要凭空假设技能内容，用户也可以用 /skill <技能名> 显式读取 SKILL.md。
 
 可用工具：
 - read_file: {"path":"相对路径","max_bytes":24000}
@@ -793,4 +837,8 @@ class CodexLikeAgentRuntime:
 
 路径必须使用工作区内相对路径。回答使用中文，保持直接、务实。
 """.strip()
-        return f"{prompt}\n\n项目记忆：\n{memory_context or '暂无可用项目记忆。'}"
+        return (
+            f"{prompt}\n\n"
+            f"可用技能索引：\n{skill_context}\n\n"
+            f"项目记忆：\n{memory_context or '暂无可用项目记忆。'}"
+        )
