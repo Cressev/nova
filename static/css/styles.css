@@ -749,6 +749,31 @@ body.sidebar-collapsed.inspector-collapsed .app-shell {
   margin-top: 2px;
 }
 
+.project-card .workspace-switcher,
+.side-compact-card .mode-list,
+.side-compact-card .skill-list,
+.side-compact-card p {
+  display: none;
+}
+
+.side-action {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.side-action:hover {
+  border-color: rgba(115, 201, 244, 0.42);
+  background: rgba(115, 201, 244, 0.08);
+}
+
 .workspace-switcher input {
   min-width: 0;
   border: 1px solid var(--line);
@@ -1028,6 +1053,22 @@ body.sidebar-collapsed .brand .side-toggle {
     border-color 150ms ease,
     background 150ms ease,
     transform 150ms ease;
+}
+
+.session-more {
+  width: 100%;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: left;
+}
+
+.session-more:hover {
+  border-color: rgba(115, 201, 244, 0.4);
+  color: var(--text);
 }
 
 .session-group {
@@ -1984,6 +2025,56 @@ body.inspector-collapsed .inspector-toggle {
   box-shadow: none;
 }
 
+.inspector-summary {
+  gap: 10px;
+  background: rgba(23, 28, 25, 0.7);
+}
+
+.inspector-hub {
+  gap: 10px;
+}
+
+.hub-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.hub-grid button {
+  display: grid;
+  min-height: 48px;
+  align-content: center;
+  justify-items: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 9px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 850;
+  text-align: left;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    transform 150ms ease;
+}
+
+.hub-grid button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(115, 201, 244, 0.42);
+  background: rgba(115, 201, 244, 0.08);
+}
+
+.hub-grid strong {
+  color: var(--green);
+  font-size: 11px;
+}
+
+.compact-actions {
+  display: grid;
+  gap: 8px;
+}
+
 .inspector-card.collapsed > :not(.card-title) {
   display: none;
 }
@@ -2487,6 +2578,70 @@ body.inspector-collapsed .inspector-toggle {
   background: rgba(18, 22, 20, 0.98);
   color: var(--text);
   box-shadow: var(--shadow);
+}
+
+.inspector-dialog {
+  width: min(880px, calc(100vw - 28px));
+  max-height: min(820px, calc(100vh - 28px));
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 0;
+  background: rgba(18, 22, 20, 0.98);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.inspector-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(6px);
+}
+
+.inspector-dialog-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 10px;
+  max-height: min(820px, calc(100vh - 28px));
+  padding: 14px;
+}
+
+.inspector-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.inspector-tabs button {
+  min-height: 30px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 5px 9px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.inspector-tabs button.active,
+.inspector-tabs button:hover {
+  border-color: rgba(66, 222, 153, 0.38);
+  background: var(--green-soft);
+  color: #9af0c7;
+}
+
+.inspector-dialog-body {
+  min-height: 0;
+  overflow: auto;
+}
+
+.inspector-panel {
+  margin: 0;
+  background: rgba(23, 28, 25, 0.72);
+}
+
+.inspector-panel[hidden] {
+  display: none;
 }
 
 .memory-dialog {

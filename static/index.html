@@ -37,11 +37,13 @@
             <div id="workspace-suggestions" class="workspace-suggestions" hidden></div>
             <button type="submit">切换</button>
           </form>
+          <button id="workspace-open" class="side-action" type="button">切换项目</button>
         </section>
 
-        <section class="mode-card">
+        <section class="mode-card side-compact-card">
           <span class="section-label">运行模式</span>
           <div id="mode-list" class="mode-list"></div>
+          <button class="side-action" type="button" data-inspector-target="run">查看运行配置</button>
         </section>
 
         <button id="new-chat" class="new-chat" type="button">
@@ -55,13 +57,14 @@
         </div>
         <nav id="session-list" class="session-list"></nav>
 
-        <section class="skills-card">
+        <section class="skills-card side-compact-card">
           <div class="sidebar-row">
             <span class="section-label">Skills</span>
             <strong id="skill-count">0</strong>
           </div>
           <p>输入 <strong>$</strong> 可在对话中调用技能。</p>
           <div id="skill-list" class="skill-list">技能加载中</div>
+          <button class="side-action" type="button" data-inspector-target="tools">查看技能和工具</button>
         </section>
       </aside>
 
@@ -118,14 +121,14 @@
 
       <aside class="inspector">
         <button id="inspector-toggle" class="side-toggle inspector-toggle" type="button" aria-label="收起右侧栏">›</button>
-        <section class="inspector-card">
+        <section class="inspector-card inspector-summary">
           <div class="card-title">
-            <span>Workspace</span>
+            <span>概览</span>
             <strong id="git-branch">main</strong>
           </div>
           <dl class="metric-list">
             <div>
-              <dt>项目路径</dt>
+              <dt>工作区</dt>
               <dd id="workspace-path">读取中</dd>
             </div>
             <div>
@@ -135,114 +138,166 @@
           </dl>
         </section>
 
-        <section class="inspector-card">
+        <section class="inspector-card inspector-hub" aria-label="功能入口">
           <div class="card-title">
-            <span>Review</span>
-            <button id="review-refresh" class="ghost-button" type="button">刷新</button>
-          </div>
-          <div class="review-panel">
-            <div class="review-head">
-              <strong id="review-state">加载中</strong>
-              <button id="review-run-tests" type="button">运行测试</button>
-            </div>
-            <pre id="review-summary" class="review-summary">Review summary 加载中</pre>
-            <div id="review-risks" class="review-risks"></div>
-            <div id="review-tests" class="review-tests"></div>
-            <pre id="review-test-output" class="review-test-output"></pre>
-          </div>
-          <div id="git-files" class="git-files"></div>
-        </section>
-
-        <section class="inspector-card">
-          <div class="card-title">
-            <span>Sub Agents</span>
-            <button id="subagent-spawn" class="ghost-button" type="button">Spawn</button>
-          </div>
-          <div class="subagent-panel">
-            <textarea id="subagent-prompt" rows="3" placeholder="委派一个只读子任务"></textarea>
-            <div id="subagent-list" class="subagent-list">子 Agent 加载中</div>
-          </div>
-        </section>
-
-        <section class="inspector-card">
-          <div class="card-title">
-            <span>Run</span>
-            <strong>本地</strong>
-          </div>
-          <button id="test-command" class="command-chip" type="button">测试命令加载中</button>
-          <button id="serve-command" class="command-chip" type="button">启动命令加载中</button>
-          <div class="worktree-box">
-            <label>
-              <span>工作树名称</span>
-              <input id="worktree-name" value="nova-demo" autocomplete="off" />
-            </label>
-            <div class="worktree-actions">
-              <button id="worktree-create" type="button">创建并切换</button>
-              <button id="worktree-diff" type="button">查看 diff</button>
-              <button id="worktree-cleanup" type="button">清理</button>
-            </div>
-            <div id="worktree-list" class="worktree-list">工作树加载中</div>
-            <pre id="worktree-diff-output" class="worktree-diff-output"></pre>
-          </div>
-        </section>
-
-        <section class="inspector-card">
-          <div class="card-title">
-            <span>Processes</span>
+            <span>Hub</span>
             <strong id="process-state">0</strong>
           </div>
-          <div class="process-panel">
-            <div id="process-list" class="process-list">后台任务加载中</div>
+          <div class="hub-grid">
+            <button type="button" data-inspector-target="review" aria-label="打开 Review">Review</button>
+            <button type="button" data-inspector-target="run" aria-label="打开运行与工作树">Run</button>
+            <button type="button" data-inspector-target="tools" aria-label="打开工具、MCP 和 LSP">Tools <strong id="tool-count">0</strong></button>
+            <button type="button" data-inspector-target="processes" aria-label="打开后台任务">Jobs</button>
+            <button type="button" data-inspector-target="config" aria-label="打开更多配置和能力">More</button>
           </div>
         </section>
 
-        <section class="inspector-card">
+        <section class="inspector-card inspector-command">
           <div class="card-title">
-            <span>Permissions</span>
+            <span>快捷指令</span>
             <strong>按需</strong>
           </div>
-          <div id="permissions-list" class="permissions-list"></div>
-        </section>
-
-        <section class="inspector-card">
-          <div class="card-title">
-            <span>Tools</span>
-            <strong id="tool-count">0</strong>
+          <div class="compact-actions">
+            <button class="ghost-button" type="button" data-prompt="/review 检查当前未提交变更">/review</button>
+            <button class="ghost-button" type="button" data-prompt="/status 总结当前线程、模型和工作区状态">/status</button>
           </div>
-          <div id="tool-list" class="tool-list"></div>
-          <div class="mcp-panel">
-            <div class="mcp-panel-head">
-              <span>MCP</span>
-              <strong id="mcp-state">读取中</strong>
-            </div>
-            <div id="mcp-list" class="mcp-list"></div>
-          </div>
-          <div class="lsp-panel">
-            <div class="lsp-panel-head">
-              <span>LSP</span>
-              <strong id="lsp-state">读取中</strong>
-            </div>
-            <div id="lsp-list" class="lsp-list"></div>
-          </div>
-        </section>
-
-        <section class="inspector-card">
-          <div class="card-title">
-            <span>Agent Context / Memory</span>
-            <strong id="memory-state">读取中</strong>
-          </div>
-          <div id="memory-list" class="memory-list"></div>
-        </section>
-
-        <section class="inspector-card">
-          <div class="card-title">
-            <span>Config</span>
-            <strong id="config-state">本地</strong>
-          </div>
-          <div id="config-list" class="permissions-list"></div>
         </section>
       </aside>
     </main>
+    <dialog id="inspector-dialog" class="inspector-dialog">
+      <form method="dialog" class="inspector-dialog-panel">
+        <div class="dialog-title">
+          <strong id="inspector-dialog-title">Inspector</strong>
+          <button id="inspector-dialog-close" type="button" aria-label="关闭">×</button>
+        </div>
+        <nav class="inspector-tabs" aria-label="Inspector panels">
+          <button type="button" data-inspector-tab="workspace">Workspace</button>
+          <button type="button" data-inspector-tab="review">Review</button>
+          <button type="button" data-inspector-tab="run">Run</button>
+          <button type="button" data-inspector-tab="processes">Processes</button>
+          <button type="button" data-inspector-tab="permissions">Permissions</button>
+          <button type="button" data-inspector-tab="tools">Tools</button>
+          <button type="button" data-inspector-tab="subagents">Sub Agents</button>
+          <button type="button" data-inspector-tab="memory">Memory</button>
+          <button type="button" data-inspector-tab="config">Config</button>
+        </nav>
+        <div class="inspector-dialog-body">
+          <section class="inspector-card inspector-panel" data-inspector-panel="workspace">
+            <div class="card-title">
+              <span>Workspace</span>
+              <strong>Git</strong>
+            </div>
+            <div id="git-files" class="git-files"></div>
+          </section>
+
+          <section class="inspector-card inspector-panel" data-inspector-panel="review">
+            <div class="card-title">
+              <span>Review</span>
+              <button id="review-refresh" class="ghost-button" type="button">刷新</button>
+            </div>
+            <div class="review-panel">
+              <div class="review-head">
+                <strong id="review-state">加载中</strong>
+                <button id="review-run-tests" type="button">运行测试</button>
+              </div>
+              <pre id="review-summary" class="review-summary">Review summary 加载中</pre>
+              <div id="review-risks" class="review-risks"></div>
+              <div id="review-tests" class="review-tests"></div>
+              <pre id="review-test-output" class="review-test-output"></pre>
+            </div>
+          </section>
+
+          <section class="inspector-card inspector-panel" data-inspector-panel="run">
+            <div class="card-title">
+              <span>Run</span>
+              <strong>本地</strong>
+            </div>
+            <button id="test-command" class="command-chip" type="button">测试命令加载中</button>
+            <button id="serve-command" class="command-chip" type="button">启动命令加载中</button>
+            <div class="worktree-box">
+              <label>
+                <span>工作树名称</span>
+                <input id="worktree-name" value="nova-demo" autocomplete="off" />
+              </label>
+              <div class="worktree-actions">
+                <button id="worktree-create" type="button">创建并切换</button>
+                <button id="worktree-diff" type="button">查看 diff</button>
+                <button id="worktree-cleanup" type="button">清理</button>
+              </div>
+              <div id="worktree-list" class="worktree-list">工作树加载中</div>
+              <pre id="worktree-diff-output" class="worktree-diff-output"></pre>
+            </div>
+          </section>
+
+          <section class="inspector-card inspector-panel" data-inspector-panel="processes">
+            <div class="card-title">
+              <span>Processes</span>
+              <strong>后台</strong>
+            </div>
+            <div class="process-panel">
+              <div id="process-list" class="process-list">后台任务加载中</div>
+            </div>
+          </section>
+
+          <section class="inspector-card inspector-panel" data-inspector-panel="permissions">
+            <div class="card-title">
+              <span>Permissions</span>
+              <strong>按需</strong>
+            </div>
+            <div id="permissions-list" class="permissions-list"></div>
+          </section>
+
+          <section class="inspector-card inspector-panel" data-inspector-panel="tools">
+            <div class="card-title">
+              <span>Tools</span>
+              <strong>运行时</strong>
+            </div>
+            <div id="tool-list" class="tool-list"></div>
+            <div class="mcp-panel">
+              <div class="mcp-panel-head">
+                <span>MCP</span>
+                <strong id="mcp-state">读取中</strong>
+              </div>
+              <div id="mcp-list" class="mcp-list"></div>
+            </div>
+            <div class="lsp-panel">
+              <div class="lsp-panel-head">
+                <span>LSP</span>
+                <strong id="lsp-state">读取中</strong>
+              </div>
+              <div id="lsp-list" class="lsp-list"></div>
+            </div>
+          </section>
+
+          <section class="inspector-card inspector-panel" data-inspector-panel="subagents">
+            <div class="card-title">
+              <span>Sub Agents</span>
+              <button id="subagent-spawn" class="ghost-button" type="button">Spawn</button>
+            </div>
+            <div class="subagent-panel">
+              <textarea id="subagent-prompt" rows="3" placeholder="委派一个只读子任务"></textarea>
+              <div id="subagent-list" class="subagent-list">子 Agent 加载中</div>
+            </div>
+          </section>
+
+          <section class="inspector-card inspector-panel" data-inspector-panel="memory">
+            <div class="card-title">
+              <span>Agent Context / Memory</span>
+              <strong id="memory-state">读取中</strong>
+            </div>
+            <div id="memory-list" class="memory-list"></div>
+          </section>
+
+          <section class="inspector-card inspector-panel" data-inspector-panel="config">
+            <div class="card-title">
+              <span>Config</span>
+              <strong id="config-state">本地</strong>
+            </div>
+            <div id="config-list" class="permissions-list"></div>
+          </section>
+        </div>
+      </form>
+    </dialog>
     <dialog id="workspace-dialog" class="workspace-dialog">
       <form method="dialog" class="workspace-dialog-panel">
         <div class="dialog-title">

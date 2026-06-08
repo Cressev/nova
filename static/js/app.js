@@ -28,6 +28,7 @@ const state = {
   selectedSessionTitle: "Nova Chat",
   sending: false,
   collapsedProjects: new Set(readStorageList("nova.collapsedProjects")),
+  expandedSessionGroups: new Set(readStorageList("nova.expandedSessionGroups")),
   workspaceCandidates: [],
   workspaceRecentProjects: [],
   workspaceCompletion: null,
@@ -109,6 +110,7 @@ const memoryListEl = document.querySelector("#memory-list");
 const configStateEl = document.querySelector("#config-state");
 const configListEl = document.querySelector("#config-list");
 const workspaceFormEl = document.querySelector("#workspace-form");
+const workspaceOpenEl = document.querySelector("#workspace-open");
 const workspaceInputEl = document.querySelector("#workspace-input");
 const workspaceCandidatesEl = document.querySelector("#workspace-candidates");
 const workspaceSuggestionsEl = document.querySelector("#workspace-suggestions");
@@ -129,6 +131,9 @@ const settingsStatuslineEl = document.querySelector("#settings-statusline");
 const settingsSaveEl = document.querySelector("#settings-save");
 const settingsRestartEl = document.querySelector("#settings-restart");
 const settingsNoteEl = document.querySelector("#settings-note");
+const inspectorDialogEl = document.querySelector("#inspector-dialog");
+const inspectorDialogTitleEl = document.querySelector("#inspector-dialog-title");
+const inspectorDialogCloseEl = document.querySelector("#inspector-dialog-close");
 const memoryDialogEl = document.querySelector("#memory-dialog");
 const memoryDialogTitleEl = document.querySelector("#memory-dialog-title");
 const memoryDialogNameEl = document.querySelector("#memory-dialog-name");
@@ -140,10 +145,22 @@ const memoryDialogSaveEl = document.querySelector("#memory-dialog-save");
 const sidebarToggleEl = document.querySelector("#sidebar-toggle");
 const inspectorToggleEl = document.querySelector("#inspector-toggle");
 const statuslineToggleEl = document.querySelector("#statusline-toggle");
+const INSPECTOR_PANEL_TITLES = {
+  workspace: "Workspace",
+  review: "Review",
+  run: "Run",
+  processes: "Processes",
+  permissions: "Permissions",
+  tools: "Tools",
+  subagents: "Sub Agents",
+  memory: "Memory",
+  config: "Config",
+};
 let workspaceSuggestTimer = null;
 let workspaceDialogTimer = null;
 const TOOL_TOOLTIP_DELAY_MS = 1000;
 const MCP_DEMO_TOOL = "mcp__demo__echo";
+const SESSION_PREVIEW_LIMIT = 5;
 
 let commandMatches = [];
 
@@ -1558,8 +1575,13 @@ async function loadSessions({ refreshMessages = true } = {}) {
       toggleSessionGroup(groupNode, group.workspace);
     });
     const itemsEl = groupNode.querySelector(".session-group-items");
-    for (const session of group.sessions) {
+    const expanded = state.expandedSessionGroups.has(group.workspace);
+    const visibleSessions = expanded ? group.sessions : group.sessions.slice(0, SESSION_PREVIEW_LIMIT);
+    for (const session of visibleSessions) {
       itemsEl.appendChild(renderSessionItem(session));
+    }
+    if (group.sessions.length > SESSION_PREVIEW_LIMIT) {
+      itemsEl.appendChild(renderSessionGroupMore(group, expanded));
     }
     sessionListEl.appendChild(groupNode);
   }
@@ -1593,6 +1615,26 @@ function toggleSessionGroup(groupNode, workspace) {
   }
   head?.setAttribute("aria-expanded", String(!collapsed));
   writeStorageList("nova.collapsedProjects", state.collapsedProjects);
+}
+
+function renderSessionGroupMore(group, expanded) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "session-more";
+  button.textContent = expanded
+    ? "收起历史"
+    : `展开全部 ${group.sessions.length} 条`;
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (expanded) {
+      state.expandedSessionGroups.delete(group.workspace);
+    } else {
+      state.expandedSessionGroups.add(group.workspace);
+    }
+    writeStorageList("nova.expandedSessionGroups", state.expandedSessionGroups);
+    loadSessions({ refreshMessages: false });
+  });
+  return button;
 }
 
 function groupSessionsByProject(sessions) {
@@ -2396,6 +2438,7 @@ workspaceInputEl.addEventListener("keydown", async (event) => {
 });
 
 workspaceInputEl.addEventListener("dblclick", openWorkspaceDialog);
+workspaceOpenEl?.addEventListener("click", openWorkspaceDialog);
 
 workspaceDialogInputEl.addEventListener("input", () => {
   state.workspaceDialogIndex = -1;
@@ -2474,6 +2517,22 @@ memoryDialogCancelEl.addEventListener("click", () => {
 });
 
 memoryDialogSaveEl.addEventListener("click", saveMemoryDialog);
+inspectorDialogCloseEl?.addEventListener("click", () => {
+  inspectorDialogEl?.close();
+});
+
+for (const button of document.querySelectorAll("[data-inspector-target]")) {
+  button.addEventListener("click", () => {
+    openInspectorDialog(button.dataset.inspectorTarget || "workspace");
+  });
+}
+
+for (const button of document.querySelectorAll("[data-inspector-tab]")) {
+  button.addEventListener("click", () => {
+    activateInspectorPanel(button.dataset.inspectorTab || "workspace");
+  });
+}
+
 worktreeCreateEl.addEventListener("click", createWorktreeFromPanel);
 worktreeDiffEl.addEventListener("click", showCurrentWorktreeDiff);
 worktreeCleanupEl.addEventListener("click", cleanupCurrentWorktree);
@@ -2526,6 +2585,26 @@ settingsRestartEl.addEventListener("click", async () => {
     streamStateEl.textContent = `重启请求失败：${error instanceof Error ? error.message : "未知错误"}`;
   }
 });
+
+function openInspectorDialog(panel = "workspace") {
+  activateInspectorPanel(panel);
+  inspectorDialogEl?.showModal();
+}
+
+function activateInspectorPanel(panel = "workspace") {
+  const activePanel = INSPECTOR_PANEL_TITLES[panel] ? panel : "workspace";
+  // 一个弹窗复用原来的多个右侧面板：默认只显示被入口点中的面板，
+  // DOM 节点和 API 渲染目标不移动，避免打断现有刷新与按钮事件。
+  for (const node of document.querySelectorAll("[data-inspector-panel]")) {
+    node.hidden = node.dataset.inspectorPanel !== activePanel;
+  }
+  for (const tab of document.querySelectorAll("[data-inspector-tab]")) {
+    tab.classList.toggle("active", tab.dataset.inspectorTab === activePanel);
+  }
+  if (inspectorDialogTitleEl) {
+    inspectorDialogTitleEl.textContent = INSPECTOR_PANEL_TITLES[activePanel];
+  }
+}
 
 sidebarToggleEl.addEventListener("click", () => {
   state.sidebarCollapsed = !state.sidebarCollapsed;
@@ -2923,7 +3002,7 @@ function updateAllTurnToolControls() {
 }
 
 function setupInspectorCards() {
-  for (const card of document.querySelectorAll(".inspector-card")) {
+  for (const card of document.querySelectorAll(".inspector-panel")) {
     const title = card.querySelector(".card-title");
     if (!title || title.querySelector(".card-toggle")) {
       continue;
@@ -3320,5 +3399,6 @@ loadCommands();
 loadWorkspaceStatus();
 loadRuntimePanels();
 loadSessions();
+activateInspectorPanel("workspace");
 setupInspectorCards();
 applyShellChromeState();
