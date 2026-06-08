@@ -1,5 +1,9 @@
 import { api } from "./api/client.js";
 import { BUILTIN_COMMANDS } from "./components/command_palette.js";
+import {
+  chooseWorkspaceTabCompletion,
+  groupWorkspaceDialogItems,
+} from "./components/workspace_picker.js";
 import { consumeStreamLines } from "./runtime/stream.js";
 import {
   readStorageBool,
@@ -15,6 +19,8 @@ const state = {
   sending: false,
   collapsedProjects: new Set(readStorageList("nova.collapsedProjects")),
   workspaceCandidates: [],
+  workspaceRecentProjects: [],
+  workspaceCompletion: null,
   workspaceSuggestionIndex: -1,
   workspaceDialogCandidates: [],
   workspaceDialogIndex: -1,
@@ -432,6 +438,8 @@ function renderWorkspace(status) {
 
 function renderWorkspacePicker(workspaces) {
   state.workspaceCandidates = workspaces.candidates || [];
+  state.workspaceRecentProjects = workspaces.recent_projects || [];
+  state.workspaceCompletion = workspaces.completion || null;
   workspaceCandidatesEl.innerHTML = "";
   for (const path of state.workspaceCandidates) {
     const option = document.createElement("option");
@@ -1654,14 +1662,25 @@ workspaceInputEl.addEventListener("keydown", async (event) => {
     return;
   }
   if ((event.key === "Enter" || event.key === "Tab") && !workspaceSuggestionsEl.hidden && suggestions.length > 0) {
-    const index = state.workspaceSuggestionIndex >= 0 ? state.workspaceSuggestionIndex : 0;
-    const path = suggestions[index]?.dataset.path;
-    if (path) {
+    const choice = chooseWorkspaceTabCompletion({
+      currentValue: workspaceInputEl.value.trim(),
+      completion: state.workspaceCompletion,
+      candidates: suggestions.map((item) => item.dataset.path),
+      selectedIndex: event.key === "Enter"
+        ? (state.workspaceSuggestionIndex >= 0 ? state.workspaceSuggestionIndex : 0)
+        : state.workspaceSuggestionIndex,
+    });
+    if (choice.value) {
       event.preventDefault();
-      workspaceInputEl.value = path;
-      workspaceSuggestionsEl.hidden = true;
-      if (event.key === "Enter") {
-        await switchWorkspace(path);
+      workspaceInputEl.value = choice.value;
+      if (choice.action === "complete") {
+        state.workspaceSuggestionIndex = -1;
+        scheduleWorkspaceSuggestions(0, choice.value);
+      } else {
+        workspaceSuggestionsEl.hidden = true;
+        if (event.key === "Enter") {
+          await switchWorkspace(choice.value);
+        }
       }
     }
   }
@@ -1690,7 +1709,15 @@ workspaceDialogInputEl.addEventListener("keydown", async (event) => {
   }
   if (event.key === "Tab" && items.length > 0) {
     event.preventDefault();
-    selectWorkspaceDialogCandidate(items[state.workspaceDialogIndex >= 0 ? state.workspaceDialogIndex : 0].dataset.path);
+    const choice = chooseWorkspaceTabCompletion({
+      currentValue: workspaceDialogInputEl.value.trim(),
+      completion: state.workspaceCompletion,
+      candidates: items.map((item) => item.dataset.path),
+      selectedIndex: state.workspaceDialogIndex,
+    });
+    if (choice.value) {
+      selectWorkspaceDialogCandidate(choice.value, { browseChildren: choice.action !== "complete" });
+    }
     return;
   }
   if (event.key === "Enter") {
@@ -1911,6 +1938,8 @@ async function loadWorkspaceDialogCandidates(query = workspaceDialogInputEl.valu
       return;
     }
     state.workspaceDialogCandidates = workspaces.candidates || [];
+    state.workspaceRecentProjects = workspaces.recent_projects || [];
+    state.workspaceCompletion = workspaces.completion || null;
     state.workspaceDialogStatus = workspaces.query_status || null;
     renderWorkspaceDialogList();
     renderWorkspaceDialogState();
@@ -1919,6 +1948,7 @@ async function loadWorkspaceDialogCandidates(query = workspaceDialogInputEl.valu
       return;
     }
     state.workspaceDialogCandidates = [];
+    state.workspaceCompletion = null;
     state.workspaceDialogStatus = null;
     renderWorkspaceDialogList(error instanceof Error ? error.message : "目录读取失败");
     renderWorkspaceDialogState(error instanceof Error ? error.message : "目录读取失败");
@@ -1934,32 +1964,44 @@ function renderWorkspaceDialogList(errorMessage = "") {
     workspaceDialogListEl.innerHTML = `<div class="workspace-dialog-empty">${escapeHtml(errorMessage)}</div>`;
     return;
   }
-  if (state.workspaceDialogCandidates.length === 0) {
+  const groups = groupWorkspaceDialogItems({
+    query: workspaceDialogInputEl.value.trim(),
+    recentProjects: state.workspaceRecentProjects,
+    candidates: state.workspaceDialogCandidates,
+  });
+  if (groups.length === 0) {
     workspaceDialogListEl.innerHTML = '<div class="workspace-dialog-empty">没有匹配的下级目录</div>';
     return;
   }
-  for (const path of state.workspaceDialogCandidates) {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.dataset.path = path;
-    item.innerHTML = `
-      <strong>${escapeHtml(projectName(path))}</strong>
-      <span>${escapeHtml(path)}</span>
-    `;
-    item.addEventListener("click", () => selectWorkspaceDialogCandidate(path));
-    workspaceDialogListEl.appendChild(item);
+  for (const group of groups) {
+    const title = document.createElement("div");
+    title.className = "workspace-dialog-section-title";
+    title.textContent = group.title;
+    workspaceDialogListEl.appendChild(title);
+    for (const path of group.items) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.dataset.path = path;
+      item.innerHTML = `
+        <strong>${escapeHtml(projectName(path))}</strong>
+        <span>${escapeHtml(path)}</span>
+      `;
+      item.addEventListener("click", () => selectWorkspaceDialogCandidate(path));
+      workspaceDialogListEl.appendChild(item);
+    }
   }
   renderWorkspaceDialogActive();
 }
 
-function selectWorkspaceDialogCandidate(path) {
+function selectWorkspaceDialogCandidate(path, options = {}) {
   if (!path) {
     return;
   }
   workspaceDialogInputEl.value = path;
   workspaceInputEl.value = path;
   state.workspaceDialogIndex = -1;
-  scheduleWorkspaceDialogCandidates(0, `${path}/`);
+  const browseChildren = options.browseChildren !== false;
+  scheduleWorkspaceDialogCandidates(0, browseChildren ? `${path}/` : path);
 }
 
 function renderWorkspaceDialogState(errorMessage = "") {

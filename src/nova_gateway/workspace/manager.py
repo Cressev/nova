@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
 
 
@@ -8,13 +10,17 @@ class WorkspaceError(ValueError):
 
 
 class WorkspaceManager:
-    def __init__(self, *, initial_root: Path, allowed_roots: list[Path]) -> None:
+    def __init__(self, *, initial_root: Path, allowed_roots: list[Path], recent_file: Path | None = None) -> None:
         self.allowed_roots = [path.resolve() for path in allowed_roots]
         self.browse_roots = self._derive_browse_roots(self.allowed_roots)
+        self.recent_file = recent_file
         self.current_root = self._validate(initial_root)
+        self._recent_projects = self._load_recent_projects()
+        self._remember_recent(self.current_root)
 
     def set_current(self, path: str) -> Path:
         self.current_root = self._validate(self._resolve_existing_path(Path(path).expanduser()))
+        self._remember_recent(self.current_root)
         return self.current_root
 
     def create_folder(self, path: str) -> Path:
@@ -30,15 +36,39 @@ class WorkspaceManager:
         if not self._is_allowed(resolved):
             raise WorkspaceError("新建目录不在允许的本地工作区范围内")
         resolved.mkdir()
-        return self._validate(resolved)
+        selected = self._validate(resolved)
+        self._remember_recent(selected)
+        return selected
 
     def status(self, query: str | None = None) -> dict:
         return {
             "current_root": str(self.current_root),
             "allowed_roots": [str(path) for path in self.allowed_roots],
             "candidates": [str(path) for path in self._candidate_projects(query)],
+            "recent_projects": [str(path) for path in self._recent_projects if path.exists() and path.is_dir()],
+            "completion": self.path_completion(query),
             "query_status": self.path_status(query),
         }
+
+    def path_completion(self, query: str | None = None) -> dict:
+        query_text = (query or "").strip()
+        if not query_text:
+            return {"value": "", "is_final": False, "reason": "请输入路径后再补全"}
+
+        candidates = [str(path) for path in self._candidate_projects(query_text)]
+        if not candidates:
+            return {"value": "", "is_final": False, "reason": "没有可补全的候选目录"}
+
+        if len(candidates) == 1:
+            value = candidates[0]
+            if not value.endswith(("/", "\\")):
+                value = f"{value}/"
+            return {"value": value, "is_final": True, "reason": "唯一候选，已补全到目录"}
+
+        common_prefix = os.path.commonprefix(candidates)
+        if len(common_prefix) <= len(query_text):
+            return {"value": "", "is_final": False, "reason": "多个候选暂无更长公共前缀"}
+        return {"value": common_prefix, "is_final": False, "reason": "多个候选，已补全到公共前缀"}
 
     def path_status(self, query: str | None = None) -> dict:
         query_text = (query or "").strip()
@@ -172,6 +202,50 @@ class WorkspaceManager:
                 return path
             candidates = next_candidates
         return candidates[0]
+
+    def _remember_recent(self, path: Path) -> None:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            return
+        self._recent_projects = [item for item in self._recent_projects if item != resolved]
+        self._recent_projects.insert(0, resolved)
+        self._recent_projects = self._recent_projects[:12]
+        self._save_recent_projects()
+
+    def _load_recent_projects(self) -> list[Path]:
+        if self.recent_file is None or not self.recent_file.exists():
+            return []
+        try:
+            payload = json.loads(self.recent_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return []
+        if not isinstance(payload, list):
+            return []
+        recent: list[Path] = []
+        for item in payload:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            path = self._resolve_existing_path(Path(item).expanduser())
+            try:
+                resolved = path.resolve()
+            except OSError:
+                continue
+            if resolved.exists() and resolved.is_dir() and self._is_allowed(resolved) and resolved not in recent:
+                recent.append(resolved)
+        return recent[:12]
+
+    def _save_recent_projects(self) -> None:
+        if self.recent_file is None:
+            return
+        try:
+            self.recent_file.parent.mkdir(parents=True, exist_ok=True)
+            self.recent_file.write_text(
+                json.dumps([str(path) for path in self._recent_projects], ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            return
 
     def _candidate_projects(self, query: str | None = None) -> list[Path]:
         candidates: list[Path] = []

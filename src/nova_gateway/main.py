@@ -59,6 +59,7 @@ store = TaskStore(settings.state_dir)
 workspace_manager = WorkspaceManager(
     initial_root=settings.initial_workspace_root,
     allowed_roots=settings.allowed_workspace_roots,
+    recent_file=settings.state_dir / "workspace-recents.json",
 )
 provider = BigModelProvider(
     base_url=settings.provider_base_url,

@@ -94,6 +94,57 @@ class WorkspaceManagerTest(unittest.TestCase):
         self.assertFalse(status["can_select"])
         self.assertTrue(status["can_create"])
 
+    def test_recent_projects_track_switch_and_create(self) -> None:
+        work = self.root / "work"
+        work.mkdir()
+
+        self.manager.set_current(str(work))
+        created = self.manager.create_folder(str(self.root / "work" / "nova-new"))
+        recent = self.manager.status()["recent_projects"]
+
+        self.assertEqual(recent[0], str(created))
+        self.assertEqual(recent[1], str(work.resolve()))
+        self.assertIn(str(self.project.resolve()), recent)
+
+    def test_recent_projects_survive_manager_restart(self) -> None:
+        recent_file = self.root / ".nova" / "workspace-recents.json"
+        work = self.root / "work"
+        work.mkdir()
+        manager = WorkspaceManager(
+            initial_root=self.project,
+            allowed_roots=[self.allowed_root],
+            recent_file=recent_file,
+        )
+
+        manager.set_current(str(work))
+        restarted = WorkspaceManager(
+            initial_root=self.project,
+            allowed_roots=[self.allowed_root],
+            recent_file=recent_file,
+        )
+
+        self.assertEqual(restarted.status()["recent_projects"][0], str(self.project.resolve()))
+        self.assertIn(str(work.resolve()), restarted.status()["recent_projects"])
+
+    def test_completion_extends_to_common_prefix_for_multiple_matches(self) -> None:
+        parent = self.root / "work"
+        (parent / "alpha-api").mkdir(parents=True)
+        (parent / "alpha-app").mkdir()
+
+        status = self.manager.status(query=str(parent / "al"))
+
+        self.assertEqual(status["completion"]["value"], str(parent / "alpha-ap"))
+        self.assertFalse(status["completion"]["is_final"])
+
+    def test_completion_finishes_unique_directory_with_separator(self) -> None:
+        parent = self.root / "work"
+        (parent / "nova").mkdir(parents=True)
+
+        status = self.manager.status(query=str(parent / "no"))
+
+        self.assertEqual(status["completion"]["value"], f"{parent / 'nova'}/")
+        self.assertTrue(status["completion"]["is_final"])
+
 
 if __name__ == "__main__":
     unittest.main()
