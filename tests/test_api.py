@@ -284,6 +284,113 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(sessions.status_code, 200)
         self.assertTrue(any(item["id"] == other.id for item in sessions.json()))
 
+    def test_loading_history_session_switches_to_its_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            project_a = root / "project-a"
+            project_b = root / "project-b"
+            project_a.mkdir()
+            project_b.mkdir()
+            old_current = app_module.workspace_manager.current_root
+            old_allowed = app_module.workspace_manager.allowed_roots
+            old_browse = app_module.workspace_manager.browse_roots
+            app_module.workspace_manager.allowed_roots = [root.resolve()]
+            app_module.workspace_manager.browse_roots = app_module.workspace_manager._derive_browse_roots([root.resolve()])
+            app_module.workspace_manager.current_root = project_a.resolve()
+            self.addCleanup(lambda: setattr(app_module.workspace_manager, "current_root", old_current))
+            self.addCleanup(lambda: setattr(app_module.workspace_manager, "allowed_roots", old_allowed))
+            self.addCleanup(lambda: setattr(app_module.workspace_manager, "browse_roots", old_browse))
+
+            session = app_module.ChatSession(
+                id=app_module.new_id("chat"),
+                title="B 项目历史",
+                workspace=str(project_b.resolve()),
+            )
+            app_module.store.create_chat_session(session)
+            self.addCleanup(lambda: app_module.store.delete_chat_session(session.id))
+            app_module.store.add_chat_message(
+                app_module.ChatMessage(
+                    session_id=session.id,
+                    role=app_module.ChatRole.USER,
+                    content="这是 B 项目的历史消息",
+                )
+            )
+
+            response = self.client.get(f"/api/chat/sessions/{session.id}/runtime-state")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(app_module.workspace_manager.current_root, project_b.resolve())
+            payload = response.json()
+            self.assertEqual(payload["session"]["workspace"], str(project_b.resolve()))
+            self.assertTrue(
+                any(
+                    item["kind"] == "message" and item["item"]["content"] == "这是 B 项目的历史消息"
+                    for item in payload["timeline"]["items"]
+                )
+            )
+
+    def test_runtime_config_is_scoped_to_selected_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            project_a = root / "project-a"
+            project_b = root / "project-b"
+            project_a.mkdir()
+            project_b.mkdir()
+            old_current = app_module.workspace_manager.current_root
+            old_allowed = app_module.workspace_manager.allowed_roots
+            old_browse = app_module.workspace_manager.browse_roots
+            old_permission = app_module.settings.permission_mode
+            old_sandbox = app_module.settings.sandbox_mode
+            old_approval = app_module.settings.approval_policy
+            old_network = app_module.settings.network_access
+            old_rounds = app_module.settings.max_tool_rounds
+            old_context = app_module.settings.context_window_tokens
+            old_model = app_module.provider.model
+            old_base_url = app_module.provider.base_url
+            app_module.workspace_manager.allowed_roots = [root.resolve()]
+            app_module.workspace_manager.browse_roots = app_module.workspace_manager._derive_browse_roots([root.resolve()])
+            app_module.workspace_manager.current_root = project_a.resolve()
+            self.addCleanup(lambda: setattr(app_module.workspace_manager, "current_root", old_current))
+            self.addCleanup(lambda: setattr(app_module.workspace_manager, "allowed_roots", old_allowed))
+            self.addCleanup(lambda: setattr(app_module.workspace_manager, "browse_roots", old_browse))
+            self.addCleanup(lambda: object.__setattr__(app_module.settings, "permission_mode", old_permission))
+            self.addCleanup(lambda: object.__setattr__(app_module.settings, "sandbox_mode", old_sandbox))
+            self.addCleanup(lambda: object.__setattr__(app_module.settings, "approval_policy", old_approval))
+            self.addCleanup(lambda: object.__setattr__(app_module.settings, "network_access", old_network))
+            self.addCleanup(lambda: object.__setattr__(app_module.settings, "max_tool_rounds", old_rounds))
+            self.addCleanup(lambda: object.__setattr__(app_module.settings, "context_window_tokens", old_context))
+            self.addCleanup(lambda: setattr(app_module.provider, "model", old_model))
+            self.addCleanup(lambda: setattr(app_module.provider, "base_url", old_base_url))
+
+            response_a = self.client.patch(
+                "/api/runtime/config",
+                json={"permission_mode": "ask", "sandbox_mode": "workspace_write", "approval_policy": "on_request"},
+            )
+            self.assertEqual(response_a.status_code, 200)
+            self.assertTrue((project_a / ".nova" / "runtime-config.json").exists())
+
+            switch_b = self.client.post("/api/workspace/select", json={"path": str(project_b)})
+            self.assertEqual(switch_b.status_code, 200)
+            response_b = self.client.patch(
+                "/api/runtime/config",
+                json={"permission_mode": "read_only", "sandbox_mode": "read_only", "approval_policy": "never"},
+            )
+            self.assertEqual(response_b.status_code, 200)
+            self.assertTrue((project_b / ".nova" / "runtime-config.json").exists())
+
+            switch_a_again = self.client.post("/api/workspace/select", json={"path": str(project_a)})
+
+            self.assertEqual(switch_a_again.status_code, 200)
+            config_a = self.client.get("/api/runtime/config").json()
+            self.assertEqual(config_a["permission_mode"], "ask")
+            self.assertEqual(config_a["approval_policy"], "on_request")
+
+            switch_b_again = self.client.post("/api/workspace/select", json={"path": str(project_b)})
+            self.assertEqual(switch_b_again.status_code, 200)
+            config_b = self.client.get("/api/runtime/config").json()
+            self.assertEqual(config_b["permission_mode"], "read_only")
+            self.assertEqual(config_b["sandbox_mode"], "read_only")
+
     def test_stream_missing_provider_key(self) -> None:
         session_response = self.client.post(
             "/api/chat/sessions",

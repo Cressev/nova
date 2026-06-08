@@ -9,6 +9,7 @@ import threading
 import time
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
@@ -68,6 +69,19 @@ pending_approvals = agent_sessions.pending_approvals
 _active_session_turns = agent_sessions.active_session_ids
 _queued_session_messages = agent_sessions.queued_session_messages
 _runtime_override = None
+_DEFAULT_RUNTIME_CONFIG_FILE = settings.project_root / ".nova" / "runtime-config.json"
+_DEFAULT_RUNTIME_SECRET_FILE = settings.project_root / ".nova" / "runtime-secrets.json"
+_DEFAULT_TOOL_HOOKS_FILE = settings.project_root / ".nova" / "hooks.json"
+_RUNTIME_BASE_CONFIG = {
+    "provider_model": settings.provider_model,
+    "provider_base_url": settings.provider_base_url,
+    "context_window_tokens": settings.context_window_tokens,
+    "permission_mode": settings.permission_mode,
+    "sandbox_mode": settings.sandbox_mode,
+    "approval_policy": settings.approval_policy,
+    "network_access": settings.network_access,
+    "max_tool_rounds": settings.max_tool_rounds,
+}
 
 app = FastAPI(title="Nova Gateway", version=__version__)
 app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
@@ -94,7 +108,7 @@ def _agent_runtime() -> CodexLikeAgentRuntime:
         sandbox_mode=settings.sandbox_mode,
         approval_policy=settings.approval_policy,
         network_access=settings.network_access,
-        tool_hooks_file=settings.tool_hooks_file,
+        tool_hooks_file=_workspace_tool_hooks_file(),
         process_manager=process_manager,
     )
 
@@ -116,6 +130,60 @@ def _demo_runtime() -> DemoAgentRuntime:
 
 def app_module_tool_executor(tools: WorkspaceTools) -> ToolExecutor:
     return ToolExecutor(tools, process_manager=process_manager)
+
+
+def _same_path(left: Path, right: Path) -> bool:
+    return left.expanduser().resolve() == right.expanduser().resolve()
+
+
+def _workspace_runtime_config_file(root: Path | None = None) -> Path:
+    if not _same_path(settings.runtime_config_file, _DEFAULT_RUNTIME_CONFIG_FILE):
+        return settings.runtime_config_file
+    return (root or workspace_manager.current_root) / ".nova" / "runtime-config.json"
+
+
+def _workspace_runtime_secret_file(root: Path | None = None) -> Path:
+    if not _same_path(settings.runtime_secret_file, _DEFAULT_RUNTIME_SECRET_FILE):
+        return settings.runtime_secret_file
+    return (root or workspace_manager.current_root) / ".nova" / "runtime-secrets.json"
+
+
+def _workspace_tool_hooks_file(root: Path | None = None) -> Path:
+    if not _same_path(settings.tool_hooks_file, _DEFAULT_TOOL_HOOKS_FILE):
+        return settings.tool_hooks_file
+    return (root or workspace_manager.current_root) / ".nova" / "hooks.json"
+
+
+def _normalize_runtime_config(payload: dict) -> dict:
+    config = dict(_RUNTIME_BASE_CONFIG)
+    config.update(payload)
+    if config["permission_mode"] not in PERMISSION_MODES:
+        config["permission_mode"] = _RUNTIME_BASE_CONFIG["permission_mode"]
+    if config["sandbox_mode"] not in SANDBOX_MODES:
+        config["sandbox_mode"] = _RUNTIME_BASE_CONFIG["sandbox_mode"]
+    if config["approval_policy"] not in APPROVAL_POLICIES:
+        config["approval_policy"] = _RUNTIME_BASE_CONFIG["approval_policy"]
+    config["network_access"] = bool(config["network_access"])
+    config["max_tool_rounds"] = max(1, min(int(config["max_tool_rounds"]), 12))
+    config["context_window_tokens"] = max(8192, min(int(config["context_window_tokens"]), 1000000))
+    config["provider_model"] = str(config["provider_model"]).strip() or _RUNTIME_BASE_CONFIG["provider_model"]
+    config["provider_base_url"] = str(config["provider_base_url"]).strip().rstrip("/") or _RUNTIME_BASE_CONFIG["provider_base_url"]
+    return config
+
+
+def _effective_runtime_config(root: Path | None = None) -> dict:
+    return _normalize_runtime_config(_read_runtime_config_overrides(root))
+
+
+def _apply_workspace_runtime_config(root: Path | None = None) -> None:
+    # 参考 cc 的 cwd-first 设计：项目切换后，模型、权限、hooks 都按当前项目重新解析。
+    _apply_runtime_config(_effective_runtime_config(root))
+
+
+def _switch_workspace(path: str) -> Path:
+    selected = workspace_manager.set_current(path)
+    _apply_workspace_runtime_config(selected)
+    return selected
 
 
 @app.get("/", include_in_schema=False)
@@ -159,12 +227,13 @@ async def update_runtime_config(payload: RuntimeConfigUpdate) -> dict:
             pending[key] = value.strip()
         else:
             pending[key] = value
-    settings.runtime_config_file.parent.mkdir(parents=True, exist_ok=True)
-    settings.runtime_config_file.write_text(
+    config_file = _workspace_runtime_config_file()
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text(
         json.dumps(pending, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    _apply_runtime_config(update)
+    _apply_workspace_runtime_config()
     result = _runtime_config_payload()
     result["pending_config"] = pending
     return result
@@ -175,7 +244,7 @@ async def update_runtime_secrets(payload: RuntimeSecretUpdate) -> dict:
     if payload.bigmodel_api_key is not None:
         provider.set_runtime_api_key(
             payload.bigmodel_api_key,
-            api_key_file=settings.runtime_secret_file,
+            api_key_file=_workspace_runtime_secret_file(),
         )
     return {
         "ok": True,
@@ -221,8 +290,8 @@ def _runtime_config_payload() -> dict:
         "approval_ui_enabled": True,
         "tool_parallel_readonly": True,
         "memory_enabled": True,
-        "hooks_enabled": settings.tool_hooks_file.exists(),
-        "tool_hooks_file": str(settings.tool_hooks_file),
+        "hooks_enabled": _workspace_tool_hooks_file().exists(),
+        "tool_hooks_file": str(_workspace_tool_hooks_file()),
         "permission_modes": PERMISSION_MODES,
         "sandbox_modes": SANDBOX_MODES,
         "approval_policies": APPROVAL_POLICIES,
@@ -250,9 +319,9 @@ def _apply_runtime_config(update: dict) -> None:
             object.__setattr__(settings, key, value)
 
 
-def _read_runtime_config_overrides() -> dict:
+def _read_runtime_config_overrides(root: Path | None = None) -> dict:
     try:
-        payload = json.loads(settings.runtime_config_file.read_text(encoding="utf-8"))
+        payload = json.loads(_workspace_runtime_config_file(root).read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return {}
     return payload if isinstance(payload, dict) else {}
@@ -260,7 +329,7 @@ def _read_runtime_config_overrides() -> dict:
 
 @app.get("/api/runtime/statusline")
 async def runtime_statusline(session_id: str | None = Query(default=None, max_length=80)) -> dict:
-    session = _get_current_chat_session(session_id) if session_id else None
+    session = _get_current_chat_session(session_id, auto_switch=True) if session_id else None
     token_usage = _estimate_session_tokens(session.id) if session else {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -450,7 +519,7 @@ async def workspace_list(q: str | None = Query(default=None, max_length=1200)) -
 @app.post("/api/workspace/select")
 async def select_workspace(payload: WorkspaceSelect) -> dict:
     try:
-        workspace_manager.set_current(payload.path)
+        _switch_workspace(payload.path)
         return workspace_manager.status()
     except WorkspaceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -462,7 +531,7 @@ async def create_workspace_folder(payload: WorkspaceFolderCreate) -> dict:
         raise HTTPException(status_code=403, detail="当前权限模式不允许新建目录")
     try:
         created = workspace_manager.create_folder(payload.path)
-        workspace_manager.set_current(str(created))
+        _switch_workspace(str(created))
         return workspace_manager.status(query=str(created))
     except WorkspaceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -586,21 +655,21 @@ async def delete_chat_session(session_id: str) -> Response:
 
 @app.get("/api/chat/sessions/{session_id}/messages", response_model=list[ChatMessage])
 async def list_chat_messages(session_id: str) -> list[ChatMessage]:
-    if _get_current_chat_session(session_id) is None:
+    if _get_current_chat_session(session_id, auto_switch=True) is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
     return store.list_chat_messages(session_id)
 
 
 @app.get("/api/chat/sessions/{session_id}/timeline")
 async def list_chat_timeline(session_id: str) -> dict:
-    if _get_current_chat_session(session_id) is None:
+    if _get_current_chat_session(session_id, auto_switch=True) is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
     return {"items": _chat_timeline_items(session_id)}
 
 
 @app.get("/api/chat/sessions/{session_id}/runtime-state")
 async def chat_runtime_state(session_id: str) -> dict:
-    session = _get_current_chat_session(session_id)
+    session = _get_current_chat_session(session_id, auto_switch=True)
     if session is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
     runtime = agent_sessions.runtime_state(session_id)
@@ -629,7 +698,7 @@ def _chat_timeline_items(session_id: str) -> list[dict]:
 
 @app.post("/api/chat/sessions/{session_id}/messages", response_model=ChatMessage)
 async def create_chat_message(session_id: str, payload: ChatMessageCreate) -> ChatMessage:
-    session = _get_current_chat_session(session_id)
+    session = _get_current_chat_session(session_id, auto_switch=True)
     if session is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
 
@@ -714,7 +783,7 @@ async def stream_chat_message(
     session_id: str,
     payload: ChatMessageCreate,
 ) -> Response:
-    if _get_current_chat_session(session_id) is None:
+    if _get_current_chat_session(session_id, auto_switch=True) is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
     if agent_sessions.is_active(session_id):
         queued = ChatMessage(
@@ -955,12 +1024,18 @@ async def stream_chat_message(
     return StreamingResponse(emit(), media_type="application/x-ndjson")
 
 
-def _get_current_chat_session(session_id: str) -> ChatSession | None:
+def _get_current_chat_session(session_id: str, *, auto_switch: bool = False) -> ChatSession | None:
     # 会话按项目目录隔离，避免切换项目后把上下文发进错误仓库。
     session = store.get_chat_session(session_id)
     if session is None:
         return None
     if session.workspace != str(workspace_manager.current_root):
+        if auto_switch and session.workspace:
+            try:
+                _switch_workspace(session.workspace)
+            except WorkspaceError as exc:
+                raise HTTPException(status_code=409, detail=f"历史线程所属项目不可用：{exc}") from exc
+            return session
         return None
     return session
 
