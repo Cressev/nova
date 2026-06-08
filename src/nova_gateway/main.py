@@ -401,15 +401,21 @@ async def runtime_statusline(session_id: str | None = Query(default=None, max_le
         **_empty_context_budget(settings.context_window_tokens),
     }
     context_window = settings.context_window_tokens
+    processes = process_manager.list_jobs()
+    background_task_count = len([job for job in processes if job.get("status") in {"running", "started"}])
     return {
         "model": provider.model,
         "session_id": session.id if session else None,
         "thread_title": session.title if session else "新线程",
         "workspace": str(workspace_manager.current_root),
         "project": workspace_manager.current_root.name,
+        "current_project": workspace_manager.current_root.name,
+        "current_project_path": str(workspace_manager.current_root),
         "permission_mode": settings.permission_mode,
         "sandbox_mode": settings.sandbox_mode,
         "approval_policy": settings.approval_policy,
+        "background_task_count": background_task_count,
+        "background_tasks": background_task_count,
         "status": "unavailable" if unavailable_reason else ("working" if session_id and session is None else "ready"),
         "unavailable_reason": unavailable_reason,
         "estimated": True,

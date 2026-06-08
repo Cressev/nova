@@ -13,6 +13,16 @@ import {
 } from "./state/storage.js";
 import { queryRequired } from "./ui/dom.js";
 
+const DEFAULT_STATUSLINE_ITEMS = [
+  "model",
+  "context",
+  "tokens",
+  "session",
+  "project",
+  "permission",
+  "background_tasks",
+];
+
 const state = {
   selectedSessionId: null,
   selectedSessionTitle: "Nova Chat",
@@ -31,13 +41,7 @@ const state = {
   runtimeConfig: null,
   worktrees: null,
   statusline: null,
-  statuslineItems: new Set(readStorageList("nova.statuslineItems", [
-    "model",
-    "context",
-    "tokens",
-    "session",
-    "permission",
-  ])),
+  statuslineItems: ensureStatuslineDefaults(readStorageList("nova.statuslineItems", DEFAULT_STATUSLINE_ITEMS)),
   sidebarCollapsed: readStorageBool("nova.sidebarCollapsed", false),
   inspectorCollapsed: readStorageBool("nova.inspectorCollapsed", false),
   statuslineCollapsed: readStorageBool("nova.statuslineCollapsed", false),
@@ -140,6 +144,25 @@ const MCP_DEMO_TOOL = "mcp__demo__echo";
 
 let commandMatches = [];
 
+function ensureStatuslineDefaults(items) {
+  const next = new Set(items);
+  try {
+    const version = window.localStorage.getItem("nova.statuslineSchemaVersion");
+    if (version !== "2") {
+      for (const id of DEFAULT_STATUSLINE_ITEMS) {
+        next.add(id);
+      }
+      window.localStorage.setItem("nova.statuslineSchemaVersion", "2");
+      writeStorageList("nova.statuslineItems", next);
+    }
+  } catch {
+    for (const id of DEFAULT_STATUSLINE_ITEMS) {
+      next.add(id);
+    }
+  }
+  return next;
+}
+
 const STATUSLINE_ITEMS = [
   { id: "model", label: "模型" },
   { id: "context", label: "上下文剩余" },
@@ -147,6 +170,7 @@ const STATUSLINE_ITEMS = [
   { id: "session", label: "Session ID" },
   { id: "project", label: "项目" },
   { id: "permission", label: "权限" },
+  { id: "background_tasks", label: "后台任务" },
   { id: "state", label: "状态" },
 ];
 
@@ -304,8 +328,9 @@ function renderStatusline() {
       `${formatCompactNumber((data.used_tokens || 0) + draftTokens)} 已用${data.estimated ? " 估算" : ""}`,
     ],
     session: ["Session", data.session_id ? shortId(data.session_id) : "未创建"],
-    project: ["项目", data.project || projectName(data.workspace || "")],
+    project: ["项目", data.current_project || data.project || projectName(data.current_project_path || data.workspace || "")],
     permission: ["权限", data.permission_mode],
+    background_tasks: ["后台任务", `${Number(data.background_task_count || data.background_tasks || 0)} 个`],
     state: ["状态", state.sending ? "working" : data.status],
   };
   statuslineEl.innerHTML = "";

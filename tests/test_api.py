@@ -239,6 +239,9 @@ class ApiTest(unittest.TestCase):
         self.assertIn("auto_compact_threshold_tokens", payload)
         self.assertIn("context_output_reserve_tokens", payload)
         self.assertIn("compact_recommended", payload)
+        self.assertIn("background_task_count", payload)
+        self.assertIn("current_project", payload)
+        self.assertIn("current_project_path", payload)
 
     def test_context_budget_compacts_and_trims_messages_before_agent_stream(self) -> None:
         captured_messages: list[list[app_module.ChatMessage]] = []
