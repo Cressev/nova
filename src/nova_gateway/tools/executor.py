@@ -407,6 +407,20 @@ class ToolExecutor:
         return f"{tool_name} {target}".strip()
 
     def _tool_spec_data(self, tool_name: str) -> dict[str, Any]:
+        dynamic_specs = {item["name"]: item for item in self.tools.list_specs()}
+        if tool_name in dynamic_specs:
+            item = dynamic_specs[tool_name]
+            return {
+                "name": item.get("name"),
+                "description": item.get("description"),
+                "permission": item.get("permission"),
+                "risk": item.get("risk"),
+                "category": item.get("category"),
+                "schema": item.get("schema") or {},
+                "supports_parallel": bool(item.get("supports_parallel")),
+                "interrupt_behavior": item.get("interrupt_behavior"),
+                "mcp": item.get("mcp"),
+            }
         spec = TOOL_SPECS.get(tool_name)
         if spec is None:
             return {"name": tool_name, "permission": "unknown", "risk": "unknown", "schema": {}}

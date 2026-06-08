@@ -43,6 +43,7 @@ const state = {
   settingsCollapsed: new Set(readStorageList("nova.settingsCollapsed")),
   commands: BUILTIN_COMMANDS,
   commandSelectionIndex: -1,
+  mcp: null,
 };
 
 const healthEl = queryRequired("#health");
@@ -75,6 +76,8 @@ const worktreeDiffOutputEl = document.querySelector("#worktree-diff-output");
 const commandPaletteEl = document.querySelector("#command-palette");
 const toolCountEl = document.querySelector("#tool-count");
 const toolListEl = document.querySelector("#tool-list");
+const mcpStateEl = document.querySelector("#mcp-state");
+const mcpListEl = document.querySelector("#mcp-list");
 const memoryStateEl = document.querySelector("#memory-state");
 const memoryListEl = document.querySelector("#memory-list");
 const configStateEl = document.querySelector("#config-state");
@@ -114,6 +117,7 @@ const statuslineToggleEl = document.querySelector("#statusline-toggle");
 let workspaceSuggestTimer = null;
 let workspaceDialogTimer = null;
 const TOOL_TOOLTIP_DELAY_MS = 1000;
+const MCP_DEMO_TOOL = "mcp__demo__echo";
 
 let commandMatches = [];
 
@@ -207,9 +211,10 @@ async function loadWorkspaceCandidates(query = "") {
 }
 
 async function loadRuntimePanels() {
-  const [config, tools, memory, statusline, worktrees] = await Promise.all([
+  const [config, tools, mcp, memory, statusline, worktrees] = await Promise.all([
     api("/api/runtime/config"),
     api("/api/tools"),
+    api("/api/mcp/status"),
     api("/api/memory/status"),
     loadStatuslineData(),
     api("/api/worktrees"),
@@ -217,9 +222,11 @@ async function loadRuntimePanels() {
   state.runtimeConfig = config;
   state.worktrees = worktrees;
   state.statusline = statusline;
+  state.mcp = mcp;
   renderRuntimeConfig(config);
   renderWorktrees(worktrees);
   renderTools(tools.items || []);
+  renderMcpPanel(mcp);
   renderMemory(memory);
   renderStatusline();
   renderSettings();
@@ -657,6 +664,118 @@ function renderTools(items) {
     });
     bindToolTooltip(node);
     toolListEl.appendChild(node);
+  }
+}
+
+function renderMcpPanel(mcp) {
+  if (!mcpStateEl || !mcpListEl) {
+    return;
+  }
+  const servers = mcp?.servers || [];
+  const tools = mcp?.tools || [];
+  const resources = mcp?.resources || [];
+  mcpStateEl.textContent = servers.length > 0 ? `${servers.length} servers` : "未配置";
+  mcpListEl.innerHTML = "";
+  if (mcp?.error) {
+    const error = document.createElement("div");
+    error.className = "mcp-error";
+    error.textContent = mcp.error;
+    mcpListEl.appendChild(error);
+    return;
+  }
+  if (servers.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "mcp-empty";
+    empty.textContent = ".nova/mcp.json 未配置";
+    mcpListEl.appendChild(empty);
+    return;
+  }
+  for (const server of servers) {
+    const card = document.createElement("article");
+    card.className = `mcp-server ${server.status === "connected" ? "connected" : ""}`;
+    const serverTools = tools.filter((tool) => tool.server === server.name);
+    const serverResources = resources.filter((resource) => resource.server === server.name);
+    const toolRows = serverTools.map((tool) => `
+      <button class="mcp-tool" type="button" data-mcp-tool="${escapeHtml(tool.name)}">
+        <span>${escapeHtml(tool.name)}</span>
+        <small>${escapeHtml(tool.description || "")}</small>
+      </button>
+    `).join("");
+    const resourceRows = serverResources.map((resource) => `
+      <div class="mcp-resource">
+        <span>${escapeHtml(resource.uri || resource.name || "")}</span>
+        <small>${escapeHtml(resource.description || "")}</small>
+      </div>
+    `).join("");
+    card.innerHTML = `
+      <div class="mcp-server-head">
+        <strong>${escapeHtml(server.name)}</strong>
+        <span>${escapeHtml(server.transport || "-")} · ${escapeHtml(server.status || "-")}</span>
+      </div>
+      ${server.error ? `<div class="mcp-error">${escapeHtml(server.error)}</div>` : ""}
+      <div class="mcp-section">
+        <em>Tools</em>
+        ${toolRows || '<small class="mcp-empty">暂无工具</small>'}
+      </div>
+      <div class="mcp-section">
+        <em>Resources</em>
+        ${resourceRows || '<small class="mcp-empty">暂无资源</small>'}
+      </div>
+    `;
+    card.querySelectorAll("[data-mcp-tool]").forEach((button) => {
+      button.addEventListener("click", () => callMcpDemoTool(button.dataset.mcpTool || MCP_DEMO_TOOL));
+    });
+    mcpListEl.appendChild(card);
+  }
+}
+
+async function callMcpDemoTool(toolName) {
+  if (!toolName) {
+    return;
+  }
+  const startEvent = {
+    call_id: `mcp-ui-${Date.now()}`,
+    tool: toolName,
+    title: `MCP demo 调用：${toolName}`,
+    arguments: { text: "hello from Nova UI" },
+    data: {
+      spec: {
+        permission: "mcp",
+        risk: "low",
+        category: "mcp",
+        schema: { text: "要原样返回的文本" },
+      },
+    },
+  };
+  const node = appendToolEvent(startEvent);
+  try {
+    const payload = await api(`/api/mcp/tools/${encodeURIComponent(toolName)}/call`, {
+      method: "POST",
+      body: JSON.stringify({ arguments: { text: "hello from Nova UI" } }),
+    });
+    const doneEvent = (payload.events || []).findLast?.((event) => event.type === "tool_done")
+      || (payload.events || []).find((event) => event.type === "tool_done")
+      || {
+        tool: toolName,
+        title: "MCP demo 调用完成",
+        ok: true,
+        output: payload.result?.content || "",
+        data: payload.result_json?.data || {},
+      };
+    finishToolEvent(node, doneEvent);
+    streamStateEl.textContent = "MCP demo 调用完成";
+  } catch (error) {
+    finishToolEvent(node, {
+      tool: toolName,
+      title: "MCP demo 调用失败",
+      ok: false,
+      output: error instanceof Error ? error.message : "未知错误",
+      data: {
+        failure_reason: error instanceof Error ? error.message : "未知错误",
+        spec: { permission: "mcp", risk: "low", category: "mcp", schema: {} },
+      },
+    });
+    streamStateEl.textContent = "MCP demo 调用失败";
   }
 }
 

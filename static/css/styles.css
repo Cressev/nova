@@ -187,6 +187,107 @@ body.sidebar-collapsed.inspector-collapsed .app-shell {
   backdrop-filter: blur(16px);
 }
 
+.mcp-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.mcp-panel-head,
+.mcp-server-head,
+.mcp-tool,
+.mcp-resource {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mcp-panel-head span,
+.mcp-section em {
+  color: var(--faint);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.mcp-panel-head strong {
+  color: var(--blue);
+  font-size: 11px;
+}
+
+.mcp-list,
+.mcp-server,
+.mcp-section {
+  display: grid;
+  gap: 6px;
+}
+
+.mcp-server {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.mcp-server.connected {
+  border-color: rgba(66, 222, 153, 0.28);
+  background: rgba(66, 222, 153, 0.06);
+}
+
+.mcp-server-head strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-server-head span,
+.mcp-tool small,
+.mcp-resource small,
+.mcp-empty {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mcp-tool {
+  width: 100%;
+  padding: 6px 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(14, 17, 16, 0.62);
+  color: var(--text);
+  text-align: left;
+}
+
+.mcp-tool:hover {
+  border-color: rgba(115, 201, 244, 0.46);
+  background: rgba(115, 201, 244, 0.08);
+}
+
+.mcp-tool span,
+.mcp-resource span {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-resource {
+  min-width: 0;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(238, 244, 239, 0.06);
+}
+
+.mcp-error {
+  color: var(--red);
+  font-size: 11px;
+}
+
 .project-card,
 .mode-card,
 .skills-card {

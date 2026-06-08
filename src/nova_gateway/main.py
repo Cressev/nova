@@ -19,6 +19,7 @@ from . import __version__
 from .config.settings import load_settings
 from .context_budget import build_context_budget_plan, estimate_tokens
 from .memory import ProjectMemory
+from .mcp import McpManager
 from .providers.bigmodel import BigModelProvider, ProviderError
 from .processes.manager import ProcessManager
 from .runtime import CodexLikeAgentRuntime, DemoAgentRuntime
@@ -372,6 +373,36 @@ async def runtime_statusline(session_id: str | None = Query(default=None, max_le
 @app.get("/api/tools")
 async def tool_list() -> dict:
     return {"items": _workspace_tools().list_specs()}
+
+
+@app.get("/api/mcp/status")
+async def mcp_status() -> dict:
+    return McpManager(workspace_manager.current_root).status()
+
+
+@app.post("/api/mcp/tools/{tool_name}/call")
+async def call_mcp_tool(tool_name: str, payload: dict) -> dict:
+    arguments = payload.get("arguments") if isinstance(payload.get("arguments"), dict) else {}
+    executor = app_module_tool_executor(_workspace_tools())
+    call_id = new_id("mcp")
+    try:
+        events, result_json = executor.run_one_stream(call_id, tool_name, arguments)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    result_payload = json.loads(result_json) if result_json else {}
+    if not result_payload.get("ok"):
+        raise HTTPException(status_code=400, detail=result_payload)
+    data = result_payload.get("data") if isinstance(result_payload.get("data"), dict) else {}
+    mcp_data = data.get("mcp") if isinstance(data.get("mcp"), dict) else {}
+    return {
+        "ok": True,
+        "call_id": call_id,
+        "tool": tool_name,
+        "server": mcp_data.get("server"),
+        "result": {"content": result_payload.get("output") or ""},
+        "events": events,
+        "result_json": result_payload,
+    }
 
 
 @app.get("/api/commands")

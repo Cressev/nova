@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from ..memory import ProjectMemory
+from ..mcp import McpManager
 
 
 class ToolExecutionError(RuntimeError):
@@ -314,6 +315,8 @@ class WorkspaceTools:
         self.network_access = network_access
 
     def run(self, name: str, arguments: dict[str, Any]) -> ToolResult:
+        if name.startswith("mcp__"):
+            return self.mcp_tool(name, arguments)
         handlers = {
             "read_file": self.read_file,
             "read_many_files": self.read_many_files,
@@ -346,7 +349,7 @@ class WorkspaceTools:
         return handler(arguments)
 
     def list_specs(self) -> list[dict[str, Any]]:
-        return [
+        local_specs = [
             {
                 "name": spec.name,
                 "description": spec.description,
@@ -361,10 +364,23 @@ class WorkspaceTools:
             }
             for spec in TOOL_SPECS.values()
         ]
+        return [*local_specs, *McpManager(self.project_root).list_tool_specs()]
 
     def supports_parallel(self, name: str) -> bool:
+        if name.startswith("mcp__"):
+            return any(item["name"] == name and item["supports_parallel"] for item in self.list_specs())
         spec = TOOL_SPECS.get(name)
         return bool(spec and spec.supports_parallel and spec.read_only)
+
+    def mcp_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
+        payload = McpManager(self.project_root).call_tool(name, arguments)
+        return ToolResult(
+            tool=name,
+            title=f"MCP {payload['server']}:{name}",
+            output=str(payload["output"]),
+            ok=bool(payload["ok"]),
+            data=payload["data"],
+        )
 
     def read_file(self, arguments: dict[str, Any]) -> ToolResult:
         path = self._resolve_workspace_path(str(arguments.get("path", "")))
