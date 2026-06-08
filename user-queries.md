@@ -4,6 +4,14 @@
 
 ---
 
+继续完成 day3+day4 任务，参考别的源码，边开发边测试，随时记录 log 和更新开发文档。
+
+[Recieve:26/06/08-13:34:20 CST]
+
+[Done:26/06/08-13:42:52 CST]
+
+---
+
 https://jcnu7fvwv6c8.feishu.cn/docx/WetFdF7Nqos7jrxxvxgcbeXSnqg 清单开发完对应的就勾选完成
 
 [Recieve:26/06/08-13:18:31 CST]

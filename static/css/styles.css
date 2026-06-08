@@ -1353,6 +1353,14 @@ code {
   white-space: nowrap;
 }
 
+.statusline-item.context-status-warning em {
+  color: var(--amber);
+}
+
+.statusline-item.context-status-critical em {
+  color: #ff9d9d;
+}
+
 .statusline-muted {
   color: var(--faint);
 }

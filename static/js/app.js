@@ -253,7 +253,7 @@ function renderStatusline() {
     model: ["模型", data.model],
     context: [
       "上下文",
-      `${formatCompactNumber(Math.max((data.context_remaining_tokens || 0) - draftTokens, 0))} 剩余 / ${data.context_remaining_percent ?? "-"}%`,
+      `${formatCompactNumber(Math.max((data.context_remaining_tokens || 0) - draftTokens, 0))} 剩余 / ${data.context_remaining_percent ?? "-"}% · ${contextBudgetLabel(data.context_budget_status)}`,
     ],
     tokens: [
       "Token",
@@ -271,10 +271,22 @@ function renderStatusline() {
     }
     const [label, value] = rows[item.id] || [];
     const node = document.createElement("span");
-    node.className = "statusline-item";
+    node.className = item.id === "context"
+      ? `statusline-item context-status-${data.context_budget_status || "normal"}`
+      : "statusline-item";
     node.innerHTML = `<strong>${escapeHtml(label)}</strong><em>${escapeHtml(String(value ?? "-"))}</em>`;
     statuslineEl.appendChild(node);
   }
+}
+
+function contextBudgetLabel(status) {
+  if (status === "critical") {
+    return "需压缩";
+  }
+  if (status === "warning") {
+    return "接近上限";
+  }
+  return "正常";
 }
 
 function renderSettings() {
@@ -496,6 +508,8 @@ function renderRuntimeConfig(config) {
     ["模型", config.model],
     ["API Key", config.api_key_set ? `已配置 · ${config.api_key_source === "runtime" ? "设置页" : "环境变量"}` : "未配置"],
     ["上下文窗口", `${formatCompactNumber(config.context_window_tokens || 0)} tokens`],
+    ["自动压缩阈值", `${formatCompactNumber(state.statusline?.auto_compact_threshold_tokens || 0)} tokens`],
+    ["预算状态", `${contextBudgetLabel(state.statusline?.context_budget_status)}${state.statusline?.compact_recommended ? " · 建议 /compact" : ""}`],
     ["工具轮次", String(config.max_tool_rounds)],
     ["沙箱模式", config.sandbox_mode],
     ["审批策略", config.approval_policy],

@@ -205,6 +205,85 @@ class ApiTest(unittest.TestCase):
         self.assertGreater(payload["used_tokens"], 0)
         self.assertGreater(payload["context_remaining_tokens"], 0)
         self.assertTrue(payload["estimated"])
+        self.assertIn("context_budget_status", payload)
+        self.assertIn("auto_compact_threshold_tokens", payload)
+        self.assertIn("context_output_reserve_tokens", payload)
+        self.assertIn("compact_recommended", payload)
+
+    def test_context_budget_compacts_and_trims_messages_before_agent_stream(self) -> None:
+        captured_messages: list[list[app_module.ChatMessage]] = []
+
+        async def fake_agent_stream(messages):
+            captured_messages.append(messages)
+            yield {"type": "assistant_delta", "delta": "预算后继续"}
+            yield {"type": "assistant_done_content", "content": "预算后继续"}
+
+        old_context = app_module.settings.context_window_tokens
+        object.__setattr__(app_module.settings, "context_window_tokens", 180)
+        self.addCleanup(lambda: object.__setattr__(app_module.settings, "context_window_tokens", old_context))
+
+        session_response = self.client.post(
+            "/api/chat/sessions",
+            json={"title": "上下文预算"},
+        )
+        session = session_response.json()
+        for index in range(18):
+            app_module.store.add_chat_message(
+                app_module.ChatMessage(
+                    session_id=session["id"],
+                    role=app_module.ChatRole.USER if index % 2 == 0 else app_module.ChatRole.ASSISTANT,
+                    content=f"old-{index} " + ("很长的历史消息 " * 12),
+                )
+            )
+        app_module.store.upsert_chat_event(
+            app_module.ChatEvent(
+                id="tool_budget_result",
+                session_id=session["id"],
+                type="tool",
+                event_type="tool.completed",
+                phase="completed",
+                status="ok",
+                title="读取 README",
+                tool="read_file",
+                output="关键工具输出：README 里说明 Nova 是本地开发 Agent。" * 3,
+            )
+        )
+
+        class FakeRuntime:
+            stream = staticmethod(fake_agent_stream)
+
+        with patch.object(app_module, "_agent_runtime", lambda: FakeRuntime()):
+            with self.client.stream(
+                "POST",
+                f"/api/chat/sessions/{session['id']}/stream",
+                json={"content": "继续处理预算后的问题"},
+            ) as response:
+                self.assertEqual(response.status_code, 200)
+                lines = [line for line in response.iter_lines() if line.strip()]
+
+        self.assertEqual(len(captured_messages), 1)
+        sent_contents = "\n".join(message.content for message in captured_messages[0])
+        self.assertIn("继续处理预算后的问题", sent_contents)
+        self.assertIn("关键工具结果摘要", sent_contents)
+        self.assertIn("README 里说明 Nova", sent_contents)
+        self.assertNotIn("old-0", sent_contents)
+        self.assertLess(len(captured_messages[0]), 21)
+
+        runtime_events = [
+            app_module.json.loads(line)["event"]
+            for line in lines
+            if app_module.json.loads(line).get("type") == "runtime_event"
+        ]
+        budget_events = [event for event in runtime_events if event["event_type"] == "context.budgeted"]
+        self.assertEqual(len(budget_events), 1)
+        self.assertGreater(budget_events[0]["data"]["dropped_message_count"], 0)
+        compact_events = [event for event in runtime_events if event["event_type"] == "memory.compacted"]
+        self.assertEqual(len(compact_events), 1)
+        self.assertEqual(compact_events[0]["data"]["trigger"], "auto_context_budget")
+
+        statusline = self.client.get("/api/runtime/statusline", params={"session_id": session["id"]}).json()
+        self.assertIn(statusline["context_budget_status"], {"warning", "critical"})
+        self.assertTrue(statusline["compact_recommended"])
 
     def test_workspace_list_and_select(self) -> None:
         workspaces = self.client.get("/api/workspaces")

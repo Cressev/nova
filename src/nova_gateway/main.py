@@ -17,6 +17,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .config.settings import load_settings
+from .context_budget import build_context_budget_plan, estimate_tokens
+from .memory import ProjectMemory
 from .providers.bigmodel import BigModelProvider, ProviderError
 from .processes.manager import ProcessManager
 from .runtime import CodexLikeAgentRuntime, DemoAgentRuntime
@@ -346,14 +348,10 @@ async def runtime_statusline(session_id: str | None = Query(default=None, max_le
                 raise
             unavailable_reason = str(exc.detail)
             session = store.get_chat_session(session_id)
-    token_usage = _estimate_session_tokens(session.id) if session else {
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "used_tokens": 0,
+    token_usage = _context_budget_status(session.id).as_dict() if session else {
+        **_empty_context_budget(settings.context_window_tokens),
     }
     context_window = settings.context_window_tokens
-    remaining_tokens = max(context_window - token_usage["used_tokens"], 0)
-    remaining_percent = round((remaining_tokens / context_window) * 100, 1) if context_window else None
     return {
         "model": provider.model,
         "session_id": session.id if session else None,
@@ -365,9 +363,6 @@ async def runtime_statusline(session_id: str | None = Query(default=None, max_le
         "approval_policy": settings.approval_policy,
         "status": "unavailable" if unavailable_reason else ("working" if session_id and session is None else "ready"),
         "unavailable_reason": unavailable_reason,
-        "context_window_tokens": context_window,
-        "context_remaining_tokens": remaining_tokens,
-        "context_remaining_percent": remaining_percent,
         "estimated": True,
         **token_usage,
     }
@@ -1008,7 +1003,51 @@ async def stream_chat_message(
             answer_parts: list[str] = []
             try:
                 history = [message for message in store.list_chat_messages(session_id) if message.id != user_message.id]
-                turn_messages = [*history, user_message]
+                all_turn_messages = [*history, user_message]
+                budget = build_context_budget_plan(
+                    session_id=session_id,
+                    messages=all_turn_messages,
+                    events=store.list_chat_events(session_id),
+                    context_window_tokens=settings.context_window_tokens,
+                )
+                if budget.should_auto_compact and not user_message.content.lstrip().startswith("/compact"):
+                    memory = ProjectMemory(workspace_manager.current_root, global_agent_file=settings.global_agent_file)
+                    result = memory.compact_session(
+                        all_turn_messages,
+                        instruction="自动上下文预算触发：保留关键事实、当前目标、最近决策和未完成事项。",
+                    )
+                    compacted = runtime_event(
+                        "memory.compacted",
+                        category="status",
+                        phase="completed",
+                        title="自动上下文压缩",
+                        message="上下文预算接近上限，已自动执行 /compact 并写入会话摘要。",
+                        data={
+                            "summary": str(result.get("summary") or ""),
+                            "path": str(result.get("path") or ""),
+                            "covered_messages": int(result.get("covered_messages") or 0),
+                            "trigger": "auto_context_budget",
+                        },
+                    )
+                    yield _ndjson({"type": "runtime_event", "event": compacted})
+
+                budgeted = runtime_event(
+                    "context.budgeted",
+                    category="status",
+                    phase="update",
+                    title="上下文预算已应用",
+                    message=(
+                        f"保留 {budget.retained_message_count} 条最近消息，"
+                        f"裁剪 {budget.dropped_message_count} 条历史消息，"
+                        f"关键工具结果 {budget.key_tool_result_count} 条。"
+                    ),
+                    data={
+                        **budget.as_dict(),
+                        "message_ids": [message.id for message in budget.messages],
+                    },
+                )
+                yield _ndjson({"type": "runtime_event", "event": budgeted})
+                turn_messages = budget.messages
                 async for event in _agent_runtime().stream(turn_messages):
                     runtime = _runtime_event_from_agent_event(event, runtime_event)
                     if runtime is not None:
@@ -1167,31 +1206,30 @@ def _get_current_chat_session(session_id: str, *, auto_switch: bool = False) -> 
 
 
 def _estimate_tokens(text: str) -> int:
-    # Web statusline 只需要稳定估算，真实计费 token 仍以模型供应商返回为准。
-    cleaned = text or ""
-    if not cleaned:
-        return 0
-    return max(1, (len(cleaned) + 3) // 4)
+    return estimate_tokens(text)
 
 
 def _estimate_session_tokens(session_id: str) -> dict:
-    input_tokens = 0
-    output_tokens = 0
-    for message in store.list_chat_messages(session_id):
-        if message.role in {ChatRole.USER, ChatRole.SYSTEM}:
-            input_tokens += _estimate_tokens(message.content)
-        else:
-            output_tokens += _estimate_tokens(message.content)
-    for event in store.list_chat_events(session_id):
-        if event.arguments:
-            input_tokens += _estimate_tokens(json.dumps(event.arguments, ensure_ascii=False))
-        if event.output:
-            output_tokens += _estimate_tokens(event.output)
-    return {
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-        "used_tokens": input_tokens + output_tokens,
-    }
+    return _context_budget_status(session_id).as_dict()
+
+
+def _context_budget_status(session_id: str):
+    return build_context_budget_plan(
+        session_id=session_id,
+        messages=store.list_chat_messages(session_id),
+        events=store.list_chat_events(session_id),
+        context_window_tokens=settings.context_window_tokens,
+    )
+
+
+def _empty_context_budget(context_window_tokens: int) -> dict:
+    plan = build_context_budget_plan(
+        session_id="empty",
+        messages=[],
+        events=[],
+        context_window_tokens=context_window_tokens,
+    )
+    return plan.as_dict()
 
 
 def _runtime_event_from_agent_event(event: dict, build_event) -> dict | None:
