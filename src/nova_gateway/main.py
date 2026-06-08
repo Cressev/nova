@@ -44,9 +44,11 @@ from .models import (
     WorkspacePermissions,
     WorkspaceSelect,
     WorkspaceStatus,
+    WorktreeCreate,
     new_id,
 )
 from .workspace import WorkspaceError, WorkspaceManager
+from .worktrees import WorktreeError, WorktreeManager
 
 PERMISSION_MODES = ["read_only", "ask", "workspace_write", "default", "plan", "accept_edits", "dont_ask", "bypass_permissions"]
 SANDBOX_MODES = ["read_only", "workspace_write", "danger_full_access"]
@@ -186,6 +188,10 @@ def _switch_workspace(path: str) -> Path:
     return selected
 
 
+def _worktree_manager() -> WorktreeManager:
+    return WorktreeManager.from_workspace(workspace_manager.current_root)
+
+
 @app.get("/", include_in_schema=False)
 async def index() -> FileResponse:
     return FileResponse(settings.static_dir / "index.html")
@@ -286,7 +292,7 @@ def _runtime_config_payload() -> dict:
         "network_access": settings.network_access,
         "max_tool_rounds": settings.max_tool_rounds,
         "context_window_tokens": settings.context_window_tokens,
-        "worktree_enabled": False,
+        "worktree_enabled": _git_available(),
         "approval_ui_enabled": True,
         "tool_parallel_readonly": True,
         "memory_enabled": True,
@@ -329,7 +335,16 @@ def _read_runtime_config_overrides(root: Path | None = None) -> dict:
 
 @app.get("/api/runtime/statusline")
 async def runtime_statusline(session_id: str | None = Query(default=None, max_length=80)) -> dict:
-    session = _get_current_chat_session(session_id, auto_switch=True) if session_id else None
+    unavailable_reason = None
+    session = None
+    if session_id:
+        try:
+            session = _get_current_chat_session(session_id, auto_switch=True)
+        except HTTPException as exc:
+            if exc.status_code != 409:
+                raise
+            unavailable_reason = str(exc.detail)
+            session = store.get_chat_session(session_id)
     token_usage = _estimate_session_tokens(session.id) if session else {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -347,7 +362,8 @@ async def runtime_statusline(session_id: str | None = Query(default=None, max_le
         "permission_mode": settings.permission_mode,
         "sandbox_mode": settings.sandbox_mode,
         "approval_policy": settings.approval_policy,
-        "status": "working" if session_id and session is None else "ready",
+        "status": "unavailable" if unavailable_reason else ("working" if session_id and session is None else "ready"),
+        "unavailable_reason": unavailable_reason,
         "context_window_tokens": context_window,
         "context_remaining_tokens": remaining_tokens,
         "context_remaining_percent": remaining_percent,
@@ -537,6 +553,58 @@ async def create_workspace_folder(payload: WorkspaceFolderCreate) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/api/worktrees")
+async def list_worktrees() -> dict:
+    try:
+        manager = _worktree_manager()
+        current_name = manager.name_for_path(workspace_manager.current_root)
+        return {
+            "items": [item.as_dict() for item in manager.list()],
+            "current": current_name,
+            "repo_root": str(manager.repo_root),
+        }
+    except WorktreeError as exc:
+        return {"items": [], "current": None, "repo_root": None, "error": str(exc)}
+
+
+@app.post("/api/worktrees", status_code=201)
+async def create_worktree(payload: WorktreeCreate) -> dict:
+    try:
+        manager = _worktree_manager()
+        created = manager.create(payload.name)
+        _switch_workspace(created["path"])
+        return created
+    except (WorktreeError, WorkspaceError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/worktrees/current/diff")
+async def current_worktree_diff() -> dict:
+    try:
+        manager = _worktree_manager()
+        current_name = manager.name_for_path(workspace_manager.current_root)
+        if current_name is None:
+            raise WorktreeError("当前项目不是 Nova 工作树，请先创建或切换到工作树")
+        result = manager.diff(current_name)
+        result["name"] = current_name
+        return result
+    except WorktreeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/worktrees/{name:path}")
+async def delete_worktree(name: str, discard: bool = Query(default=False)) -> dict:
+    try:
+        manager = _worktree_manager()
+        target_path = manager.path_for(name)
+        if workspace_manager.current_root == target_path.resolve():
+            _switch_workspace(str(manager.repo_root))
+        return manager.remove(name, discard=discard)
+    except WorktreeError as exc:
+        status_code = 409 if "discard=true" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+
 @app.get("/api/workspace/status", response_model=WorkspaceStatus)
 async def workspace_status() -> WorkspaceStatus:
     return WorkspaceStatus(
@@ -552,8 +620,8 @@ async def workspace_status() -> WorkspaceStatus:
             WorkspaceMode(
                 id="worktree",
                 label="工作树",
-                enabled=False,
-                description="隔离变更，后续版本实现。",
+                enabled=_git_available(),
+                description="隔离变更，在 .nova/worktrees 中创建 Git worktree。",
             ),
             WorkspaceMode(
                 id="cloud",
@@ -616,6 +684,14 @@ def _read_git_status() -> GitStatus:
     )
 
 
+def _git_available() -> bool:
+    try:
+        _git(["rev-parse", "--is-inside-work-tree"])
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    return True
+
+
 def _git(args: list[str]) -> str:
     result = subprocess.run(
         ["git", *args],
@@ -669,13 +745,20 @@ async def list_chat_timeline(session_id: str) -> dict:
 
 @app.get("/api/chat/sessions/{session_id}/runtime-state")
 async def chat_runtime_state(session_id: str) -> dict:
-    session = _get_current_chat_session(session_id, auto_switch=True)
+    unavailable_reason = None
+    try:
+        session = _get_current_chat_session(session_id, auto_switch=True)
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+        session = store.get_chat_session(session_id)
+        unavailable_reason = str(exc.detail)
     if session is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
     runtime = agent_sessions.runtime_state(session_id)
     return {
         "session": session.model_dump(mode="json"),
-        "timeline": {"items": _chat_timeline_items(session_id)},
+        "timeline": {"items": [] if unavailable_reason else _chat_timeline_items(session_id)},
         "runtime": runtime,
         "pending_approvals": [
             item.as_dict() for item in agent_sessions.list_pending_approvals(session_id=session_id)
@@ -683,6 +766,8 @@ async def chat_runtime_state(session_id: str) -> dict:
         "processes": process_manager.list_jobs(),
         "active": agent_sessions.is_active(session_id),
         "queued_messages": runtime["queued_messages"],
+        "unavailable": bool(unavailable_reason),
+        "unavailable_reason": unavailable_reason,
     }
 
 

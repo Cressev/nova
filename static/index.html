@@ -146,6 +146,19 @@
           </div>
           <button id="test-command" class="command-chip" type="button">测试命令加载中</button>
           <button id="serve-command" class="command-chip" type="button">启动命令加载中</button>
+          <div class="worktree-box">
+            <label>
+              <span>工作树名称</span>
+              <input id="worktree-name" value="nova-demo" autocomplete="off" />
+            </label>
+            <div class="worktree-actions">
+              <button id="worktree-create" type="button">创建并切换</button>
+              <button id="worktree-diff" type="button">查看 diff</button>
+              <button id="worktree-cleanup" type="button">清理</button>
+            </div>
+            <div id="worktree-list" class="worktree-list">工作树加载中</div>
+            <pre id="worktree-diff-output" class="worktree-diff-output"></pre>
+          </div>
         </section>
 
         <section class="inspector-card">

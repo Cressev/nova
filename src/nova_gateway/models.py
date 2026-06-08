@@ -54,6 +54,10 @@ class WorkspaceFolderCreate(BaseModel):
     path: str = Field(min_length=1, max_length=1200)
 
 
+class WorktreeCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+
+
 class RuntimeConfigUpdate(BaseModel):
     provider_model: str | None = Field(default=None, min_length=1, max_length=80)
     provider_base_url: str | None = Field(default=None, min_length=1, max_length=300)

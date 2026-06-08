@@ -775,6 +775,25 @@ class ApiTest(unittest.TestCase):
         self.assertTrue(runtime["cancel_requested"])
         self.assertEqual(runtime["final_answer"]["message_id"], "msg_assistant")
 
+    def test_unavailable_history_session_degrades_without_http_error(self) -> None:
+        missing_workspace = Path(tempfile.mkdtemp()) / "deleted-project"
+        session = app_module.ChatSession(
+            id=app_module.new_id("chat"),
+            title="不可用历史",
+            workspace=str(missing_workspace),
+        )
+        app_module.store.create_chat_session(session)
+        self.addCleanup(lambda: app_module.store.delete_chat_session(session.id))
+
+        runtime_response = self.client.get(f"/api/chat/sessions/{session.id}/runtime-state")
+        statusline_response = self.client.get("/api/runtime/statusline", params={"session_id": session.id})
+
+        self.assertEqual(runtime_response.status_code, 200)
+        self.assertTrue(runtime_response.json()["unavailable"])
+        self.assertIn("历史线程所属项目不可用", runtime_response.json()["unavailable_reason"])
+        self.assertEqual(statusline_response.status_code, 200)
+        self.assertEqual(statusline_response.json()["status"], "unavailable")
+
 
 if __name__ == "__main__":
     unittest.main()

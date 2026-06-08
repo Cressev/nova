@@ -22,6 +22,7 @@ const state = {
   workspaceDialogStatus: null,
   messagesRequestId: 0,
   runtimeConfig: null,
+  worktrees: null,
   statusline: null,
   statuslineItems: new Set(readStorageList("nova.statuslineItems", [
     "model",
@@ -57,6 +58,12 @@ const modePillEl = document.querySelector("#mode-pill");
 const permissionsListEl = document.querySelector("#permissions-list");
 const testCommandEl = document.querySelector("#test-command");
 const serveCommandEl = document.querySelector("#serve-command");
+const worktreeNameEl = document.querySelector("#worktree-name");
+const worktreeCreateEl = document.querySelector("#worktree-create");
+const worktreeDiffEl = document.querySelector("#worktree-diff");
+const worktreeCleanupEl = document.querySelector("#worktree-cleanup");
+const worktreeListEl = document.querySelector("#worktree-list");
+const worktreeDiffOutputEl = document.querySelector("#worktree-diff-output");
 const commandPaletteEl = document.querySelector("#command-palette");
 const toolCountEl = document.querySelector("#tool-count");
 const toolListEl = document.querySelector("#tool-list");
@@ -192,15 +199,18 @@ async function loadWorkspaceCandidates(query = "") {
 }
 
 async function loadRuntimePanels() {
-  const [config, tools, memory, statusline] = await Promise.all([
+  const [config, tools, memory, statusline, worktrees] = await Promise.all([
     api("/api/runtime/config"),
     api("/api/tools"),
     api("/api/memory/status"),
     loadStatuslineData(),
+    api("/api/worktrees"),
   ]);
   state.runtimeConfig = config;
+  state.worktrees = worktrees;
   state.statusline = statusline;
   renderRuntimeConfig(config);
+  renderWorktrees(worktrees);
   renderTools(tools.items || []);
   renderMemory(memory);
   renderStatusline();
@@ -487,6 +497,116 @@ function renderRuntimeConfig(config) {
     ["工作树", config.worktree_enabled ? "已启用" : "未实现"],
   ];
   renderKeyValueRows(configListEl, rows);
+}
+
+function renderWorktrees(worktrees) {
+  if (!worktreeListEl) {
+    return;
+  }
+  if (worktrees?.error) {
+    worktreeListEl.textContent = worktrees.error;
+    worktreeCleanupEl.disabled = true;
+    worktreeDiffEl.disabled = true;
+    worktreeDiffOutputEl.textContent = "当前项目不是 Git 仓库，工作树模式不可用。";
+    return;
+  }
+  const items = worktrees?.items || [];
+  const current = worktrees?.current || "";
+  worktreeCleanupEl.disabled = !current;
+  worktreeDiffEl.disabled = !current;
+  if (items.length === 0) {
+    worktreeListEl.innerHTML = '<span class="muted">暂无 Nova 工作树</span>';
+    return;
+  }
+  worktreeListEl.innerHTML = items.map((item) => `
+    <button type="button" data-worktree-path="${escapeHtml(item.path)}">
+      <strong>${escapeHtml(item.name)}${item.name === current ? " · 当前" : ""}</strong>
+      <span>${escapeHtml(item.branch || "")} · ${item.dirty_count || 0} 个改动</span>
+    </button>
+  `).join("");
+  for (const button of worktreeListEl.querySelectorAll("button[data-worktree-path]")) {
+    button.addEventListener("click", () => switchWorkspace(button.dataset.worktreePath));
+  }
+}
+
+async function createWorktreeFromPanel() {
+  const name = worktreeNameEl.value.trim();
+  if (!name) {
+    streamStateEl.textContent = "请输入工作树名称";
+    worktreeNameEl.focus();
+    return;
+  }
+  worktreeCreateEl.disabled = true;
+  streamStateEl.textContent = `正在创建并切换工作树 ${name}`;
+  try {
+    const created = await api("/api/worktrees", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+    worktreeDiffOutputEl.textContent = `已切换到 ${created.path}`;
+    await refreshWorkspaceSurface();
+    streamStateEl.textContent = `工作树 ${created.name} 已就绪`;
+  } catch (error) {
+    streamStateEl.textContent = `工作树创建失败：${error instanceof Error ? error.message : "未知错误"}`;
+  } finally {
+    worktreeCreateEl.disabled = false;
+  }
+}
+
+async function showCurrentWorktreeDiff() {
+  worktreeDiffEl.disabled = true;
+  worktreeDiffOutputEl.textContent = "正在读取当前工作树 diff";
+  try {
+    const result = await api("/api/worktrees/current/diff");
+    const diff = result.diff || "当前工作树没有未提交改动。";
+    worktreeDiffOutputEl.textContent = [
+      `工作树：${result.name}`,
+      `路径：${result.path}`,
+      `改动：${result.dirty_count}`,
+      "",
+      diff,
+    ].join("\n");
+    streamStateEl.textContent = "工作树 diff 已更新";
+  } catch (error) {
+    worktreeDiffOutputEl.textContent = error instanceof Error ? error.message : "diff 读取失败";
+    streamStateEl.textContent = "工作树 diff 读取失败";
+  } finally {
+    worktreeDiffEl.disabled = !state.worktrees?.current;
+  }
+}
+
+async function cleanupCurrentWorktree() {
+  const current = state.worktrees?.current;
+  if (!current) {
+    streamStateEl.textContent = "当前没有可清理的 Nova 工作树";
+    return;
+  }
+  const discard = window.confirm(`清理工作树 ${current} 会丢弃其中未提交改动，确认继续吗？`);
+  if (!discard) {
+    streamStateEl.textContent = "已取消工作树清理";
+    return;
+  }
+  worktreeCleanupEl.disabled = true;
+  streamStateEl.textContent = `正在清理工作树 ${current}`;
+  try {
+    await api(`/api/worktrees/${encodeURIComponent(current)}?discard=true`, { method: "DELETE" });
+    worktreeDiffOutputEl.textContent = `已清理工作树 ${current}`;
+    await refreshWorkspaceSurface();
+    streamStateEl.textContent = `工作树 ${current} 已清理`;
+  } catch (error) {
+    streamStateEl.textContent = `工作树清理失败：${error instanceof Error ? error.message : "未知错误"}`;
+  } finally {
+    worktreeCleanupEl.disabled = !state.worktrees?.current;
+  }
+}
+
+async function refreshWorkspaceSurface() {
+  await Promise.all([
+    loadWorkspaceStatus(),
+    loadRuntimePanels(),
+    loadSessions({ refreshMessages: false }),
+    refreshStatusline(),
+  ]);
 }
 
 function renderTools(items) {
@@ -884,6 +1004,29 @@ function renderEmptyState() {
   renderMessageRail();
 }
 
+function renderMessageLoadError(error) {
+  const message = error instanceof Error ? error.message : "历史线程读取失败";
+  messagesEl.innerHTML = `
+    <div class="empty-state error-state">
+      <h3>历史线程暂不可用</h3>
+      <p>${escapeHtml(message)}</p>
+      <div class="quick-actions">
+        <button type="button" data-prompt="/status 总结当前项目状态">/status</button>
+        <button type="button" data-prompt="/review 检查当前工作区">/review</button>
+      </div>
+    </div>
+  `;
+  for (const button of messagesEl.querySelectorAll("[data-prompt]")) {
+    button.addEventListener("click", () => {
+      messageEl.value = button.dataset.prompt;
+      messageEl.focus();
+      autoResizeTextarea();
+      updateCommandPalette();
+    });
+  }
+  renderMessageRail();
+}
+
 async function loadMessages() {
   if (!state.selectedSessionId) {
     renderEmptyState();
@@ -891,8 +1034,23 @@ async function loadMessages() {
   }
   const sessionId = state.selectedSessionId;
   const requestId = ++state.messagesRequestId;
-  const runtimeState = await api(`/api/chat/sessions/${sessionId}/runtime-state`);
+  let runtimeState;
+  try {
+    runtimeState = await api(`/api/chat/sessions/${sessionId}/runtime-state`);
+  } catch (error) {
+    if (requestId !== state.messagesRequestId || sessionId !== state.selectedSessionId) {
+      return;
+    }
+    renderMessageLoadError(error);
+    streamStateEl.textContent = "历史线程暂不可用";
+    return;
+  }
   if (requestId !== state.messagesRequestId || sessionId !== state.selectedSessionId) {
+    return;
+  }
+  if (runtimeState.unavailable) {
+    renderMessageLoadError(new Error(runtimeState.unavailable_reason || "历史线程所属项目不可用"));
+    streamStateEl.textContent = "历史线程暂不可用";
     return;
   }
   const items = runtimeState.timeline?.items || [];
@@ -1580,6 +1738,9 @@ memoryDialogCancelEl.addEventListener("click", () => {
 });
 
 memoryDialogSaveEl.addEventListener("click", saveMemoryDialog);
+worktreeCreateEl.addEventListener("click", createWorktreeFromPanel);
+worktreeDiffEl.addEventListener("click", showCurrentWorktreeDiff);
+worktreeCleanupEl.addEventListener("click", cleanupCurrentWorktree);
 
 settingsSaveEl.addEventListener("click", async () => {
   const payload = collectRuntimeSettings();

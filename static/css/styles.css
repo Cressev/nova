@@ -791,6 +791,18 @@ code {
   font-size: 13px;
 }
 
+.empty-state.error-state {
+  max-width: 680px;
+  border: 1px solid rgba(242, 184, 97, 0.24);
+  border-radius: 8px;
+  padding: 18px;
+  background: rgba(242, 184, 97, 0.06);
+}
+
+.empty-state.error-state h3 {
+  color: #ffd591;
+}
+
 .quick-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1528,6 +1540,129 @@ body.inspector-collapsed .inspector-toggle {
   background: rgba(255, 255, 255, 0.045);
   color: var(--text);
   text-align: left;
+}
+
+.worktree-box {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(115, 201, 244, 0.14);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.028);
+}
+
+.worktree-box label {
+  display: grid;
+  gap: 5px;
+}
+
+.worktree-box label span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.worktree-box input {
+  width: 100%;
+  min-height: 31px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 8px;
+  outline: 0;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.worktree-box input:focus {
+  border-color: rgba(115, 201, 244, 0.46);
+}
+
+.worktree-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 0.72fr;
+  gap: 6px;
+}
+
+.worktree-actions button,
+.worktree-list button {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 850;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    transform 150ms ease;
+}
+
+.worktree-actions button {
+  min-height: 31px;
+  padding: 5px 6px;
+}
+
+.worktree-actions button:hover,
+.worktree-list button:hover {
+  border-color: rgba(115, 201, 244, 0.42);
+  background: rgba(115, 201, 244, 0.08);
+}
+
+.worktree-actions button:disabled {
+  opacity: 0.46;
+}
+
+.worktree-list {
+  display: grid;
+  gap: 6px;
+}
+
+.worktree-list button {
+  display: grid;
+  gap: 3px;
+  min-height: 38px;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.worktree-list strong,
+.worktree-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worktree-list strong {
+  color: #bfe7ff;
+  font-size: 12px;
+}
+
+.worktree-list span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.worktree-diff-output {
+  max-height: 188px;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 7px;
+  background: rgba(0, 0, 0, 0.24);
+  color: #d7eadf;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.worktree-diff-output:empty {
+  display: none;
 }
 
 .permissions-list {
