@@ -14,6 +14,7 @@ from ..providers.bigmodel import BigModelProvider, ProviderError
 from ..tools.executor import ToolExecutor
 from ..tools.hooks import ToolHookRunner
 from ..tools.workspace import TOOL_SPECS, WorkspaceTools
+from .commands import builtin_help_text
 
 TOOL_CALL_PATTERN = re.compile(
     r"<tool_call>\s*(?P<payload>\{.*?\})\s*(?:</tool_call>)?",
@@ -738,11 +739,7 @@ class CodexLikeAgentRuntime:
             return "用法：/compact [可选压缩要求]。执行后会把当前会话摘要写入 .nova/memory/session.md，并继续注入后续对话。"
         if command == "/clear":
             return "请点击左侧“新对话”创建空线程；Nova 不会自动删除已有历史。"
-        return (
-            "可用内置指令：/status、/model、/tools、/permissions、/approvals、/sandbox、"
-            "/memory、/memory search、/memory summarize、/memory compact、/remember、"
-            "/ps、/kill、/review、/plan、/compact、/clear、/help。"
-        )
+        return builtin_help_text()
 
     def _compact_response(self, result: dict) -> str:
         summary = str(result.get("summary") or "")

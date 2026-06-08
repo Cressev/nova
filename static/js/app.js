@@ -41,6 +41,7 @@ const state = {
   inspectorCollapsed: readStorageBool("nova.inspectorCollapsed", false),
   statuslineCollapsed: readStorageBool("nova.statuslineCollapsed", false),
   settingsCollapsed: new Set(readStorageList("nova.settingsCollapsed")),
+  commands: BUILTIN_COMMANDS,
 };
 
 const healthEl = queryRequired("#health");
@@ -2610,7 +2611,7 @@ function updateCommandPalette() {
     return;
   }
   const query = value.split(/\s+/, 1)[0].toLowerCase();
-  const matches = BUILTIN_COMMANDS.filter((command) => command.name.startsWith(query));
+  const matches = state.commands.filter((command) => command.name.startsWith(query));
   if (matches.length === 0) {
     hideCommandPalette();
     return;
@@ -2626,8 +2627,9 @@ function updateCommandPalette() {
     const item = document.createElement("button");
     item.type = "button";
     item.className = "command-item";
+    const hint = command.argumentHint ? ` <em>${escapeHtml(command.argumentHint)}</em>` : "";
     item.innerHTML = `
-      <strong>${command.name}</strong>
+      <strong>${command.name}${hint}</strong>
       <span>${command.description}</span>
     `;
     item.addEventListener("click", () => fillCommand(command));
@@ -2651,7 +2653,25 @@ function hideCommandPalette() {
   commandMatches = [];
 }
 
+async function loadCommands() {
+  try {
+    const payload = await api("/api/commands");
+    state.commands = (payload.items || []).map((command) => ({
+      name: command.name,
+      description: command.description,
+      argumentHint: command.argument_hint || "",
+      group: command.group || "runtime",
+      source: command.source || "builtin",
+      aliases: command.aliases || [],
+    }));
+  } catch (error) {
+    state.commands = BUILTIN_COMMANDS;
+  }
+  updateCommandPalette();
+}
+
 loadHealth();
+loadCommands();
 loadWorkspaceStatus();
 loadRuntimePanels();
 loadSessions();

@@ -56,6 +56,36 @@ class ApiTest(unittest.TestCase):
         development_state = memory.json()["development_state"]
         self.assertTrue(all(not item["injected"] for item in development_state))
 
+    def test_builtin_commands_api_lists_complete_slash_registry(self) -> None:
+        response = self.client.get("/api/commands")
+
+        self.assertEqual(response.status_code, 200)
+        commands = response.json()["items"]
+        by_name = {command["name"]: command for command in commands}
+        for name in [
+            "/help",
+            "/status",
+            "/model",
+            "/tools",
+            "/permissions",
+            "/approvals",
+            "/sandbox",
+            "/memory",
+            "/remember",
+            "/ps",
+            "/jobs",
+            "/stop",
+            "/kill",
+            "/review",
+            "/plan",
+            "/compact",
+            "/clear",
+        ]:
+            self.assertIn(name, by_name)
+        self.assertEqual(by_name["/kill"]["argument_hint"], "<后台任务ID>")
+        self.assertEqual(by_name["/remember"]["argument_hint"], "<事实或偏好>")
+        self.assertTrue(all(command["source"] == "builtin" for command in commands))
+
     def test_runtime_config_update_takes_effect_without_restart(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             old_path = app_module.settings.runtime_config_file

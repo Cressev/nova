@@ -1737,7 +1737,7 @@ body.inspector-collapsed .inspector-toggle {
 .command-item {
   display: grid;
   grid-area: auto;
-  grid-template-columns: 92px minmax(0, 1fr);
+  grid-template-columns: minmax(132px, 0.42fr) minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   border: 0;
@@ -1757,6 +1757,16 @@ body.inspector-collapsed .inspector-toggle {
 .command-item strong {
   color: var(--green);
   font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-item em {
+  color: var(--faint);
+  font-style: normal;
+  font-weight: 500;
 }
 
 .command-item span {

@@ -120,6 +120,37 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertIn("已压缩记忆", compact)
         self.assertIn("memory/project.md", compact)
 
+    def test_builtin_help_lists_all_required_slash_commands(self) -> None:
+        text = self.runtime._builtin_response("/help", "/help")
+
+        for command in [
+            "/help",
+            "/status",
+            "/model",
+            "/tools",
+            "/permissions",
+            "/approvals",
+            "/sandbox",
+            "/memory",
+            "/remember",
+            "/ps",
+            "/jobs",
+            "/stop",
+            "/kill",
+            "/review",
+            "/plan",
+            "/compact",
+            "/clear",
+        ]:
+            self.assertIn(command, text)
+
+    def test_builtin_jobs_and_stop_aliases_are_executable(self) -> None:
+        jobs = self.runtime._builtin_response("/jobs", "/jobs")
+        stop = self.runtime._builtin_response("/stop", "/stop")
+
+        self.assertIn("后台任务", jobs)
+        self.assertIn("用法：/stop <后台任务ID>", stop)
+
     def test_memory_context_ignores_development_state_files(self) -> None:
         Path(self.tmpdir.name, "AGENTS.md").write_text("项目指令", encoding="utf-8")
         Path(self.tmpdir.name, "CURRENT.md").write_text("开发状态不应注入", encoding="utf-8")

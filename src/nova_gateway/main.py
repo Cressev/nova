@@ -22,6 +22,7 @@ from .memory import ProjectMemory
 from .providers.bigmodel import BigModelProvider, ProviderError
 from .processes.manager import ProcessManager
 from .runtime import CodexLikeAgentRuntime, DemoAgentRuntime
+from .runtime.commands import list_builtin_commands
 from .sessions import AgentSessionService, TaskStore
 from .tools.executor import ToolExecutor
 from .tools.workspace import WorkspaceTools
@@ -371,6 +372,11 @@ async def runtime_statusline(session_id: str | None = Query(default=None, max_le
 @app.get("/api/tools")
 async def tool_list() -> dict:
     return {"items": _workspace_tools().list_specs()}
+
+
+@app.get("/api/commands")
+async def command_list() -> dict:
+    return {"items": list_builtin_commands()}
 
 
 @app.get("/api/memory/status")
