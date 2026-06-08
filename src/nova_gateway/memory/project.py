@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -148,6 +149,23 @@ class ProjectMemory:
         path.write_text(content, encoding="utf-8")
         return self.read_file("index.md")
 
+    def compact_session(self, messages: list[Any], *, instruction: str = "") -> dict[str, Any]:
+        compacted_messages = [
+            message for message in messages if not self._message_content(message).lstrip().startswith("/compact")
+        ]
+        summary = self._build_session_summary(compacted_messages, instruction=instruction)
+        path = self.memory_dir / "session.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        before = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+        content = summary.rstrip()
+        if before.strip():
+            content += "\n\n---\n\n## 历史压缩摘要\n\n" + before.strip()[:18000]
+        path.write_text(content + "\n", encoding="utf-8")
+        result = self.read_file("session.md")
+        result["summary"] = summary
+        result["covered_messages"] = len(compacted_messages)
+        return result
+
     def search(self, query: str) -> list[dict[str, Any]]:
         needle = query.strip().lower()
         if not needle:
@@ -196,3 +214,69 @@ class ProjectMemory:
             clean = f"{clean}.md"
         root = self.global_persona_dir if self._normalize_persona_scope(scope) == "global" else self.persona_dir
         return root / clean
+
+    def _build_session_summary(self, messages: list[Any], *, instruction: str = "") -> str:
+        now = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+        user_messages = [self._message_content(message) for message in messages if self._message_role(message) == "user"]
+        assistant_messages = [
+            self._message_content(message) for message in messages if self._message_role(message) == "assistant"
+        ]
+        recent_messages = messages[-10:]
+        lines = [
+            "# 会话压缩摘要",
+            "",
+            "## 压缩记录",
+            f"- 时间：{now}",
+            f"- 项目：{self.project_root}",
+            f"- 覆盖消息数：{len(messages)}",
+        ]
+        if instruction.strip():
+            lines.append(f"- 用户压缩要求：{instruction.strip()[:500]}")
+        lines.extend(
+            [
+                "",
+                "## 当前目标",
+                self._bullet_or_empty(user_messages[-3:], "暂无明确用户目标。"),
+                "",
+                "## 已形成的关键结论",
+                self._bullet_or_empty(assistant_messages[-3:], "暂无助手结论。"),
+                "",
+                "## 最近对话",
+            ]
+        )
+        if recent_messages:
+            for message in recent_messages:
+                role = {"user": "用户", "assistant": "助手", "system": "系统", "error": "错误"}.get(
+                    self._message_role(message), self._message_role(message)
+                )
+                lines.append(f"- {role}：{self._compact_text(self._message_content(message), 420)}")
+        else:
+            lines.append("- 暂无可压缩消息。")
+        lines.extend(
+            [
+                "",
+                "## 接续提示",
+                "- 后续对话应优先读取本文件，保留用户目标、当前决策和最近上下文。",
+                "- 如果摘要与代码或用户最新指令冲突，以代码和用户最新指令为准。",
+            ]
+        )
+        return "\n".join(lines)
+
+    def _message_role(self, message: Any) -> str:
+        role = getattr(message, "role", "")
+        return str(getattr(role, "value", role)).lower()
+
+    def _message_content(self, message: Any) -> str:
+        return str(getattr(message, "content", "") or "").strip()
+
+    def _bullet_or_empty(self, items: list[str], empty: str) -> str:
+        cleaned = [self._compact_text(item, 360) for item in items if item.strip()]
+        if not cleaned:
+            return f"- {empty}"
+        return "\n".join(f"- {item}" for item in cleaned)
+
+    def _compact_text(self, text: str, limit: int) -> str:
+        compact = " ".join(text.split())
+        if len(compact) <= limit:
+            return compact
+        return compact[: limit - 1].rstrip() + "…"

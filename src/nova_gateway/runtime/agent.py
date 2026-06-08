@@ -63,7 +63,7 @@ class CodexLikeAgentRuntime:
         latest_user = self._latest_user_content(messages)
         if latest_user.startswith("/"):
             yield {"type": "agent_status", "status": "处理内置指令"}
-            async for event in self._handle_builtin_command(latest_user):
+            async for event in self._handle_builtin_command(latest_user, messages):
                 yield event
             return
         direct_tool_calls = self._direct_tool_calls_from_user(latest_user)
@@ -621,9 +621,24 @@ class CodexLikeAgentRuntime:
                 return message.content.strip()
         return ""
 
-    async def _handle_builtin_command(self, content: str) -> AsyncIterator[dict]:
+    async def _handle_builtin_command(self, content: str, messages: list[ChatMessage] | None = None) -> AsyncIterator[dict]:
         command = content.split(maxsplit=1)[0].lower()
-        text = self._builtin_response(command, content)
+        if command == "/compact":
+            yield {"type": "agent_status", "status": "写入压缩边界和会话摘要"}
+            parts = content.split(maxsplit=1)
+            instruction = parts[1].strip() if len(parts) > 1 else ""
+            result = self.memory.compact_session(messages or [], instruction=instruction)
+            text = self._compact_response(result)
+            yield {
+                "type": "compact_done",
+                "title": "Conversation compacted",
+                "message": "会话已压缩，摘要已写入 .nova/memory/session.md。",
+                "summary": result.get("summary", ""),
+                "path": result.get("path", ""),
+                "covered_messages": result.get("covered_messages", 0),
+            }
+        else:
+            text = self._builtin_response(command, content)
         for chunk in self._chunk_text(text, 36):
             yield {"type": "assistant_delta", "delta": chunk}
         yield {"type": "assistant_done_content", "content": text}
@@ -704,12 +719,23 @@ class CodexLikeAgentRuntime:
         if command == "/plan":
             return "请在 /plan 后写目标和验收标准；Nova 会先拆步骤，再按步骤调用工具执行。"
         if command == "/compact":
-            return "当前版本保留完整历史；后续压缩会把长会话摘要写入 .nova/memory/session.md。"
+            return "用法：/compact [可选压缩要求]。执行后会把当前会话摘要写入 .nova/memory/session.md，并继续注入后续对话。"
         if command == "/clear":
             return "请点击左侧“新对话”创建空线程；Nova 不会自动删除已有历史。"
         return (
             "可用内置指令：/status、/model、/tools、/permissions、/approvals、/sandbox、"
             "/memory、/remember、/ps、/kill、/review、/plan、/compact、/clear、/help。"
+        )
+
+    def _compact_response(self, result: dict) -> str:
+        summary = str(result.get("summary") or "")
+        preview = summary[:1200].rstrip()
+        return (
+            "会话已压缩，摘要已写入 `.nova/memory/session.md`，后续对话会继续注入这份会话记忆。\n\n"
+            f"覆盖消息数：{result.get('covered_messages', 0)}\n"
+            f"文件路径：{result.get('path', '')}\n\n"
+            "摘要预览：\n"
+            + preview
         )
 
     def _system_prompt(self) -> str:

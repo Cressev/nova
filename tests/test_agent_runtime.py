@@ -81,6 +81,28 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertIn("AGENTS.md", text)
         self.assertIn("CURRENT.md", text)
 
+    def test_builtin_compact_writes_session_memory_and_emits_boundary(self) -> None:
+        from nova_gateway.models import ChatMessage, ChatRole
+
+        messages = [
+            ChatMessage(session_id="s", role=ChatRole.USER, content="我要做一个对标 Codex 的网页 Agent。"),
+            ChatMessage(session_id="s", role=ChatRole.ASSISTANT, content="先补齐工具调用和权限审批。"),
+            ChatMessage(session_id="s", role=ChatRole.USER, content="/compact"),
+        ]
+
+        async def collect_events() -> list[dict]:
+            return [event async for event in self.runtime.stream(messages)]
+
+        events = asyncio.run(collect_events())
+        text = "".join(event.get("delta", "") for event in events if event["type"] == "assistant_delta")
+        session_memory = Path(self.tmpdir.name, ".nova", "memory", "session.md").read_text(encoding="utf-8")
+
+        self.assertIn("会话已压缩", text)
+        self.assertIn("对标 Codex", session_memory)
+        self.assertIn("先补齐工具调用", session_memory)
+        self.assertTrue(any(event["type"] == "compact_done" for event in events))
+        self.assertTrue(any(event["type"] == "agent_status" and "压缩边界" in event["status"] for event in events))
+
     def test_memory_context_ignores_development_state_files(self) -> None:
         Path(self.tmpdir.name, "AGENTS.md").write_text("项目指令", encoding="utf-8")
         Path(self.tmpdir.name, "CURRENT.md").write_text("开发状态不应注入", encoding="utf-8")

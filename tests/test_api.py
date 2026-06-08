@@ -497,6 +497,57 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(len(stored), 1)
         self.assertEqual(stored[0]["type"], "permission")
 
+    def test_stream_maps_compact_runtime_event(self) -> None:
+        async def fake_agent_stream(messages):
+            yield {
+                "type": "compact_done",
+                "title": "Conversation compacted",
+                "message": "会话已压缩，摘要已写入 .nova/memory/session.md。",
+                "summary": "# 会话压缩摘要\n- 对标 Codex",
+                "path": "/tmp/project/.nova/memory/session.md",
+                "covered_messages": 3,
+            }
+            yield {"type": "assistant_delta", "delta": "会话已压缩"}
+            yield {"type": "assistant_done_content", "content": "会话已压缩"}
+
+        session_response = self.client.post(
+            "/api/chat/sessions",
+            json={"title": "压缩事件测试"},
+        )
+        session = session_response.json()
+
+        class FakeRuntime:
+            stream = staticmethod(fake_agent_stream)
+
+        with patch.object(app_module, "_agent_runtime", lambda: FakeRuntime()):
+            with self.client.stream(
+                "POST",
+                f"/api/chat/sessions/{session['id']}/stream",
+                json={"content": "/compact"},
+            ) as response:
+                self.assertEqual(response.status_code, 200)
+                lines = [line for line in response.iter_lines() if line.strip()]
+
+        runtime_events = [
+            app_module.json.loads(line)["event"]
+            for line in lines
+            if app_module.json.loads(line).get("type") == "runtime_event"
+        ]
+        compact_events = [event for event in runtime_events if event["event_type"] == "memory.compacted"]
+        self.assertEqual(len(compact_events), 1)
+        self.assertEqual(compact_events[0]["category"], "status")
+        self.assertEqual(compact_events[0]["data"]["covered_messages"], 3)
+        self.assertIn("对标 Codex", compact_events[0]["data"]["summary"])
+
+        timeline = self.client.get(f"/api/chat/sessions/{session['id']}/timeline")
+        stored = [
+            item["item"]
+            for item in timeline.json()["items"]
+            if item["kind"] == "event" and item["item"].get("event_type") == "memory.compacted"
+        ]
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(stored[0]["type"], "status")
+
     def test_stream_processes_queued_messages_after_current_turn(self) -> None:
         seen_prompts: list[str] = []
 

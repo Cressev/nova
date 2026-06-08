@@ -2161,6 +2161,11 @@ async function streamAssistant(sessionId, content, assistantNode) {
     if (event.event_type?.startsWith("hook.")) {
       appendStatusEvent(event.title || "Hook 事件", { beforeNode: currentAssistantNode });
       updateTurnToolControl(currentAssistantNode);
+      return;
+    }
+    if (event.type === "status" || event.event_type === "memory.compacted") {
+      appendStatusEvent(event.title || event.message || "运行状态更新", { beforeNode: currentAssistantNode });
+      updateTurnToolControl(currentAssistantNode);
     }
   };
   const handleQueuedMessage = (event) => {

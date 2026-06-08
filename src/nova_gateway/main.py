@@ -1103,6 +1103,19 @@ def _runtime_event_from_agent_event(event: dict, build_event) -> dict | None:
             title=status,
             message=status,
         )
+    if event_type == "compact_done":
+        return build_event(
+            "memory.compacted",
+            category="status",
+            phase="completed",
+            title=str(event.get("title") or "上下文已压缩"),
+            message=str(event.get("message") or "会话摘要已写入 .nova/memory/session.md。"),
+            data={
+                "summary": str(event.get("summary") or ""),
+                "path": str(event.get("path") or ""),
+                "covered_messages": int(event.get("covered_messages") or 0),
+            },
+        )
     return None
 
 

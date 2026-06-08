@@ -1,4 +1,6 @@
 const assert = require("node:assert");
+const fs = require("node:fs");
+const path = require("node:path");
 
 (async () => {
   const { consumeStreamLines } = await import("../static/js/runtime/stream.js");
@@ -28,4 +30,8 @@ const assert = require("node:assert");
   assert.deepStrictEqual(result.rest, "");
   assert.strictEqual(seen.length, 1);
   assert.strictEqual(seen[0].event_type, "turn.started");
+
+  const appSource = fs.readFileSync(path.join(__dirname, "../static/js/app.js"), "utf8");
+  assert.match(appSource, /event_type === "memory\.compacted"/);
+  assert.match(appSource, /appendStatusEvent\(event\.title \|\| event\.message \|\| "运行状态更新"/);
 })();
