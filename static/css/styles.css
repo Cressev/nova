@@ -502,6 +502,97 @@ body.sidebar-collapsed.inspector-collapsed .app-shell {
   background: rgba(115, 201, 244, 0.08);
 }
 
+.process-panel,
+.process-list {
+  display: grid;
+  gap: 8px;
+}
+
+.process-item {
+  display: grid;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 7px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.process-item.running {
+  border-color: rgba(115, 201, 244, 0.32);
+}
+
+.process-item.killed,
+.process-item.failed,
+.process-item.timeout {
+  border-color: rgba(255, 111, 97, 0.34);
+}
+
+.process-head,
+.process-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.process-head strong {
+  font-size: 11px;
+}
+
+.process-head span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.process-item code,
+.process-item small,
+.process-empty {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.process-output {
+  max-height: 150px;
+  margin: 0;
+  overflow: auto;
+  border-radius: 7px;
+  padding: 7px;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.process-output:empty {
+  display: none;
+}
+
+.process-actions button {
+  min-height: 27px;
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 5px 8px;
+  background: rgba(14, 17, 16, 0.62);
+  color: var(--text);
+  font-size: 11px;
+}
+
+.process-actions button:disabled {
+  opacity: 0.45;
+}
+
+.process-actions button:not(:disabled):hover {
+  border-color: rgba(115, 201, 244, 0.46);
+  background: rgba(115, 201, 244, 0.08);
+}
+
 .mcp-tool {
   width: 100%;
   padding: 6px 7px;

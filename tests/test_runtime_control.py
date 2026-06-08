@@ -113,6 +113,10 @@ class RuntimeControlTest(unittest.TestCase):
             self.assertTrue(any(item["id"] == job["id"] for item in jobs))
             killed = manager.kill(job["id"])
             self.assertEqual(killed["status"], "killed")
+            deadline = time.monotonic() + 1.5
+            while time.monotonic() < deadline and manager.get(job["id"])["status"] == "killed":
+                time.sleep(0.05)
+            self.assertEqual(manager.get(job["id"])["status"], "killed")
 
     def test_process_manager_emits_foreground_output_before_process_exits(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

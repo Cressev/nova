@@ -251,7 +251,9 @@ class ProcessManager:
                 continue
             if chunk:
                 self._append(job, stream, chunk)
-        self._finish(job, "completed" if job.process.returncode == 0 else "failed")
+        with self._lock:
+            terminal_status = job.status if job.status in {"killed", "cancelled", "timeout"} else None
+        self._finish(job, terminal_status or ("completed" if job.process.returncode == 0 else "failed"))
         self._close_pipes(job)
 
     def _append(self, job: ProcessJob, stream: str, chunk: str) -> None:

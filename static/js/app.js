@@ -40,6 +40,7 @@ const state = {
   runtimePanelsRequestId: 0,
   runtimeConfig: null,
   worktrees: null,
+  processes: [],
   statusline: null,
   statuslineItems: ensureStatuslineDefaults(readStorageList("nova.statuslineItems", DEFAULT_STATUSLINE_ITEMS)),
   sidebarCollapsed: readStorageBool("nova.sidebarCollapsed", false),
@@ -94,6 +95,8 @@ const worktreeDiffEl = document.querySelector("#worktree-diff");
 const worktreeCleanupEl = document.querySelector("#worktree-cleanup");
 const worktreeListEl = document.querySelector("#worktree-list");
 const worktreeDiffOutputEl = document.querySelector("#worktree-diff-output");
+const processStateEl = document.querySelector("#process-state");
+const processListEl = document.querySelector("#process-list");
 const commandPaletteEl = document.querySelector("#command-palette");
 const toolCountEl = document.querySelector("#tool-count");
 const toolListEl = document.querySelector("#tool-list");
@@ -255,13 +258,14 @@ async function loadWorkspaceCandidates(query = "") {
 
 async function loadRuntimePanels() {
   const requestId = ++state.runtimePanelsRequestId;
-  const [config, tools, mcp, lsp, review, subagents, skills, memory, statusline, worktrees] = await Promise.all([
+  const [config, tools, mcp, lsp, review, subagents, processes, skills, memory, statusline, worktrees] = await Promise.all([
     api("/api/runtime/config"),
     api("/api/tools"),
     api("/api/mcp/status"),
     api("/api/lsp/status"),
     api("/api/review/summary"),
     api("/api/subagents"),
+    api("/api/processes"),
     api("/api/skills/status"),
     api("/api/memory/status"),
     loadStatuslineData(),
@@ -277,6 +281,7 @@ async function loadRuntimePanels() {
   state.lsp = lsp;
   state.review = review;
   state.subagents = subagents.items || [];
+  state.processes = processes.items || [];
   state.skills = skills;
   renderRuntimeConfig(config);
   renderWorktrees(worktrees);
@@ -285,6 +290,7 @@ async function loadRuntimePanels() {
   renderLspPanel(lsp);
   renderReviewPanel(review);
   renderSubagentsPanel(state.subagents);
+  renderProcessesPanel(state.processes);
   renderSkillsPanel(skills);
   renderMemory(memory);
   renderStatusline();
@@ -1018,6 +1024,81 @@ async function closeSubagent(id) {
     streamStateEl.textContent = `子 Agent ${shortId(id)} 已关闭`;
   } catch (error) {
     streamStateEl.textContent = `关闭子 Agent 失败：${error instanceof Error ? error.message : "未知错误"}`;
+  }
+}
+
+function renderProcessesPanel(processes = []) {
+  if (!processListEl || !processStateEl) {
+    return;
+  }
+  const items = Array.isArray(processes) ? processes : [];
+  const runningCount = items.filter((process) => ["running", "started"].includes(process.status)).length;
+  processStateEl.textContent = `${runningCount}`;
+  if (items.length === 0) {
+    processListEl.innerHTML = '<small class="process-empty">暂无后台任务</small>';
+    return;
+  }
+  processListEl.innerHTML = items.map((process) => {
+    const status = process.status || "unknown";
+    return `
+      <article class="process-item ${escapeHtml(status)}" data-process-id="${escapeHtml(process.id || "")}">
+        <div class="process-head">
+          <strong>${escapeHtml(shortId(process.id || "proc"))}</strong>
+          <span>${escapeHtml(status)}</span>
+        </div>
+        <code>${escapeHtml(shortText(process.command || "", 180))}</code>
+        <small>${escapeHtml(process.cwd || "")}</small>
+        <div class="process-actions">
+          <button type="button" data-action="inspect">Output</button>
+          <button type="button" data-action="kill" ${status === "running" ? "" : "disabled"}>Kill</button>
+        </div>
+        <pre class="process-output"></pre>
+      </article>
+    `;
+  }).join("");
+  processListEl.querySelectorAll(".process-item").forEach((item) => {
+    const id = item.dataset.processId || "";
+    item.querySelector('[data-action="inspect"]')?.addEventListener("click", () => inspectProcess(item, id));
+    item.querySelector('[data-action="kill"]')?.addEventListener("click", () => killProcess(id));
+  });
+}
+
+async function refreshProcessesPanel() {
+  const payload = await api("/api/processes");
+  state.processes = payload.items || [];
+  renderProcessesPanel(state.processes);
+  await refreshStatusline();
+}
+
+async function inspectProcess(item, id) {
+  const output = item.querySelector(".process-output");
+  if (!id || !output) {
+    return;
+  }
+  output.textContent = "正在读取输出...";
+  try {
+    const process = await api(`/api/processes/${encodeURIComponent(id)}`);
+    output.textContent = [
+      process.stdout ? `stdout:\n${process.stdout}` : "",
+      process.stderr ? `stderr:\n${process.stderr}` : "",
+      !process.stdout && !process.stderr ? "暂无输出" : "",
+    ].filter(Boolean).join("\n\n");
+  } catch (error) {
+    output.textContent = `读取失败：${error instanceof Error ? error.message : "未知错误"}`;
+  }
+}
+
+async function killProcess(id) {
+  if (!id) {
+    return;
+  }
+  streamStateEl.textContent = `正在终止后台任务 ${shortId(id)}`;
+  try {
+    await api(`/api/processes/${encodeURIComponent(id)}`, { method: "DELETE" });
+    streamStateEl.textContent = `后台任务 ${shortId(id)} 已终止`;
+    await refreshProcessesPanel();
+  } catch (error) {
+    streamStateEl.textContent = `终止后台任务失败：${error instanceof Error ? error.message : "未知错误"}`;
   }
 }
 
