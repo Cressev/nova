@@ -27,6 +27,7 @@ const state = {
   workspaceDialogRequestId: 0,
   workspaceDialogStatus: null,
   messagesRequestId: 0,
+  runtimePanelsRequestId: 0,
   runtimeConfig: null,
   worktrees: null,
   statusline: null,
@@ -46,6 +47,7 @@ const state = {
   mcp: null,
   lsp: null,
   review: null,
+  subagents: [],
   skills: null,
 };
 
@@ -72,6 +74,9 @@ const reviewTestsEl = document.querySelector("#review-tests");
 const reviewRunTestsEl = document.querySelector("#review-run-tests");
 const reviewRefreshEl = document.querySelector("#review-refresh");
 const reviewTestOutputEl = document.querySelector("#review-test-output");
+const subagentSpawnEl = document.querySelector("#subagent-spawn");
+const subagentPromptEl = document.querySelector("#subagent-prompt");
+const subagentListEl = document.querySelector("#subagent-list");
 const modeListEl = document.querySelector("#mode-list");
 const modePillEl = document.querySelector("#mode-pill");
 const skillCountEl = document.querySelector("#skill-count");
@@ -225,23 +230,29 @@ async function loadWorkspaceCandidates(query = "") {
 }
 
 async function loadRuntimePanels() {
-  const [config, tools, mcp, lsp, review, skills, memory, statusline, worktrees] = await Promise.all([
+  const requestId = ++state.runtimePanelsRequestId;
+  const [config, tools, mcp, lsp, review, subagents, skills, memory, statusline, worktrees] = await Promise.all([
     api("/api/runtime/config"),
     api("/api/tools"),
     api("/api/mcp/status"),
     api("/api/lsp/status"),
     api("/api/review/summary"),
+    api("/api/subagents"),
     api("/api/skills/status"),
     api("/api/memory/status"),
     loadStatuslineData(),
     api("/api/worktrees"),
   ]);
+  if (requestId !== state.runtimePanelsRequestId) {
+    return;
+  }
   state.runtimeConfig = config;
   state.worktrees = worktrees;
   state.statusline = statusline;
   state.mcp = mcp;
   state.lsp = lsp;
   state.review = review;
+  state.subagents = subagents.items || [];
   state.skills = skills;
   renderRuntimeConfig(config);
   renderWorktrees(worktrees);
@@ -249,6 +260,7 @@ async function loadRuntimePanels() {
   renderMcpPanel(mcp);
   renderLspPanel(lsp);
   renderReviewPanel(review);
+  renderSubagentsPanel(state.subagents);
   renderSkillsPanel(skills);
   renderMemory(memory);
   renderStatusline();
@@ -879,6 +891,108 @@ async function runReviewTests(index = "0") {
     if (reviewRunTestsEl) {
       reviewRunTestsEl.disabled = false;
     }
+  }
+}
+
+function renderSubagentsPanel(subagents = []) {
+  if (!subagentListEl) {
+    return;
+  }
+  const items = Array.isArray(subagents) ? subagents : [];
+  if (items.length === 0) {
+    subagentListEl.innerHTML = '<small class="subagent-empty">暂无子 Agent</small>';
+    return;
+  }
+  subagentListEl.innerHTML = items.map((agent) => {
+    const status = agent.status || "unknown";
+    const result = agent.result || agent.error || "";
+    const prompt = agent.prompt || "";
+    return `
+      <article class="subagent-item ${escapeHtml(status)}" data-subagent-id="${escapeHtml(agent.id || "")}">
+        <div class="subagent-head">
+          <strong>${escapeHtml(agent.name || "worker")}</strong>
+          <span>${escapeHtml(status)}</span>
+        </div>
+        <p>${escapeHtml(shortText(prompt, 120))}</p>
+        ${result ? `<pre>${escapeHtml(shortText(result, 1000))}</pre>` : ""}
+        <div class="subagent-actions">
+          <button type="button" data-action="wait">Wait</button>
+          <button type="button" data-action="close">Close</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+  subagentListEl.querySelectorAll(".subagent-item").forEach((item) => {
+    const id = item.dataset.subagentId || "";
+    item.querySelector('[data-action="wait"]')?.addEventListener("click", () => waitSubagent(id));
+    item.querySelector('[data-action="close"]')?.addEventListener("click", () => closeSubagent(id));
+  });
+}
+
+async function refreshSubagentsPanel() {
+  state.runtimePanelsRequestId += 1;
+  const payload = await api("/api/subagents");
+  state.subagents = payload.items || [];
+  renderSubagentsPanel(state.subagents);
+  renderStatusline();
+}
+
+async function spawnSubagent() {
+  if (!subagentPromptEl || !subagentSpawnEl) {
+    return;
+  }
+  const prompt = subagentPromptEl.value.trim();
+  if (!prompt) {
+    streamStateEl.textContent = "请输入要委派给子 Agent 的任务";
+    subagentPromptEl.focus();
+    return;
+  }
+  subagentSpawnEl.disabled = true;
+  streamStateEl.textContent = "正在创建子 Agent";
+  try {
+    await api("/api/subagents", {
+      method: "POST",
+      body: JSON.stringify({ prompt, name: "worker" }),
+    });
+    subagentPromptEl.value = "";
+    streamStateEl.textContent = "子 Agent 已创建";
+    await refreshSubagentsPanel();
+  } catch (error) {
+    streamStateEl.textContent = `子 Agent 创建失败：${error instanceof Error ? error.message : "未知错误"}`;
+  } finally {
+    subagentSpawnEl.disabled = false;
+  }
+}
+
+async function waitSubagent(id) {
+  if (!id) {
+    return;
+  }
+  streamStateEl.textContent = `等待子 Agent ${shortId(id)}`;
+  try {
+    const agent = await api(`/api/subagents/${encodeURIComponent(id)}/wait`, {
+      method: "POST",
+      body: JSON.stringify({ timeout_ms: 5000 }),
+    });
+    state.subagents = [agent, ...state.subagents.filter((item) => item.id !== id)];
+    renderSubagentsPanel(state.subagents);
+    streamStateEl.textContent = `子 Agent ${shortId(id)} 状态：${agent.status}`;
+  } catch (error) {
+    streamStateEl.textContent = `等待子 Agent 失败：${error instanceof Error ? error.message : "未知错误"}`;
+  }
+}
+
+async function closeSubagent(id) {
+  if (!id) {
+    return;
+  }
+  try {
+    const agent = await api(`/api/subagents/${encodeURIComponent(id)}`, { method: "DELETE" });
+    state.subagents = [agent, ...state.subagents.filter((item) => item.id !== id)];
+    renderSubagentsPanel(state.subagents);
+    streamStateEl.textContent = `子 Agent ${shortId(id)} 已关闭`;
+  } catch (error) {
+    streamStateEl.textContent = `关闭子 Agent 失败：${error instanceof Error ? error.message : "未知错误"}`;
   }
 }
 
@@ -2259,6 +2373,13 @@ worktreeDiffEl.addEventListener("click", showCurrentWorktreeDiff);
 worktreeCleanupEl.addEventListener("click", cleanupCurrentWorktree);
 reviewRefreshEl?.addEventListener("click", refreshReviewPanel);
 reviewRunTestsEl?.addEventListener("click", () => runReviewTests("0"));
+subagentSpawnEl?.addEventListener("click", spawnSubagent);
+subagentPromptEl?.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    event.preventDefault();
+    spawnSubagent();
+  }
+});
 
 settingsSaveEl.addEventListener("click", async () => {
   const payload = collectRuntimeSettings();

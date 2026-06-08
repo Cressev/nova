@@ -155,6 +155,17 @@
 
         <section class="inspector-card">
           <div class="card-title">
+            <span>Sub Agents</span>
+            <button id="subagent-spawn" class="ghost-button" type="button">Spawn</button>
+          </div>
+          <div class="subagent-panel">
+            <textarea id="subagent-prompt" rows="3" placeholder="委派一个只读子任务"></textarea>
+            <div id="subagent-list" class="subagent-list">子 Agent 加载中</div>
+          </div>
+        </section>
+
+        <section class="inspector-card">
+          <div class="card-title">
             <span>Run</span>
             <strong>本地</strong>
           </div>

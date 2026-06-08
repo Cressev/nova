@@ -28,6 +28,7 @@ from .runtime import CodexLikeAgentRuntime, DemoAgentRuntime
 from .runtime.commands import list_builtin_commands
 from .sessions import AgentSessionService, TaskStore
 from .skills import SkillManager
+from .subagents import SubAgentManager, SubAgentRun
 from .tools.executor import ToolExecutor
 from .tools.workspace import WorkspaceTools
 from .models import (
@@ -74,6 +75,7 @@ provider = BigModelProvider(
     api_key_file=settings.runtime_secret_file,
 )
 process_manager = ProcessManager()
+subagent_manager = SubAgentManager(settings.project_root)
 agent_sessions = AgentSessionService()
 pending_approvals = agent_sessions.pending_approvals
 _active_session_turns = agent_sessions.active_session_ids
@@ -121,6 +123,48 @@ def _agent_runtime() -> CodexLikeAgentRuntime:
         tool_hooks_file=_workspace_tool_hooks_file(),
         process_manager=process_manager,
     )
+
+
+def _subagent_runner(run: SubAgentRun) -> str:
+    """在受限上下文中运行一个子 Agent；模型不可用时回退到本地摘要。"""
+
+    async def collect() -> str:
+        runtime = CodexLikeAgentRuntime(
+            provider=provider,
+            project_root=Path(run.workspace),
+            global_agent_file=settings.global_agent_file,
+            max_tool_rounds=min(settings.max_tool_rounds, 4),
+            permission_mode="read_only",
+            sandbox_mode="read_only",
+            approval_policy="never",
+            network_access=False,
+            process_manager=ProcessManager(),
+        )
+        prompt = (
+            "你是 Nova 的子 Agent。只处理下面委派给你的范围，不要再 spawn 子 Agent。"
+            "先用只读方式核对事实，最后必须用以下格式回答：\n"
+            "Scope: <你的任务范围>\nResult: <结论>\nKey files: <相关文件>\nIssues: <需要主 Agent 知道的问题>\n\n"
+            f"委派任务：{run.prompt}"
+        )
+        content = ""
+        messages = [ChatMessage(session_id=run.id, role=ChatRole.USER, content=prompt)]
+        async for event in runtime.stream(messages):
+            if run.cancel_requested:
+                return content or "Scope: 已取消\nResult: 子 Agent 收到取消请求。"
+            if event.get("type") == "agent_status":
+                run.add_event("status", str(event.get("status") or "子 Agent 状态"))
+            if event.get("type") == "assistant_done_content":
+                content = str(event.get("content") or "")
+        return content or "Scope: 子 Agent\nResult: 未收到模型最终回答。"
+
+    try:
+        return asyncio.run(asyncio.wait_for(collect(), timeout=20.0))
+    except (asyncio.TimeoutError, ProviderError, RuntimeError, OSError, ValueError) as exc:
+        run.add_event("fallback", "子 Agent 使用本地兜底", f"{type(exc).__name__}: {exc}")
+        return SubAgentManager(Path(run.workspace))._local_summary_runner(run)
+
+
+subagent_manager.default_runner = _subagent_runner
 
 
 @contextmanager
@@ -619,6 +663,51 @@ async def deny_tool_call(approval_id: str, payload: dict | None = None) -> dict:
 @app.get("/api/processes")
 async def list_processes() -> dict:
     return {"items": process_manager.list_jobs()}
+
+
+@app.get("/api/subagents")
+async def list_subagents() -> dict:
+    return {"items": subagent_manager.list()}
+
+
+@app.post("/api/subagents", status_code=201)
+async def spawn_subagent(payload: dict) -> dict:
+    prompt = str(payload.get("prompt") or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="prompt is required")
+    name = str(payload.get("name") or "worker").strip()
+    return subagent_manager.spawn(
+        prompt=prompt,
+        name=name,
+        project_root=workspace_manager.current_root,
+    )
+
+
+@app.get("/api/subagents/{agent_id}")
+async def get_subagent(agent_id: str) -> dict:
+    run = subagent_manager.get(agent_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Subagent not found")
+    return run
+
+
+@app.post("/api/subagents/{agent_id}/wait")
+async def wait_subagent(agent_id: str, payload: dict | None = None) -> dict:
+    timeout_ms = 1000
+    if isinstance(payload, dict):
+        timeout_ms = int(payload.get("timeout_ms") or timeout_ms)
+    run = subagent_manager.wait(agent_id, timeout_ms=timeout_ms)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Subagent not found")
+    return run
+
+
+@app.delete("/api/subagents/{agent_id}")
+async def close_subagent(agent_id: str) -> dict:
+    run = subagent_manager.close(agent_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Subagent not found")
+    return run
 
 
 @app.get("/api/processes/{job_id}")
