@@ -413,7 +413,47 @@ async def remember(payload: dict) -> dict:
     text = str(payload.get("text") or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="text is required")
-    return _agent_runtime().memory.append_fact(text)
+    return _agent_runtime().memory.propose_fact(text, source="api:remember")
+
+
+@app.get("/api/memory/candidates")
+async def memory_candidates(include_resolved: bool = Query(default=False)) -> dict:
+    return {"items": _agent_runtime().memory.memory_candidates(include_resolved=include_resolved)}
+
+
+@app.post("/api/memory/candidates/{candidate_id}/approve")
+async def approve_memory_candidate(candidate_id: str) -> dict:
+    try:
+        return _agent_runtime().memory.approve_candidate(candidate_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Memory candidate not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/memory/candidates/{candidate_id}/edit")
+async def edit_memory_candidate(candidate_id: str, payload: dict) -> dict:
+    content = str(payload.get("content") or "").strip()
+    name = str(payload.get("name") or "index.md")
+    if not content:
+        raise HTTPException(status_code=400, detail="content is required")
+    try:
+        return _agent_runtime().memory.edit_candidate(candidate_id, content=content, name=name)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Memory candidate not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/memory/candidates/{candidate_id}/deny")
+async def deny_memory_candidate(candidate_id: str, payload: dict) -> dict:
+    reason = str(payload.get("reason") or "").strip()
+    try:
+        return _agent_runtime().memory.deny_candidate(candidate_id, reason=reason)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Memory candidate not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/api/approvals/pending")

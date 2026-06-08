@@ -4,6 +4,14 @@
 
 ---
 
+https://jcnu7fvwv6c8.feishu.cn/docx/WetFdF7Nqos7jrxxvxgcbeXSnqg 清单开发完对应的就勾选完成
+
+[Recieve:26/06/08-13:18:31 CST]
+
+[Done:26/06/08-13:30:25 CST]
+
+---
+
 立即立即开始，边测试，测试包括ui交互和显示。多多记录log。
 
 [Recieve:26/06/07-18:24:00 CST]

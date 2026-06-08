@@ -125,6 +125,17 @@ class WorkspaceToolsTest(unittest.TestCase):
         self.assertIn("memory/project.md", compact.output)
         self.assertIn("记忆摘要", (memory_dir / "project.md").read_text(encoding="utf-8"))
 
+    def test_memory_write_tool_creates_pending_candidate_instead_of_writing_file(self) -> None:
+        result = self.tools.run("memory_write", {"name": "index.md", "content": "用户偏好：先确认"})
+
+        self.assertTrue(result.ok)
+        self.assertIn("待确认", result.output)
+        self.assertFalse((self.root / ".nova" / "memory" / "index.md").exists())
+        candidates = result.data["memory_candidates"]
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["status"], "pending")
+        self.assertIn("先确认", candidates[0]["content"])
+
     def test_write_file_overwrites_and_returns_diff(self) -> None:
         result = self.tools.run("write_file", {"path": "README.md", "content": "Nova 新内容\n"})
 

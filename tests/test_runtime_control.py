@@ -240,6 +240,63 @@ class RuntimeControlTest(unittest.TestCase):
             self.assertEqual(read.status_code, 200)
             self.assertIn("用户偏好", read.json()["content"])
 
+    def test_memory_remember_creates_candidate_until_user_approves(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_root = app_module.workspace_manager.current_root
+            root = Path(tmpdir).resolve()
+            app_module.workspace_manager.current_root = root
+            self.addCleanup(lambda: setattr(app_module.workspace_manager, "current_root", old_root))
+
+            proposed = self.client.post("/api/memory/remember", json={"text": "用户偏好：候选确认后再写入"})
+
+            self.assertEqual(proposed.status_code, 200)
+            candidate = proposed.json()
+            self.assertEqual(candidate["status"], "pending")
+            self.assertIn("候选确认", candidate["content"])
+            self.assertFalse((root / ".nova" / "memory" / "index.md").exists())
+
+            status = self.client.get("/api/memory/status").json()
+            self.assertEqual(len(status["memory_candidates"]), 1)
+            self.assertEqual(status["memory_candidates"][0]["id"], candidate["id"])
+
+            approved = self.client.post(f"/api/memory/candidates/{candidate['id']}/approve", json={})
+
+            self.assertEqual(approved.status_code, 200)
+            self.assertEqual(approved.json()["status"], "approved")
+            self.assertIn(
+                "候选确认后再写入",
+                (root / ".nova" / "memory" / "index.md").read_text(encoding="utf-8"),
+            )
+            self.assertEqual(self.client.get("/api/memory/status").json()["memory_candidates"], [])
+
+    def test_memory_candidate_can_be_edited_or_denied_before_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_root = app_module.workspace_manager.current_root
+            root = Path(tmpdir).resolve()
+            app_module.workspace_manager.current_root = root
+            self.addCleanup(lambda: setattr(app_module.workspace_manager, "current_root", old_root))
+
+            candidate = self.client.post("/api/memory/remember", json={"text": "原始事实"}).json()
+            edited = self.client.post(
+                f"/api/memory/candidates/{candidate['id']}/edit",
+                json={"content": "编辑后的事实", "name": "project.md"},
+            )
+
+            self.assertEqual(edited.status_code, 200)
+            self.assertEqual(edited.json()["status"], "approved")
+            self.assertFalse((root / ".nova" / "memory" / "index.md").exists())
+            self.assertIn("编辑后的事实", (root / ".nova" / "memory" / "project.md").read_text(encoding="utf-8"))
+
+            denied_candidate = self.client.post("/api/memory/remember", json={"text": "不要写入"}).json()
+            denied = self.client.post(
+                f"/api/memory/candidates/{denied_candidate['id']}/deny",
+                json={"reason": "用户拒绝"},
+            )
+
+            self.assertEqual(denied.status_code, 200)
+            self.assertEqual(denied.json()["status"], "denied")
+            self.assertNotIn("不要写入", (root / ".nova" / "memory" / "project.md").read_text(encoding="utf-8"))
+
     def test_memory_status_separates_global_and_project_persona_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             old_root = app_module.workspace_manager.current_root

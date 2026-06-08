@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 
 class ProjectMemory:
@@ -24,6 +26,7 @@ class ProjectMemory:
         self.global_persona_dir = Path.home() / ".nova" / "persona"
         self.memory_files = ["index.md", "project.md", "session.md"]
         self.persona_files = ["user.md", "soul.md", "tools.md"]
+        self.candidates_file = self.memory_dir / "candidates.json"
 
     def context(self) -> str:
         # 只注入“给开发 Agent 的指令”。Nova 自身开发状态文件只给外层 Codex 看，不塞进产品内 Agent。
@@ -63,6 +66,7 @@ class ProjectMemory:
             ],
             "persona_files": self.persona_file_statuses(),
             "memory_files": self.memory_file_statuses(),
+            "memory_candidates": self.memory_candidates(),
             "development_state": [
                 self._source_status("Nova开发状态", self.project_root / filename, injected=False)
                 for filename in self.development_state_files
@@ -141,13 +145,54 @@ class ProjectMemory:
         return self.read_persona_file(scope, path.name)
 
     def append_fact(self, text: str) -> dict[str, Any]:
-        path = self.memory_dir / "index.md"
+        return self.append_fact_to_file("index.md", text)
+
+    def append_fact_to_file(self, name: str, text: str) -> dict[str, Any]:
+        path = self._resolve_memory_file(name)
         path.parent.mkdir(parents=True, exist_ok=True)
         before = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
         line = text.strip()
         content = (before.rstrip() + "\n\n" if before.strip() else "") + f"- {line}\n"
         path.write_text(content, encoding="utf-8")
-        return self.read_file("index.md")
+        return self.read_file(path.name)
+
+    def propose_fact(self, text: str, *, name: str = "index.md", source: str = "manual") -> dict[str, Any]:
+        content = text.strip()
+        if not content:
+            raise ValueError("记忆候选内容不能为空")
+        target = self._resolve_memory_file(name)
+        now = self._timestamp()
+        candidate = {
+            "id": f"mem_{uuid4().hex[:12]}",
+            "project_root": str(self.project_root),
+            "name": target.name,
+            "path": str(target),
+            "content": content,
+            "source": source,
+            "status": "pending",
+            "created_at": now,
+            "updated_at": now,
+            "reason": "",
+        }
+        candidates = self._load_candidates()
+        candidates.append(candidate)
+        self._write_candidates(candidates)
+        return candidate
+
+    def memory_candidates(self, *, include_resolved: bool = False) -> list[dict[str, Any]]:
+        candidates = self._load_candidates()
+        if include_resolved:
+            return candidates
+        return [item for item in candidates if item.get("status") == "pending"]
+
+    def approve_candidate(self, candidate_id: str) -> dict[str, Any]:
+        return self._resolve_candidate(candidate_id, status="approved")
+
+    def edit_candidate(self, candidate_id: str, *, content: str, name: str | None = None) -> dict[str, Any]:
+        return self._resolve_candidate(candidate_id, status="approved", content=content, name=name)
+
+    def deny_candidate(self, candidate_id: str, *, reason: str = "") -> dict[str, Any]:
+        return self._resolve_candidate(candidate_id, status="denied", reason=reason, write=False)
 
     def compact_session(self, messages: list[Any], *, instruction: str = "") -> dict[str, Any]:
         compacted_messages = [
@@ -232,6 +277,57 @@ class ProjectMemory:
         if not clean.endswith(".md"):
             clean = f"{clean}.md"
         return self.memory_dir / clean
+
+    def _resolve_candidate(
+        self,
+        candidate_id: str,
+        *,
+        status: str,
+        content: str | None = None,
+        name: str | None = None,
+        reason: str = "",
+        write: bool = True,
+    ) -> dict[str, Any]:
+        candidates = self._load_candidates()
+        for candidate in candidates:
+            if candidate.get("id") != candidate_id:
+                continue
+            if candidate.get("status") != "pending":
+                raise ValueError("记忆候选已经处理，不能重复操作")
+            if content is not None:
+                cleaned = content.strip()
+                if not cleaned:
+                    raise ValueError("记忆候选内容不能为空")
+                candidate["content"] = cleaned
+            if name is not None:
+                target = self._resolve_memory_file(name)
+                candidate["name"] = target.name
+                candidate["path"] = str(target)
+            candidate["status"] = status
+            candidate["updated_at"] = self._timestamp()
+            candidate["reason"] = reason
+            if write:
+                written = self.append_fact_to_file(str(candidate.get("name") or "index.md"), str(candidate.get("content") or ""))
+                candidate["written_path"] = written["path"]
+            self._write_candidates(candidates)
+            return dict(candidate)
+        raise KeyError(candidate_id)
+
+    def _load_candidates(self) -> list[dict[str, Any]]:
+        try:
+            payload = json.loads(self.candidates_file.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return []
+        if not isinstance(payload, list):
+            return []
+        return [item for item in payload if isinstance(item, dict)]
+
+    def _write_candidates(self, candidates: list[dict[str, Any]]) -> None:
+        self.candidates_file.parent.mkdir(parents=True, exist_ok=True)
+        self.candidates_file.write_text(json.dumps(candidates, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _timestamp(self) -> str:
+        return datetime.now(timezone.utc).astimezone().isoformat()
 
     def _normalize_persona_scope(self, scope: str) -> str:
         return "global" if str(scope or "").strip() == "global" else "project"

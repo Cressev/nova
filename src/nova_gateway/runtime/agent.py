@@ -700,8 +700,8 @@ class CodexLikeAgentRuntime:
             if len(parts) < 2 or not parts[1].strip():
                 return "用法：/remember 要长期记住的事实或偏好"
             text = parts[1].strip()
-            self.memory.append_fact(text)
-            return f"已写入长期记忆：{text}"
+            candidate = self.memory.propose_fact(text, source="builtin:/remember")
+            return f"已创建待确认记忆候选：{candidate['content']}\n用户确认后才会写入 {candidate['name']}。"
         if command in {"/ps", "/jobs"}:
             jobs = self.process_manager.list_jobs()
             if not jobs:
@@ -769,7 +769,7 @@ class CodexLikeAgentRuntime:
 5. 不需要工具时，不要输出工具调用，直接给最终答复。
 6. 不要请求执行破坏性命令；需要修改文件时优先使用 apply_patch、replace_in_file 或 create_file。
 7. 预计耗时较长的 shell 命令可以加 "background": true 后台执行；后台任务可由用户用 /ps 查看、/kill 终止。
-8. 需要长期记住用户偏好、项目事实或阶段总结时，写入 memory_write；查询长期记忆用 memory_read 或 memory_search。
+8. 需要长期记住用户偏好、项目事实或阶段总结时，调用 memory_write 提出候选事实；候选必须由用户确认后才会真正写入。查询长期记忆用 memory_read 或 memory_search。
 
 可用工具：
 - read_file: {"path":"相对路径","max_bytes":24000}
@@ -791,7 +791,7 @@ class CodexLikeAgentRuntime:
 - web_fetch: {"url":"https://example.com","max_bytes":20000}
 - web_search: {"query":"搜索关键词","max_bytes":20000}
 - memory_read: {"name":"index.md"}
-- memory_write: {"name":"index.md","content":"记忆内容"}
+- memory_write: {"name":"index.md","content":"候选记忆事实"}
 - memory_search: {"query":"关键词"}
 
 路径必须使用工作区内相对路径。回答使用中文，保持直接、务实。

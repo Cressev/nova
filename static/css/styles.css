@@ -1865,6 +1865,53 @@ body.inspector-collapsed .inspector-toggle {
   cursor: pointer;
 }
 
+.memory-candidate {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(245, 180, 97, 0.34);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(245, 180, 97, 0.075);
+}
+
+.memory-candidate-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.memory-candidate-main strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+}
+
+.memory-candidate-main span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-candidate-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.memory-candidate-actions button {
+  min-height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 850;
+}
+
 .memory-add {
   min-height: 30px;
   border: 1px dashed rgba(115, 201, 244, 0.28);

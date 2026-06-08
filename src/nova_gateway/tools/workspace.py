@@ -824,14 +824,12 @@ class WorkspaceTools:
         if not name.endswith(".md"):
             name = f"{name}.md"
         content = str(arguments.get("content") or "")
-        path = self.project_root / ".nova" / "memory" / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        candidate = ProjectMemory(self.project_root).propose_fact(content, name=name, source="tool:memory_write")
         return ToolResult(
             tool="memory_write",
-            title=f"写入记忆 {name}",
-            output=f"已写入 {name}，字符数 {len(content)}",
-            data={"name": name, "path": str(path), "bytes": len(content.encode("utf-8"))},
+            title=f"候选记忆 {name}",
+            output=f"已创建待确认记忆候选，用户确认后才会写入 {name}。",
+            data={"name": name, "path": candidate["path"], "memory_candidates": [candidate]},
         )
 
     def memory_search(self, arguments: dict[str, Any]) -> ToolResult:

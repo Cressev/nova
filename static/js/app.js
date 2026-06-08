@@ -677,6 +677,10 @@ function bindToolTooltip(node) {
 function renderMemory(memory) {
   memoryStateEl.textContent = memory.enabled ? "已启用" : "关闭";
   memoryListEl.innerHTML = "";
+  const candidates = memory.memory_candidates || [];
+  if (candidates.length > 0) {
+    appendMemoryCandidateGroup(candidates);
+  }
   appendMemoryGroup("Agent 指令", (memory.injected_sources || []).filter((item) => item.kind === "instruction"));
   appendMemoryGroup("人格文件", memory.persona_files || []);
   appendMemoryGroup("长期记忆", memory.memory_files || []);
@@ -692,6 +696,69 @@ function renderMemory(memory) {
   memoryButton.textContent = "添加记忆文件";
   memoryButton.addEventListener("click", addMemoryFile);
   memoryListEl.appendChild(memoryButton);
+}
+
+function appendMemoryCandidateGroup(candidates) {
+  const heading = document.createElement("div");
+  heading.className = "memory-heading";
+  heading.textContent = "待确认记忆";
+  memoryListEl.appendChild(heading);
+  for (const candidate of candidates) {
+    memoryListEl.appendChild(renderMemoryCandidate(candidate));
+  }
+}
+
+function renderMemoryCandidate(candidate) {
+  const card = document.createElement("article");
+  card.className = "memory-candidate";
+  card.dataset.candidateId = candidate.id || "";
+  card.innerHTML = `
+    <div class="memory-candidate-main">
+      <strong>${escapeHtml(candidate.content || "")}</strong>
+      <span>${escapeHtml(candidate.source || "manual")} -> ${escapeHtml(candidate.name || "index.md")}</span>
+    </div>
+    <div class="memory-candidate-actions">
+      <button type="button" data-action="approve">确认</button>
+      <button type="button" data-action="edit">编辑</button>
+      <button type="button" data-action="deny">拒绝</button>
+    </div>
+  `;
+  card.querySelector('[data-action="approve"]').addEventListener("click", () => approveMemoryCandidate(candidate.id));
+  card.querySelector('[data-action="edit"]').addEventListener("click", () => editMemoryCandidate(candidate));
+  card.querySelector('[data-action="deny"]').addEventListener("click", () => denyMemoryCandidate(candidate.id));
+  return card;
+}
+
+async function approveMemoryCandidate(candidateId) {
+  if (!candidateId) {
+    return;
+  }
+  await api(`/api/memory/candidates/${encodeURIComponent(candidateId)}/approve`, { method: "POST", body: "{}" });
+  await loadRuntimePanels();
+  streamStateEl.textContent = "记忆候选已确认写入";
+}
+
+function editMemoryCandidate(candidate) {
+  openMemoryDialog({
+    name: candidate.name || "index.md",
+    content: candidate.content || "",
+    mode: "candidate",
+    source: "candidate",
+    scope: "project",
+    candidateId: candidate.id || "",
+  });
+}
+
+async function denyMemoryCandidate(candidateId) {
+  if (!candidateId) {
+    return;
+  }
+  await api(`/api/memory/candidates/${encodeURIComponent(candidateId)}/deny`, {
+    method: "POST",
+    body: JSON.stringify({ reason: "用户在界面拒绝" }),
+  });
+  await loadRuntimePanels();
+  streamStateEl.textContent = "记忆候选已拒绝";
 }
 
 function appendMemoryGroup(title, items) {
@@ -752,17 +819,23 @@ function normalizeMemoryFileName(name) {
   return cleaned.endsWith(".md") ? cleaned : `${cleaned}.md`;
 }
 
-function openMemoryDialog({ name, content, mode, source = "memory", scope = "project" }) {
+function openMemoryDialog({ name, content, mode, source = "memory", scope = "project", candidateId = "" }) {
   const isPersona = source === "persona";
+  const isCandidate = source === "candidate";
   memoryDialogEl.dataset.source = source;
   memoryDialogEl.dataset.scope = scope;
-  memoryDialogTitleEl.textContent = mode === "create"
+  memoryDialogEl.dataset.candidateId = candidateId;
+  memoryDialogTitleEl.textContent = isCandidate
+    ? "编辑候选记忆"
+    : mode === "create"
     ? (isPersona ? "添加人格文件" : "添加记忆文件")
     : `编辑 ${isPersona ? "人格" : "记忆"} ${name}`;
   memoryDialogNameEl.value = normalizeMemoryFileName(name);
-  memoryDialogNameEl.disabled = mode !== "create";
+  memoryDialogNameEl.disabled = mode !== "create" && !isCandidate;
   memoryDialogContentEl.value = content || "";
-  memoryDialogStateEl.textContent = isPersona
+  memoryDialogStateEl.textContent = isCandidate
+    ? "编辑后点击保存，会立即确认并写入当前项目 .nova/memory。"
+    : isPersona
     ? `仅支持 .md 文件；保存后会进入${scope === "global" ? "全局" : "当前项目"} .nova/persona。`
     : "仅支持 .md 文件；保存后会进入当前项目 .nova/memory。";
   memoryDialogSaveEl.disabled = false;
@@ -779,16 +852,25 @@ async function saveMemoryDialog() {
   memoryDialogSaveEl.disabled = true;
   const source = memoryDialogEl.dataset.source || "memory";
   const scope = memoryDialogEl.dataset.scope || "project";
+  const candidateId = memoryDialogEl.dataset.candidateId || "";
   const isPersona = source === "persona";
-  memoryDialogStateEl.textContent = isPersona ? "正在保存人格文件" : "正在保存记忆文件";
+  const isCandidate = source === "candidate";
+  memoryDialogStateEl.textContent = isCandidate ? "正在确认候选记忆" : isPersona ? "正在保存人格文件" : "正在保存记忆文件";
   try {
-    await api(isPersona ? "/api/persona/files" : "/api/memory/files", {
-      method: "POST",
-      body: JSON.stringify({ scope, name, content: memoryDialogContentEl.value }),
-    });
+    if (isCandidate) {
+      await api(`/api/memory/candidates/${encodeURIComponent(candidateId)}/edit`, {
+        method: "POST",
+        body: JSON.stringify({ name, content: memoryDialogContentEl.value }),
+      });
+    } else {
+      await api(isPersona ? "/api/persona/files" : "/api/memory/files", {
+        method: "POST",
+        body: JSON.stringify({ scope, name, content: memoryDialogContentEl.value }),
+      });
+    }
     memoryDialogEl.close();
     await loadRuntimePanels();
-    streamStateEl.textContent = `已更新${isPersona ? "人格" : "记忆"} ${name}`;
+    streamStateEl.textContent = isCandidate ? `已确认候选记忆 ${name}` : `已更新${isPersona ? "人格" : "记忆"} ${name}`;
   } catch (error) {
     memoryDialogStateEl.textContent = `保存失败：${error instanceof Error ? error.message : "未知错误"}`;
     memoryDialogSaveEl.disabled = false;
