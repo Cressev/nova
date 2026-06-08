@@ -1,5 +1,5 @@
 import { api } from "./api/client.js";
-import { BUILTIN_COMMANDS } from "./components/command_palette.js";
+import { BUILTIN_COMMANDS, filterCommandMatches, nextCommandSelectionIndex } from "./components/command_palette.js";
 import {
   chooseWorkspaceTabCompletion,
   groupWorkspaceDialogItems,
@@ -42,6 +42,7 @@ const state = {
   statuslineCollapsed: readStorageBool("nova.statuslineCollapsed", false),
   settingsCollapsed: new Set(readStorageList("nova.settingsCollapsed")),
   commands: BUILTIN_COMMANDS,
+  commandSelectionIndex: -1,
 };
 
 const healthEl = queryRequired("#health");
@@ -2578,9 +2579,22 @@ messageEl.addEventListener("keydown", (event) => {
     hideCommandPalette();
     return;
   }
+  if (!commandPaletteEl.hidden && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+    event.preventDefault();
+    state.commandSelectionIndex = nextCommandSelectionIndex(
+      state.commandSelectionIndex,
+      commandMatches.length,
+      event.key === "ArrowUp" ? "up" : "down",
+    );
+    renderCommandPalette();
+    return;
+  }
   if (!commandPaletteEl.hidden && event.key === "Tab") {
     event.preventDefault();
-    fillCommand(commandMatches[0]);
+    const selected = state.commandSelectionIndex >= 0
+      ? commandMatches[state.commandSelectionIndex]
+      : commandMatches[0];
+    fillCommand(selected);
     return;
   }
   if (event.key === "Enter" && !event.shiftKey) {
@@ -2610,23 +2624,33 @@ function updateCommandPalette() {
     hideCommandPalette();
     return;
   }
-  const query = value.split(/\s+/, 1)[0].toLowerCase();
-  const matches = state.commands.filter((command) => command.name.startsWith(query));
+  const matches = filterCommandMatches(value, state.commands);
   if (matches.length === 0) {
     hideCommandPalette();
     return;
   }
   commandMatches = matches;
+  if (state.commandSelectionIndex >= commandMatches.length) {
+    state.commandSelectionIndex = commandMatches.length - 1;
+  }
+  if (state.commandSelectionIndex < 0) {
+    state.commandSelectionIndex = 0;
+  }
+  renderCommandPalette();
+}
+
+function renderCommandPalette() {
   commandPaletteEl.removeAttribute("hidden");
   commandPaletteEl.innerHTML = "";
   const header = document.createElement("div");
   header.className = "command-palette-title";
   header.innerHTML = "<strong>内置指令</strong><span>Tab 补全，Enter 发送</span>";
   commandPaletteEl.appendChild(header);
-  for (const command of matches) {
+  commandMatches.forEach((command, index) => {
     const item = document.createElement("button");
     item.type = "button";
-    item.className = "command-item";
+    item.className = `command-item ${index === state.commandSelectionIndex ? "selected" : ""}`;
+    item.setAttribute("aria-selected", String(index === state.commandSelectionIndex));
     const hint = command.argumentHint ? ` <em>${escapeHtml(command.argumentHint)}</em>` : "";
     item.innerHTML = `
       <strong>${command.name}${hint}</strong>
@@ -2634,7 +2658,7 @@ function updateCommandPalette() {
     `;
     item.addEventListener("click", () => fillCommand(command));
     commandPaletteEl.appendChild(item);
-  }
+  });
   commandPaletteEl.hidden = false;
 }
 
@@ -2651,6 +2675,7 @@ function fillCommand(command) {
 function hideCommandPalette() {
   commandPaletteEl.hidden = true;
   commandMatches = [];
+  state.commandSelectionIndex = -1;
 }
 
 async function loadCommands() {

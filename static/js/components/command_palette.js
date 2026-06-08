@@ -17,3 +17,21 @@ export const BUILTIN_COMMANDS = [
   { name: "/compact", description: "压缩当前会话并写入 session 记忆", argumentHint: "[压缩要求]", group: "context" },
   { name: "/clear", description: "创建空线程提示", group: "session" },
 ];
+
+export function filterCommandMatches(value, commands = BUILTIN_COMMANDS) {
+  const query = String(value || "").trimStart().split(/\s+/, 1)[0].toLowerCase();
+  if (!query.startsWith("/")) {
+    return [];
+  }
+  return commands.filter((command) => command.name.startsWith(query));
+}
+
+export function nextCommandSelectionIndex(currentIndex, count, direction) {
+  if (count <= 0) {
+    return -1;
+  }
+  if (direction === "up") {
+    return currentIndex <= 0 ? count - 1 : currentIndex - 1;
+  }
+  return currentIndex < 0 || currentIndex >= count - 1 ? 0 : currentIndex + 1;
+}

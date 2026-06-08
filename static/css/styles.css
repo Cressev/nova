@@ -1750,8 +1750,13 @@ body.inspector-collapsed .inspector-toggle {
   cursor: pointer;
 }
 
-.command-item:hover {
+.command-item:hover,
+.command-item.selected {
   background: rgba(255, 255, 255, 0.055);
+}
+
+.command-item.selected {
+  outline: 1px solid rgba(98, 230, 163, 0.32);
 }
 
 .command-item strong {
