@@ -103,6 +103,23 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertTrue(any(event["type"] == "compact_done" for event in events))
         self.assertTrue(any(event["type"] == "agent_status" and "压缩边界" in event["status"] for event in events))
 
+    def test_builtin_memory_subcommands_search_summarize_and_compact(self) -> None:
+        memory_dir = Path(self.tmpdir.name, ".nova", "memory")
+        memory_dir.mkdir(parents=True)
+        (memory_dir / "index.md").write_text("- 用户偏好：中文输出\n- 项目目标：对标 Codex\n", encoding="utf-8")
+        (memory_dir / "session.md").write_text("# 会话\n继续补 memory compact。\n", encoding="utf-8")
+
+        search = self.runtime._builtin_response("/memory", "/memory search Codex")
+        summarize = self.runtime._builtin_response("/memory", "/memory summarize")
+        compact = self.runtime._builtin_response("/memory", "/memory compact")
+
+        self.assertIn("index.md:2", search)
+        self.assertIn("项目目标：对标 Codex", search)
+        self.assertIn("记忆摘要", summarize)
+        self.assertIn("session.md", summarize)
+        self.assertIn("已压缩记忆", compact)
+        self.assertIn("memory/project.md", compact)
+
     def test_memory_context_ignores_development_state_files(self) -> None:
         Path(self.tmpdir.name, "AGENTS.md").write_text("项目指令", encoding="utf-8")
         Path(self.tmpdir.name, "CURRENT.md").write_text("开发状态不应注入", encoding="utf-8")

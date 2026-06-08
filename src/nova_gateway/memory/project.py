@@ -166,6 +166,34 @@ class ProjectMemory:
         result["covered_messages"] = len(compacted_messages)
         return result
 
+    def summarize(self, *, max_chars_per_file: int = 1200) -> dict[str, Any]:
+        files: list[dict[str, Any]] = []
+        for item in self.memory_file_statuses():
+            path = Path(item["path"])
+            if not path.is_file():
+                continue
+            content = path.read_text(encoding="utf-8", errors="replace")
+            lines = [line.strip() for line in content.splitlines() if line.strip()]
+            files.append(
+                {
+                    "name": path.name,
+                    "path": str(path),
+                    "chars": len(content),
+                    "lines": len(lines),
+                    "preview": self._compact_text("\n".join(lines[:12]), max_chars_per_file),
+                }
+            )
+        summary = self._format_memory_summary(files)
+        return {"summary": summary, "files": files, "count": len(files)}
+
+    def compact_memory(self, *, max_chars: int = 12000) -> dict[str, Any]:
+        summary = self.summarize(max_chars_per_file=1800)["summary"]
+        content = self._compact_text(summary, max_chars)
+        result = self.write_file("project.md", content + "\n")
+        result["summary"] = content
+        result["bytes"] = len(content.encode("utf-8"))
+        return result
+
     def search(self, query: str) -> list[dict[str, Any]]:
         needle = query.strip().lower()
         if not needle:
@@ -261,6 +289,32 @@ class ProjectMemory:
             ]
         )
         return "\n".join(lines)
+
+    def _format_memory_summary(self, files: list[dict[str, Any]]) -> str:
+        lines = [
+            "# 记忆摘要",
+            "",
+            "## 概览",
+            f"- 项目：{self.project_root}",
+            f"- 记忆文件数：{len(files)}",
+            "",
+            "## 文件摘要",
+        ]
+        if not files:
+            lines.append("- 暂无项目级长期记忆。")
+            return "\n".join(lines)
+        for item in files:
+            lines.extend(
+                [
+                    f"### {item['name']}",
+                    f"- 路径：{item['path']}",
+                    f"- 规模：{item['lines']} 行，{item['chars']} 字符",
+                    "- 关键内容：",
+                    item["preview"] or "暂无内容。",
+                    "",
+                ]
+            )
+        return "\n".join(lines).rstrip()
 
     def _message_role(self, message: Any) -> str:
         role = getattr(message, "role", "")

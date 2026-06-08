@@ -661,6 +661,22 @@ class CodexLikeAgentRuntime:
                 "- bypass_permissions：跳过权限提示，但仍受工具自身安全校验约束。"
             )
         if command == "/memory":
+            parts = raw_content.split(maxsplit=2)
+            subcommand = parts[1].lower() if len(parts) >= 2 else ""
+            if subcommand == "search":
+                if len(parts) < 3 or not parts[2].strip():
+                    return "用法：/memory search <关键词>"
+                matches = self.memory.search(parts[2].strip())
+                if not matches:
+                    return f"未找到匹配记忆：{parts[2].strip()}"
+                return "记忆搜索结果：\n" + "\n".join(
+                    f"- {item['name']}:{item['line']} {item['text']}" for item in matches
+                )
+            if subcommand in {"summarize", "summary"}:
+                return self.memory.summarize()["summary"]
+            if subcommand == "compact":
+                result = self.memory.compact_memory()
+                return f"已压缩记忆到 {result['path']}，后续会继续注入 project.md。\n\n{result['summary']}"
             status = self.memory.status()
             injected_sources = status.get("injected_sources", [])
             development_sources = status.get("development_state", [])
@@ -724,7 +740,8 @@ class CodexLikeAgentRuntime:
             return "请点击左侧“新对话”创建空线程；Nova 不会自动删除已有历史。"
         return (
             "可用内置指令：/status、/model、/tools、/permissions、/approvals、/sandbox、"
-            "/memory、/remember、/ps、/kill、/review、/plan、/compact、/clear、/help。"
+            "/memory、/memory search、/memory summarize、/memory compact、/remember、"
+            "/ps、/kill、/review、/plan、/compact、/clear、/help。"
         )
 
     def _compact_response(self, result: dict) -> str:

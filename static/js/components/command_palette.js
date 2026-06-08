@@ -5,7 +5,7 @@ export const BUILTIN_COMMANDS = [
   { name: "/permissions", description: "查看权限模式和限制" },
   { name: "/approvals", description: "查看审批策略" },
   { name: "/sandbox", description: "查看沙箱模式" },
-  { name: "/memory", description: "查看项目记忆注入状态" },
+  { name: "/memory", description: "查看项目记忆；支持 search / summarize / compact" },
   { name: "/remember", description: "写入长期记忆" },
   { name: "/ps", description: "查看后台任务" },
   { name: "/kill", description: "终止后台任务" },

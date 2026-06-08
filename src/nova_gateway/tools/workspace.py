@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ..memory import ProjectMemory
+
 
 class ToolExecutionError(RuntimeError):
     """工具执行失败时抛出，外层会把错误作为模型可读的工具结果。"""
@@ -272,6 +274,28 @@ TOOL_SPECS: dict[str, ToolSpec] = {
         risk="low",
         interrupt_behavior="cancel",
     ),
+    "memory_summarize": ToolSpec(
+        name="memory_summarize",
+        description="汇总 .nova/memory 中的长期记忆，生成可续跑摘要。",
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={"max_chars_per_file": 1200},
+        category="memory",
+        risk="low",
+        interrupt_behavior="cancel",
+    ),
+    "memory_compact": ToolSpec(
+        name="memory_compact",
+        description="压缩 .nova/memory 中的长期记忆，并写入 project.md。",
+        read_only=False,
+        supports_parallel=False,
+        permission="write",
+        schema={"max_chars": 12000},
+        category="memory",
+        risk="medium",
+        interrupt_behavior="block",
+    ),
 }
 
 
@@ -312,6 +336,8 @@ class WorkspaceTools:
             "memory_read": self.memory_read,
             "memory_write": self.memory_write,
             "memory_search": self.memory_search,
+            "memory_summarize": self.memory_summarize,
+            "memory_compact": self.memory_compact,
         }
         handler = handlers.get(name)
         if handler is None:
@@ -812,23 +838,34 @@ class WorkspaceTools:
         query = str(arguments.get("query") or "").strip()
         if not query:
             raise ToolExecutionError("memory_search 需要 query")
-        memory_dir = self.project_root / ".nova" / "memory"
-        lines: list[str] = []
-        if memory_dir.is_dir():
-            for path in sorted(memory_dir.glob("*.md")):
-                content = path.read_text(encoding="utf-8", errors="replace")
-                for number, line in enumerate(content.splitlines(), start=1):
-                    if query.lower() in line.lower():
-                        lines.append(f"{path.name}:{number}: {line}")
-                        if len(lines) >= 50:
-                            break
-                if len(lines) >= 50:
-                    break
+        matches = ProjectMemory(self.project_root).search(query)
+        lines = [f"{item['name']}:{item['line']}: {item['text']}" for item in matches]
         return ToolResult(
             tool="memory_search",
             title=f"搜索记忆 {query}",
             output="\n".join(lines) or "未找到匹配记忆",
             data={"query": query, "count": len(lines)},
+        )
+
+    def memory_summarize(self, arguments: dict[str, Any]) -> ToolResult:
+        max_chars_per_file = int(arguments.get("max_chars_per_file") or 1200)
+        result = ProjectMemory(self.project_root).summarize(max_chars_per_file=max_chars_per_file)
+        return ToolResult(
+            tool="memory_summarize",
+            title="汇总长期记忆",
+            output=result["summary"],
+            data={"count": result["count"], "files": result["files"]},
+        )
+
+    def memory_compact(self, arguments: dict[str, Any]) -> ToolResult:
+        max_chars = int(arguments.get("max_chars") or 12000)
+        result = ProjectMemory(self.project_root).compact_memory(max_chars=max_chars)
+        relative_path = Path(result["path"]).relative_to(self.project_root)
+        return ToolResult(
+            tool="memory_compact",
+            title="压缩长期记忆",
+            output=f"已压缩记忆到 {relative_path}，字符数 {len(result['summary'])}\n\n{result['summary']}",
+            data={"path": result["path"], "bytes": result["bytes"]},
         )
 
     def _resolve_workspace_path(self, value: str) -> Path:

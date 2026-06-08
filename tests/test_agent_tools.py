@@ -89,6 +89,9 @@ class WorkspaceToolsTest(unittest.TestCase):
             "todo_write",
             "web_fetch",
             "web_search",
+            "memory_search",
+            "memory_summarize",
+            "memory_compact",
         ]:
             self.assertIn(name, specs)
             self.assertIn("category", specs[name])
@@ -100,6 +103,27 @@ class WorkspaceToolsTest(unittest.TestCase):
         self.assertEqual(specs["shell_command"]["permission"], "shell")
         self.assertEqual(specs["web_fetch"]["permission"], "network")
         self.assertEqual(specs["web_search"]["permission"], "network")
+        self.assertEqual(specs["memory_summarize"]["category"], "memory")
+        self.assertEqual(specs["memory_compact"]["permission"], "write")
+
+    def test_memory_search_summarize_and_compact_tools(self) -> None:
+        memory_dir = self.root / ".nova" / "memory"
+        memory_dir.mkdir(parents=True)
+        (memory_dir / "index.md").write_text("- 用户偏好：中文输出\n- 项目目标：对标 Codex\n", encoding="utf-8")
+        (memory_dir / "session.md").write_text("# 会话\n正在实现 memory summarize。\n", encoding="utf-8")
+
+        search = self.tools.run("memory_search", {"query": "Codex"})
+        summarize = self.tools.run("memory_summarize", {})
+        compact = self.tools.run("memory_compact", {"max_chars": 1200})
+
+        self.assertIn("index.md:2", search.output)
+        self.assertIn("项目目标：对标 Codex", search.output)
+        self.assertIn("记忆摘要", summarize.output)
+        self.assertIn("index.md", summarize.output)
+        self.assertIn("session.md", summarize.output)
+        self.assertIn("已压缩记忆", compact.output)
+        self.assertIn("memory/project.md", compact.output)
+        self.assertIn("记忆摘要", (memory_dir / "project.md").read_text(encoding="utf-8"))
 
     def test_write_file_overwrites_and_returns_diff(self) -> None:
         result = self.tools.run("write_file", {"path": "README.md", "content": "Nova 新内容\n"})
