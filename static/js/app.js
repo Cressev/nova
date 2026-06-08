@@ -1670,6 +1670,7 @@ function finishToolEvent(node, event, options = {}) {
       <em>${statusLabel}</em>
     </div>
     ${renderToolMetadata(data)}
+    ${renderHookContexts(data.hook_contexts)}
     ${data.failure_reason ? `<div class="tool-failure">${escapeHtml(data.failure_reason)}</div>` : ""}
     <div class="tool-actions">
       ${retryButton}
@@ -1713,6 +1714,20 @@ function renderToolMetadata(data = {}) {
     ? `<details class="tool-schema"><summary>输入 Schema</summary><pre>${escapeHtml(JSON.stringify(spec.schema, null, 2))}</pre></details>`
     : "";
   return `<div class="tool-meta-grid">${meta}</div>${schema}`;
+}
+
+function renderHookContexts(contexts = []) {
+  const values = Array.isArray(contexts) ? contexts.filter(Boolean) : [];
+  if (values.length === 0) {
+    return "";
+  }
+  const body = values.map((context) => `<li>${escapeHtml(String(context))}</li>`).join("");
+  return `
+    <details class="hook-contexts" open>
+      <summary>Hook 追加上下文</summary>
+      <ul>${body}</ul>
+    </details>
+  `;
 }
 
 function renderDiffPreview(diff) {
@@ -1790,6 +1805,7 @@ function appendToolOutput(node, event) {
 
 function appendPermissionEvent(event, beforeNode = null, options = {}) {
   const args = JSON.stringify(event.arguments || {}, null, 2);
+  const hookContexts = event.data?.hook_contexts || [];
   const node = document.createElement("article");
   node.className = "permission-event pending";
   node.dataset.callId = event.call_id || "";
@@ -1801,6 +1817,7 @@ function appendPermissionEvent(event, beforeNode = null, options = {}) {
       <em>待确认</em>
     </div>
     <p>${escapeHtml(event.message || "执行该工具前需要用户确认。")}</p>
+    ${renderHookContexts(hookContexts)}
     <details open>
       <summary>请求参数</summary>
       <pre>${escapeHtml(args)}</pre>

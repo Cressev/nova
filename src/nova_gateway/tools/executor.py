@@ -35,9 +35,12 @@ class ToolExecutor:
         arguments: dict[str, Any],
         *,
         parallel: bool = False,
+        require_permission: bool = False,
     ) -> tuple[list[dict], str]:
         events: list[dict] = []
         current_arguments = dict(arguments)
+        hook_contexts: list[str] = []
+        permission_preapproved = False
 
         pre_outcomes = self._run_hooks(
             events,
@@ -46,6 +49,7 @@ class ToolExecutor:
             tool_name,
             current_arguments,
         )
+        self._collect_hook_contexts(hook_contexts, pre_outcomes)
         for outcome in pre_outcomes:
             if outcome.updated_input:
                 current_arguments.update(outcome.updated_input)
@@ -59,30 +63,67 @@ class ToolExecutor:
                     current_arguments,
                     reason=reason,
                 )
-                return self._failed_tool(events, call_id, tool_name, current_arguments, reason, {"hook": outcome.name})
+                return self._failed_tool(
+                    events,
+                    call_id,
+                    tool_name,
+                    current_arguments,
+                    reason,
+                    {"hook": outcome.name},
+                    hook_contexts=hook_contexts,
+                )
             if outcome.permission_decision == "ask":
-                event = {
-                    "type": "permission_request",
-                    "call_id": call_id,
-                    "tool": tool_name,
-                    "permission": self._permission_for(tool_name),
-                    "title": f"需要审批：{tool_name}",
-                    "message": outcome.reason or f"执行 {tool_name} 前需要用户确认。",
-                    "arguments": current_arguments,
-                    "data": {"reason": "PreToolUse hook 要求审批", "hook": outcome.name},
-                }
+                event = self._permission_request_event(
+                    call_id,
+                    tool_name,
+                    current_arguments,
+                    message=outcome.reason or f"执行 {tool_name} 前需要用户确认。",
+                    data={"reason": "PreToolUse hook 要求审批", "hook": outcome.name},
+                    hook_contexts=hook_contexts,
+                )
                 events.append(event)
-                return events, json.dumps(
-                    {
-                        "tool": tool_name,
-                        "ok": False,
-                        "permission_request": True,
-                        "permission": event["permission"],
-                        "arguments": current_arguments,
-                        "output": event["message"],
-                        "data": event["data"],
-                    },
-                    ensure_ascii=False,
+                return events, self._permission_result_json(event)
+            if outcome.permission_decision == "allow":
+                permission_preapproved = True
+
+        if require_permission and not permission_preapproved:
+            permission_action = self._run_permission_request_flow(
+                events,
+                call_id,
+                tool_name,
+                current_arguments,
+                hook_contexts,
+            )
+            if permission_action == "ask":
+                event = self._permission_request_event(
+                    call_id,
+                    tool_name,
+                    current_arguments,
+                    message=self._latest_hook_reason(events, "PermissionRequest"),
+                    data={"reason": "ask 模式需要审批"},
+                    hook_contexts=hook_contexts,
+                )
+                events.append(event)
+                return events, self._permission_result_json(event)
+            if permission_action == "deny":
+                reason = self._latest_hook_reason(events, "PermissionRequest") or "PermissionRequest hook 拒绝执行"
+                self._run_hooks(
+                    events,
+                    "PermissionDenied",
+                    call_id,
+                    tool_name,
+                    current_arguments,
+                    reason=reason,
+                )
+                self._collect_hook_contexts_from_events(hook_contexts, events)
+                return self._failed_tool(
+                    events,
+                    call_id,
+                    tool_name,
+                    current_arguments,
+                    reason,
+                    {"hook_decision": "deny"},
+                    hook_contexts=hook_contexts,
                 )
 
         started_at = time.perf_counter()
@@ -98,10 +139,10 @@ class ToolExecutor:
             }
         )
         try:
-            result = self.tools.run(tool_name, current_arguments)
+            result = self._run_tool_with_optional_approval(tool_name, current_arguments, require_permission or permission_preapproved)
         except (ToolExecutionError, OSError, ValueError, subprocess.SubprocessError) as exc:
             message = str(exc)
-            self._run_hooks(
+            failure_outcomes = self._run_hooks(
                 events,
                 "PostToolUseFailure",
                 call_id,
@@ -109,9 +150,19 @@ class ToolExecutor:
                 current_arguments,
                 error=message,
             )
-            return self._failed_tool(events, call_id, tool_name, current_arguments, message, {}, started_at=started_at)
+            self._collect_hook_contexts(hook_contexts, failure_outcomes)
+            return self._failed_tool(
+                events,
+                call_id,
+                tool_name,
+                current_arguments,
+                message,
+                {},
+                started_at=started_at,
+                hook_contexts=hook_contexts,
+            )
 
-        self._run_hooks(
+        post_outcomes = self._run_hooks(
             events,
             "PostToolUse",
             call_id,
@@ -119,6 +170,8 @@ class ToolExecutor:
             current_arguments,
             tool_response={"ok": result.ok, "output": result.output, "data": result.data or {}},
         )
+        self._collect_hook_contexts(hook_contexts, post_outcomes)
+        done_data = self._tool_done_data(tool_name, result.data or {}, started_at=started_at, ok=result.ok, hook_contexts=hook_contexts)
         events.append(
             {
                 "type": "tool_done",
@@ -127,10 +180,10 @@ class ToolExecutor:
                 "ok": result.ok,
                 "title": result.title,
                 "output": result.output,
-                "data": self._tool_done_data(tool_name, result.data or {}, started_at=started_at, ok=result.ok),
+                "data": done_data,
             }
         )
-        return events, tool_result_as_json(result)
+        return events, self._tool_result_json(result, done_data)
 
     def run_one_stream(
         self,
@@ -139,10 +192,11 @@ class ToolExecutor:
         arguments: dict[str, Any],
         *,
         parallel: bool = False,
+        require_permission: bool = False,
     ) -> tuple[list[dict], str]:
         events: list[dict] = []
         result_json = ""
-        for event in self.iter_one_stream(call_id, tool_name, arguments, parallel=parallel):
+        for event in self.iter_one_stream(call_id, tool_name, arguments, parallel=parallel, require_permission=require_permission):
             if event["type"] == "tool_result_json":
                 result_json = str(event["result_json"])
             else:
@@ -156,45 +210,95 @@ class ToolExecutor:
         arguments: dict[str, Any],
         *,
         parallel: bool = False,
+        require_permission: bool = False,
     ) -> Iterator[dict[str, Any]]:
         if tool_name != "shell_command":
-            events, result_json = self.run_one(call_id, tool_name, arguments, parallel=parallel)
+            events, result_json = self.run_one(call_id, tool_name, arguments, parallel=parallel, require_permission=require_permission)
             yield from events
             yield {"type": "tool_result_json", "result_json": result_json}
             return
 
         events: list[dict] = []
         current_arguments = dict(arguments)
+        hook_contexts: list[str] = []
+        permission_preapproved = False
         pre_outcomes = self._run_hooks(events, "PreToolUse", call_id, tool_name, current_arguments)
+        self._collect_hook_contexts(hook_contexts, pre_outcomes)
         for outcome in pre_outcomes:
             if outcome.updated_input:
                 current_arguments.update(outcome.updated_input)
             if outcome.permission_decision == "deny":
                 reason = outcome.reason or "PreToolUse hook 拒绝执行"
-                failed_events, result_json = self._failed_tool(events, call_id, tool_name, current_arguments, reason, {"hook": outcome.name})
+                failed_events, result_json = self._failed_tool(
+                    events,
+                    call_id,
+                    tool_name,
+                    current_arguments,
+                    reason,
+                    {"hook": outcome.name},
+                    hook_contexts=hook_contexts,
+                )
                 yield from failed_events
                 yield {"type": "tool_result_json", "result_json": result_json}
                 return
             if outcome.permission_decision == "ask":
-                event = {
-                    "type": "permission_request",
-                    "call_id": call_id,
-                    "tool": tool_name,
-                    "permission": self._permission_for(tool_name),
-                    "title": f"需要审批：{tool_name}",
-                    "message": outcome.reason or f"执行 {tool_name} 前需要用户确认。",
-                    "arguments": current_arguments,
-                    "data": {"reason": "PreToolUse hook 要求审批", "hook": outcome.name},
-                }
+                event = self._permission_request_event(
+                    call_id,
+                    tool_name,
+                    current_arguments,
+                    message=outcome.reason or f"执行 {tool_name} 前需要用户确认。",
+                    data={"reason": "PreToolUse hook 要求审批", "hook": outcome.name},
+                    hook_contexts=hook_contexts,
+                )
                 events.append(event)
                 yield from events
                 yield {"type": "tool_result_json", "result_json": self._permission_result_json(event)}
                 return
+            if outcome.permission_decision == "allow":
+                permission_preapproved = True
+
+        if require_permission and not permission_preapproved:
+            permission_action = self._run_permission_request_flow(
+                events,
+                call_id,
+                tool_name,
+                current_arguments,
+                hook_contexts,
+            )
+            if permission_action == "ask":
+                event = self._permission_request_event(
+                    call_id,
+                    tool_name,
+                    current_arguments,
+                    message=self._latest_hook_reason(events, "PermissionRequest"),
+                    data={"reason": "ask 模式需要审批"},
+                    hook_contexts=hook_contexts,
+                )
+                events.append(event)
+                yield from events
+                yield {"type": "tool_result_json", "result_json": self._permission_result_json(event)}
+                return
+            if permission_action == "deny":
+                reason = self._latest_hook_reason(events, "PermissionRequest") or "PermissionRequest hook 拒绝执行"
+                self._run_hooks(events, "PermissionDenied", call_id, tool_name, current_arguments, reason=reason)
+                self._collect_hook_contexts_from_events(hook_contexts, events)
+                failed_events, result_json = self._failed_tool(
+                    events,
+                    call_id,
+                    tool_name,
+                    current_arguments,
+                    reason,
+                    {"hook_decision": "deny"},
+                    hook_contexts=hook_contexts,
+                )
+                yield from failed_events
+                yield {"type": "tool_result_json", "result_json": result_json}
+                return
 
         try:
-            command, workdir, timeout_ms = self._prepare_shell(current_arguments)
+            command, workdir, timeout_ms = self._prepare_shell(current_arguments, approved=require_permission or permission_preapproved)
         except (ToolExecutionError, OSError, ValueError) as exc:
-            failed_events, result_json = self._failed_tool(events, call_id, tool_name, current_arguments, str(exc), {})
+            failed_events, result_json = self._failed_tool(events, call_id, tool_name, current_arguments, str(exc), {}, hook_contexts=hook_contexts)
             yield from failed_events
             yield {"type": "tool_result_json", "result_json": result_json}
             return
@@ -213,13 +317,20 @@ class ToolExecutor:
         yield start_event
         if bool(current_arguments.get("background")):
             job = self.process_manager.start_background(command, cwd=workdir)
+            done_data = self._tool_done_data(
+                tool_name,
+                {"job": job, "background": True},
+                started_at=started_at,
+                ok=True,
+                hook_contexts=hook_contexts,
+            )
             result_json = json.dumps(
                 {
                     "tool": tool_name,
                     "title": f"后台执行：{command}",
                     "ok": True,
                     "output": f"已在后台启动 {job['id']}：{command}",
-                    "data": self._tool_done_data(tool_name, {"job": job, "background": True}, started_at=started_at, ok=True),
+                    "data": done_data,
                 },
                 ensure_ascii=False,
             )
@@ -230,7 +341,7 @@ class ToolExecutor:
                 "ok": True,
                 "title": f"后台执行：{command}",
                 "output": f"已在后台启动 {job['id']}：{command}",
-                "data": self._tool_done_data(tool_name, {"job": job, "background": True}, started_at=started_at, ok=True),
+                "data": done_data,
             }
             yield {"type": "tool_result_json", "result_json": result_json}
             return
@@ -248,13 +359,13 @@ class ToolExecutor:
             else:
                 yield event
         if done_event is None:
-            failed_events, result_json = self._failed_tool([], call_id, tool_name, current_arguments, "shell 未返回完成事件", {})
+            failed_events, result_json = self._failed_tool([], call_id, tool_name, current_arguments, "shell 未返回完成事件", {}, hook_contexts=hook_contexts)
             yield from failed_events
             yield {"type": "tool_result_json", "result_json": result_json}
             return
 
         hook_events: list[dict] = []
-        self._run_hooks(
+        shell_outcomes = self._run_hooks(
             hook_events,
             "PostToolUse" if done_event.get("ok") else "PostToolUseFailure",
             call_id,
@@ -263,6 +374,7 @@ class ToolExecutor:
             tool_response={"ok": done_event.get("ok"), "output": done_event.get("output"), "data": done_event.get("data") or {}},
             error=None if done_event.get("ok") else str(done_event.get("output") or ""),
         )
+        self._collect_hook_contexts(hook_contexts, shell_outcomes)
         yield from hook_events
         done_event["data"] = self._tool_done_data(
             tool_name,
@@ -270,6 +382,7 @@ class ToolExecutor:
             started_at=started_at,
             ok=bool(done_event.get("ok")),
             failure_reason=None if done_event.get("ok") else str(done_event.get("output") or ""),
+            hook_contexts=hook_contexts,
         )
         yield done_event
         result_json = json.dumps(
@@ -345,6 +458,7 @@ class ToolExecutor:
         data: dict[str, Any],
         *,
         started_at: float | None = None,
+        hook_contexts: list[str] | None = None,
     ) -> tuple[list[dict], str]:
         enriched_data = self._tool_done_data(
             tool_name,
@@ -353,6 +467,7 @@ class ToolExecutor:
             ok=False,
             failure_reason=message,
             arguments=arguments,
+            hook_contexts=hook_contexts,
         )
         result_json = json.dumps(
             {"tool": tool_name, "ok": False, "error": message, "data": enriched_data},
@@ -372,6 +487,53 @@ class ToolExecutor:
         )
         return events, result_json
 
+    def _run_permission_request_flow(
+        self,
+        events: list[dict],
+        call_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        hook_contexts: list[str],
+    ) -> str:
+        outcomes = self._run_hooks(events, "PermissionRequest", call_id, tool_name, arguments)
+        self._collect_hook_contexts(hook_contexts, outcomes)
+        decision: str | None = None
+        for outcome in outcomes:
+            if outcome.updated_input and outcome.permission_decision != "deny":
+                arguments.update(outcome.updated_input)
+            if outcome.permission_decision == "deny":
+                decision = "deny"
+            elif outcome.permission_decision == "ask" and decision not in {"deny"}:
+                decision = "ask"
+            elif outcome.permission_decision == "allow" and decision is None:
+                decision = "allow"
+        return decision or "ask"
+
+    def _permission_request_event(
+        self,
+        call_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        message: str | None = None,
+        data: dict[str, Any] | None = None,
+        hook_contexts: list[str] | None = None,
+    ) -> dict[str, Any]:
+        request_data = dict(data or {})
+        contexts = self._unique_contexts(hook_contexts or [])
+        if contexts:
+            request_data["hook_contexts"] = contexts
+        return {
+            "type": "permission_request",
+            "call_id": call_id,
+            "tool": tool_name,
+            "permission": self._permission_for(tool_name),
+            "title": f"需要审批：{tool_name}",
+            "message": message or f"执行 {tool_name} 前需要用户确认。",
+            "arguments": arguments,
+            "data": request_data,
+        }
+
     def _permission_result_json(self, event: dict) -> str:
         return json.dumps(
             {
@@ -387,11 +549,73 @@ class ToolExecutor:
             ensure_ascii=False,
         )
 
-    def _prepare_shell(self, arguments: dict[str, Any]) -> tuple[str, Any, int]:
+    def _tool_result_json(self, result: Any, data: dict[str, Any]) -> str:
+        return json.dumps(
+            {
+                "tool": result.tool,
+                "title": result.title,
+                "ok": result.ok,
+                "output": result.output,
+                "data": data,
+            },
+            ensure_ascii=False,
+        )
+
+    def _collect_hook_contexts(self, contexts: list[str], outcomes: list[HookOutcome]) -> None:
+        for outcome in outcomes:
+            if outcome.additional_context:
+                contexts.append(outcome.additional_context)
+
+    def _collect_hook_contexts_from_events(self, contexts: list[str], events: list[dict]) -> None:
+        for event in events:
+            if event.get("type") != "hook_done":
+                continue
+            data = event.get("data") if isinstance(event.get("data"), dict) else {}
+            context = data.get("additional_context")
+            if context:
+                contexts.append(str(context))
+
+    def _unique_contexts(self, contexts: list[str]) -> list[str]:
+        unique: list[str] = []
+        for context in contexts:
+            text = str(context).strip()
+            if text and text not in unique:
+                unique.append(text)
+        return unique
+
+    def _latest_hook_reason(self, events: list[dict], hook_event: str) -> str | None:
+        for event in reversed(events):
+            if event.get("type") != "hook_done" or event.get("hook_event") != hook_event:
+                continue
+            data = event.get("data") if isinstance(event.get("data"), dict) else {}
+            reason = data.get("reason")
+            if reason:
+                return str(reason)
+        return None
+
+    def _run_tool_with_optional_approval(self, tool_name: str, arguments: dict[str, Any], approved: bool) -> Any:
+        if not approved or self.tools.permission_mode != "ask":
+            return self.tools.run(tool_name, arguments)
+        original_mode = self.tools.permission_mode
+        self.tools.permission_mode = "workspace_write"
+        try:
+            return self.tools.run(tool_name, arguments)
+        finally:
+            self.tools.permission_mode = original_mode
+
+    def _prepare_shell(self, arguments: dict[str, Any], *, approved: bool = False) -> tuple[str, Any, int]:
         command = str(arguments.get("command") or arguments.get("cmd") or "").strip()
         if not command:
             raise ToolExecutionError("shell_command 需要 command")
-        self.tools._check_permission("shell_command")
+        if approved and self.tools.permission_mode == "ask":
+            original_mode = self.tools.permission_mode
+            self.tools.permission_mode = "workspace_write"
+            try:
+                self.tools._check_permission("shell_command")
+            finally:
+                self.tools.permission_mode = original_mode
+        else:
+            self.tools._check_permission("shell_command")
         if not self.tools._is_allowed_shell_command(command):
             raise ToolExecutionError(f"命令需要审批，当前版本已拦截：{command}")
         workdir = self.tools._resolve_workspace_path(str(arguments.get("workdir") or "."))
@@ -444,9 +668,13 @@ class ToolExecutor:
         ok: bool,
         failure_reason: str | None = None,
         arguments: dict[str, Any] | None = None,
+        hook_contexts: list[str] | None = None,
     ) -> dict[str, Any]:
         enriched = {key: value for key, value in data.items() if value is not None}
         enriched["spec"] = self._tool_spec_data(tool_name)
+        contexts = self._unique_contexts(hook_contexts or [])
+        if contexts:
+            enriched["hook_contexts"] = contexts
         if started_at is not None:
             enriched["duration_ms"] = max(0, int((time.perf_counter() - started_at) * 1000))
         if not ok:

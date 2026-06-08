@@ -479,39 +479,23 @@ class CodexLikeAgentRuntime:
             return
 
         for call_id, name, arguments in normalized:
-            if self._requires_permission_request(name):
-                hook_events, hook_decision = self._run_permission_request_hooks(call_id, name, arguments)
-                for hook_event in hook_events:
-                    yield hook_event
-                if hook_decision == "allow":
-                    async for event in self._iter_executor_events(call_id, name, arguments):
-                        yield event
-                    continue
-                if hook_decision == "deny":
-                    result_json = json.dumps(
-                        {"tool": name, "ok": False, "error": "PermissionRequest hook 拒绝执行"},
-                        ensure_ascii=False,
-                    )
-                    yield {
-                        "type": "tool_done",
-                        "call_id": call_id,
-                        "tool": name,
-                        "ok": False,
-                        "title": f"{name} 执行失败",
-                        "output": "PermissionRequest hook 拒绝执行",
-                        "data": {"hook_decision": "deny"},
-                    }
-                    yield {"type": "tool_result_json", "result_json": result_json}
-                    continue
-                event = self._permission_request_event(call_id, name, arguments)
-                yield event
-                yield {"type": "tool_result_json", "result_json": self._permission_result_json(event)}
-                continue
-            async for event in self._iter_executor_events(call_id, name, arguments):
+            async for event in self._iter_executor_events(
+                call_id,
+                name,
+                arguments,
+                require_permission=self._requires_permission_request(name),
+            ):
                 yield event
 
-    async def _iter_executor_events(self, call_id: str, name: str, arguments: dict) -> AsyncIterator[dict]:
-        iterator = self.executor.iter_one_stream(call_id, name, arguments)
+    async def _iter_executor_events(
+        self,
+        call_id: str,
+        name: str,
+        arguments: dict,
+        *,
+        require_permission: bool = False,
+    ) -> AsyncIterator[dict]:
+        iterator = self.executor.iter_one_stream(call_id, name, arguments, require_permission=require_permission)
         sentinel = object()
         while True:
             event = await asyncio.to_thread(next, iterator, sentinel)
