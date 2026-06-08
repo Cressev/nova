@@ -44,6 +44,7 @@ const state = {
   commands: BUILTIN_COMMANDS,
   commandSelectionIndex: -1,
   mcp: null,
+  lsp: null,
   skills: null,
 };
 
@@ -81,6 +82,8 @@ const toolCountEl = document.querySelector("#tool-count");
 const toolListEl = document.querySelector("#tool-list");
 const mcpStateEl = document.querySelector("#mcp-state");
 const mcpListEl = document.querySelector("#mcp-list");
+const lspStateEl = document.querySelector("#lsp-state");
+const lspListEl = document.querySelector("#lsp-list");
 const memoryStateEl = document.querySelector("#memory-state");
 const memoryListEl = document.querySelector("#memory-list");
 const configStateEl = document.querySelector("#config-state");
@@ -214,10 +217,11 @@ async function loadWorkspaceCandidates(query = "") {
 }
 
 async function loadRuntimePanels() {
-  const [config, tools, mcp, skills, memory, statusline, worktrees] = await Promise.all([
+  const [config, tools, mcp, lsp, skills, memory, statusline, worktrees] = await Promise.all([
     api("/api/runtime/config"),
     api("/api/tools"),
     api("/api/mcp/status"),
+    api("/api/lsp/status"),
     api("/api/skills/status"),
     api("/api/memory/status"),
     loadStatuslineData(),
@@ -227,11 +231,13 @@ async function loadRuntimePanels() {
   state.worktrees = worktrees;
   state.statusline = statusline;
   state.mcp = mcp;
+  state.lsp = lsp;
   state.skills = skills;
   renderRuntimeConfig(config);
   renderWorktrees(worktrees);
   renderTools(tools.items || []);
   renderMcpPanel(mcp);
+  renderLspPanel(lsp);
   renderSkillsPanel(skills);
   renderMemory(memory);
   renderStatusline();
@@ -732,6 +738,94 @@ function renderMcpPanel(mcp) {
       button.addEventListener("click", () => callMcpDemoTool(button.dataset.mcpTool || MCP_DEMO_TOOL));
     });
     mcpListEl.appendChild(card);
+  }
+}
+
+function renderLspPanel(lsp) {
+  if (!lspStateEl || !lspListEl) {
+    return;
+  }
+  const servers = lsp?.servers || [];
+  const languages = lsp?.languages || [];
+  lspStateEl.textContent = servers.length > 0 ? `${languages.join(", ")} · ready` : "未识别";
+  lspListEl.innerHTML = "";
+  if (servers.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "lsp-empty";
+    empty.textContent = "当前项目暂未识别可用语言服务";
+    lspListEl.appendChild(empty);
+    return;
+  }
+  for (const server of servers) {
+    const card = document.createElement("article");
+    card.className = `lsp-server ${server.state === "ready" ? "ready" : ""}`;
+    const summary = server.diagnostics || {};
+    const samplePath = (server.sample_paths || [])[0] || "";
+    const sampleDefinition = server.sample_definition || {};
+    const definitionPath = sampleDefinition.path || samplePath;
+    const sampleSymbol = server.sample_symbol || "";
+    card.dataset.samplePath = samplePath;
+    card.dataset.definitionPath = definitionPath;
+    card.dataset.sampleSymbol = sampleSymbol;
+    card.innerHTML = `
+      <div class="lsp-server-head">
+        <strong>${escapeHtml(server.name || server.language || "lsp")}</strong>
+        <span>${escapeHtml(server.transport || "builtin")} · ${escapeHtml(server.state || "-")}</span>
+      </div>
+      <div class="lsp-diagnostics">
+        <span>错误 ${Number(summary.error || 0)}</span>
+        <span>警告 ${Number(summary.warning || 0)}</span>
+        <span>信息 ${Number(summary.information || 0)}</span>
+      </div>
+      <div class="lsp-actions">
+        <button type="button" data-action="lsp-diagnostics">读取诊断</button>
+        <button type="button" data-action="lsp-definition">查定义</button>
+      </div>
+      <pre class="lsp-output">${escapeHtml(samplePath ? `示例文件：${samplePath}${sampleSymbol ? `\n示例符号：${sampleSymbol}` : ""}` : "暂无示例文件")}</pre>
+    `;
+    card.querySelector('[data-action="lsp-diagnostics"]')?.addEventListener("click", () => runLspDiagnostics(card));
+    card.querySelector('[data-action="lsp-definition"]')?.addEventListener("click", () => runLspDefinition(card));
+    lspListEl.appendChild(card);
+  }
+}
+
+async function runLspDiagnostics(card) {
+  const output = card.querySelector(".lsp-output");
+  const path = card.dataset.samplePath || "";
+  if (!output || !path) {
+    return;
+  }
+  output.textContent = "正在读取诊断...";
+  try {
+    const payload = await api(`/api/lsp/diagnostics?path=${encodeURIComponent(path)}`);
+    const diagnostics = payload.diagnostics || [];
+    output.textContent = diagnostics.length === 0
+      ? `${path}\n未发现诊断问题。`
+      : diagnostics.map((item) => (
+        `${item.path}:${item.range?.start?.line || 1}:${item.range?.start?.character || 1} ${item.severity} ${item.message}`
+      )).join("\n");
+    streamStateEl.textContent = "LSP 诊断已更新";
+  } catch (error) {
+    output.textContent = `诊断失败：${error instanceof Error ? error.message : "未知错误"}`;
+  }
+}
+
+async function runLspDefinition(card) {
+  const output = card.querySelector(".lsp-output");
+  const path = card.dataset.definitionPath || card.dataset.samplePath || "";
+  const symbol = card.dataset.sampleSymbol || "";
+  if (!output || !path || !symbol) {
+    return;
+  }
+  output.textContent = `正在查找 ${symbol} 定义...`;
+  try {
+    const payload = await api(`/api/lsp/definition?path=${encodeURIComponent(path)}&symbol=${encodeURIComponent(symbol)}`);
+    output.textContent = payload.ok && payload.definition
+      ? `${payload.definition.symbol} · ${payload.definition.kind}\n${payload.definition.path}:${payload.definition.range?.start?.line || 1}:${payload.definition.range?.start?.character || 1}`
+      : (payload.error || "未找到 main 定义");
+    streamStateEl.textContent = "LSP 定义查询已更新";
+  } catch (error) {
+    output.textContent = `定义查询失败：${error instanceof Error ? error.message : "未知错误"}`;
   }
 }
 

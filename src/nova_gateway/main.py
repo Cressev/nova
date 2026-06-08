@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .config.settings import load_settings
 from .context_budget import build_context_budget_plan, estimate_tokens
+from .lsp import LspManager
 from .memory import ProjectMemory
 from .mcp import McpManager
 from .providers.bigmodel import BigModelProvider, ProviderError
@@ -379,6 +380,27 @@ async def tool_list() -> dict:
 @app.get("/api/mcp/status")
 async def mcp_status() -> dict:
     return McpManager(workspace_manager.current_root).status()
+
+
+@app.get("/api/lsp/status")
+async def lsp_status() -> dict:
+    return LspManager(workspace_manager.current_root).status()
+
+
+@app.get("/api/lsp/diagnostics")
+async def lsp_diagnostics(path: str | None = Query(default=None, max_length=400)) -> dict:
+    try:
+        return LspManager(workspace_manager.current_root).diagnostics(path=path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/lsp/definition")
+async def lsp_definition(path: str = Query(..., max_length=400), symbol: str = Query(..., max_length=160)) -> dict:
+    try:
+        return LspManager(workspace_manager.current_root).definition(path=path, symbol=symbol)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/mcp/tools/{tool_name}/call")

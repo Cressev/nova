@@ -187,7 +187,8 @@ body.sidebar-collapsed.inspector-collapsed .app-shell {
   backdrop-filter: blur(16px);
 }
 
-.mcp-panel {
+.mcp-panel,
+.lsp-panel {
   display: grid;
   gap: 8px;
   margin-top: 10px;
@@ -197,6 +198,8 @@ body.sidebar-collapsed.inspector-collapsed .app-shell {
 
 .mcp-panel-head,
 .mcp-server-head,
+.lsp-panel-head,
+.lsp-server-head,
 .mcp-tool,
 .mcp-resource {
   display: flex;
@@ -206,7 +209,8 @@ body.sidebar-collapsed.inspector-collapsed .app-shell {
 }
 
 .mcp-panel-head span,
-.mcp-section em {
+.mcp-section em,
+.lsp-panel-head span {
   color: var(--faint);
   font-size: 11px;
   font-style: normal;
@@ -214,19 +218,23 @@ body.sidebar-collapsed.inspector-collapsed .app-shell {
   text-transform: uppercase;
 }
 
-.mcp-panel-head strong {
+.mcp-panel-head strong,
+.lsp-panel-head strong {
   color: var(--blue);
   font-size: 11px;
 }
 
 .mcp-list,
 .mcp-server,
-.mcp-section {
+.mcp-section,
+.lsp-list,
+.lsp-server {
   display: grid;
   gap: 6px;
 }
 
-.mcp-server {
+.mcp-server,
+.lsp-server {
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -238,7 +246,13 @@ body.sidebar-collapsed.inspector-collapsed .app-shell {
   background: rgba(66, 222, 153, 0.06);
 }
 
-.mcp-server-head strong {
+.lsp-server.ready {
+  border-color: rgba(115, 201, 244, 0.28);
+  background: rgba(115, 201, 244, 0.055);
+}
+
+.mcp-server-head strong,
+.lsp-server-head strong {
   overflow: hidden;
   font-size: 12px;
   text-overflow: ellipsis;
@@ -246,11 +260,51 @@ body.sidebar-collapsed.inspector-collapsed .app-shell {
 }
 
 .mcp-server-head span,
+.lsp-server-head span,
 .mcp-tool small,
 .mcp-resource small,
-.mcp-empty {
+.mcp-empty,
+.lsp-empty {
   color: var(--muted);
   font-size: 11px;
+}
+
+.lsp-diagnostics,
+.lsp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lsp-diagnostics span {
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 7px;
+  padding: 4px 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.lsp-actions button {
+  min-height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 4px 7px;
+  background: rgba(14, 17, 16, 0.62);
+  color: var(--text);
+  font-size: 11px;
+}
+
+.lsp-output {
+  max-height: 120px;
+  margin: 0;
+  overflow: auto;
+  border-radius: 7px;
+  padding: 7px;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
 }
 
 .mcp-tool {
