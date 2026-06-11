@@ -38,6 +38,28 @@ class ApiTest(unittest.TestCase):
         self.assertTrue(any(mode["id"] == "local" for mode in payload["modes"]))
         self.assertIn("permission_mode", payload["permissions"])
 
+    def test_workspace_status_quick_skips_full_git_status(self) -> None:
+        calls: list[tuple[str, ...]] = []
+
+        def fake_git(args: list[str]) -> str:
+            calls.append(tuple(args))
+            if args == ["branch", "--show-current"]:
+                return "main\n"
+            if args == ["rev-parse", "--is-inside-work-tree"]:
+                return "true\n"
+            if "status" in args:
+                raise AssertionError("quick workspace status should not run git status")
+            return ""
+
+        with patch.object(app_module, "_git", fake_git):
+            response = self.client.get("/api/workspace/status", params={"quick": "true"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["git"]["partial"])
+        self.assertEqual(payload["git"]["branch"], "main")
+        self.assertNotIn(("-c", "core.quotepath=false", "status", "--porcelain=v1"), calls)
+
     def test_runtime_config_tools_and_memory(self) -> None:
         config = self.client.get("/api/runtime/config")
         self.assertEqual(config.status_code, 200)

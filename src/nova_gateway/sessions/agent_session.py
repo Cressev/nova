@@ -182,9 +182,25 @@ class AgentSessionService:
             runtime.final_answer = AgentFinalAnswerState(message_id="", content=reason)
             self.active_session_ids.discard(session_id)
 
+    def cancel_turn(self, session_id: str, *, reason: str = "用户已停止当前运行") -> None:
+        with self._lock:
+            runtime = self._runtime_for(session_id)
+            runtime.active = False
+            runtime.cancel_requested = True
+            if runtime.current_turn is not None:
+                runtime.current_turn.status = "cancelled"
+                runtime.current_turn.updated_at = utc_now().isoformat()
+            runtime.final_answer = AgentFinalAnswerState(message_id="", content=reason)
+            self.active_session_ids.discard(session_id)
+
     def request_cancel(self, session_id: str) -> None:
         with self._lock:
             self._runtime_for(session_id).cancel_requested = True
+
+    def is_cancel_requested(self, session_id: str) -> bool:
+        with self._lock:
+            runtime = self._sessions.get(session_id)
+            return bool(runtime and runtime.cancel_requested)
 
     def request_cancel_for_call(self, call_id: str) -> str | None:
         with self._lock:

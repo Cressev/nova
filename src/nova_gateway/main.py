@@ -754,6 +754,33 @@ async def cancel_tool_call(call_id: str) -> dict:
     return {"ok": True, "status": job["status"], "job": job}
 
 
+@app.post("/api/chat/sessions/{session_id}/cancel")
+async def cancel_chat_session_turn(session_id: str) -> dict:
+    if store.get_chat_session(session_id) is None:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    agent_sessions.request_cancel(session_id)
+    cancelled_tools: list[str] = []
+    runtime = agent_sessions.runtime_state(session_id)
+    for item in runtime.get("tool_calls", []):
+        if item.get("status") not in {"running", "started"}:
+            continue
+        call_id = str(item.get("call_id") or "")
+        if not call_id:
+            continue
+        try:
+            process_manager.cancel_call(call_id)
+            cancelled_tools.append(call_id)
+        except KeyError:
+            continue
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "cancel_requested": True,
+        "active": agent_sessions.is_active(session_id),
+        "cancelled_tool_calls": cancelled_tools,
+    }
+
+
 @app.get("/api/workspaces")
 async def workspace_list(q: str | None = Query(default=None, max_length=1200)) -> dict:
     return workspace_manager.status(query=q)
@@ -833,10 +860,11 @@ async def delete_worktree(name: str, discard: bool = Query(default=False)) -> di
 
 
 @app.get("/api/workspace/status", response_model=WorkspaceStatus)
-async def workspace_status() -> WorkspaceStatus:
+async def workspace_status(quick: bool = Query(default=False)) -> WorkspaceStatus:
+    git_status = _read_git_status(quick=quick)
     return WorkspaceStatus(
         project_root=str(workspace_manager.current_root),
-        git=_read_git_status(),
+        git=git_status,
         modes=[
             WorkspaceMode(
                 id="local",
@@ -847,7 +875,7 @@ async def workspace_status() -> WorkspaceStatus:
             WorkspaceMode(
                 id="worktree",
                 label="工作树",
-                enabled=_git_available(),
+                enabled=git_status.available,
                 description="隔离变更，在 .nova/worktrees 中创建 Git worktree。",
             ),
             WorkspaceMode(
@@ -888,10 +916,12 @@ def _permission_mode_label(permission_mode: str) -> str:
     }.get(permission_mode, "询问：写入和 shell 需要审批")
 
 
-def _read_git_status() -> GitStatus:
+def _read_git_status(quick: bool = False) -> GitStatus:
     # 这里只读 Git 状态，避免在状态刷新时产生 stage/revert/push 等副作用。
     try:
         branch = _git(["branch", "--show-current"]).strip() or None
+        if quick:
+            return GitStatus(available=True, branch=branch, partial=True)
         porcelain = _git(["-c", "core.quotepath=false", "status", "--porcelain=v1"])
     except (OSError, subprocess.CalledProcessError):
         return GitStatus(available=False)
@@ -1193,6 +1223,18 @@ async def stream_chat_message(
 
             answer_parts: list[str] = []
             try:
+                def cancel_event() -> dict:
+                    agent_sessions.cancel_turn(session_id)
+                    return runtime_event(
+                        "turn.cancelled",
+                        category="turn",
+                        phase="cancelled",
+                        status="cancelled",
+                        title="当前运行已停止",
+                        message="用户已强制停止当前 Agent 运行。",
+                        data={"task_id": task.id},
+                    )
+
                 history = [message for message in store.list_chat_messages(session_id) if message.id != user_message.id]
                 all_turn_messages = [*history, user_message]
                 budget = build_context_budget_plan(
@@ -1240,6 +1282,9 @@ async def stream_chat_message(
                 yield _ndjson({"type": "runtime_event", "event": budgeted})
                 turn_messages = budget.messages
                 async for event in _agent_runtime().stream(turn_messages):
+                    if agent_sessions.is_cancel_requested(session_id):
+                        yield _ndjson({"type": "runtime_event", "event": cancel_event()})
+                        return
                     runtime = _runtime_event_from_agent_event(event, runtime_event)
                     if runtime is not None:
                         yield _ndjson({"type": "runtime_event", "event": runtime})
@@ -1256,6 +1301,9 @@ async def stream_chat_message(
                     if event["type"] == "assistant_delta":
                         answer_parts.append(event["delta"])
                         yield _ndjson(event)
+                        if agent_sessions.is_cancel_requested(session_id):
+                            yield _ndjson({"type": "runtime_event", "event": cancel_event()})
+                            return
                         continue
                     if event["type"] == "assistant_done_content":
                         if not answer_parts and event.get("content"):
@@ -1366,6 +1414,8 @@ async def stream_chat_message(
         try:
             async for chunk in run_turn(first_message, emit_user=True):
                 yield chunk
+            if agent_sessions.is_cancel_requested(session_id):
+                return
             while True:
                 queued_messages = agent_sessions.drain_queued_messages(session_id)
                 if not queued_messages:
@@ -1374,6 +1424,8 @@ async def stream_chat_message(
                     yield _ndjson({"type": "queued_message", "message": queued.model_dump(mode="json")})
                     async for chunk in run_turn(queued, emit_user=False):
                         yield chunk
+                    if agent_sessions.is_cancel_requested(session_id):
+                        return
         finally:
             agent_sessions.mark_idle(session_id)
 

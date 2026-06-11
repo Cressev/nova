@@ -1985,6 +1985,15 @@ textarea::placeholder {
   color: rgba(238, 244, 239, 0.68);
 }
 
+#send-button.stop {
+  background: #ff6b5f;
+  color: #170504;
+}
+
+#send-button.stop:hover {
+  background: #ff8177;
+}
+
 .send-icon {
   font-size: 18px;
   line-height: 1;

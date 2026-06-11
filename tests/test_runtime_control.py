@@ -5,6 +5,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -212,6 +213,51 @@ class RuntimeControlTest(unittest.TestCase):
             self.assertFalse(thread.is_alive())
             done = next(event for event in events if event["type"] == "tool_done")
             self.assertEqual(done["data"]["status"], "cancelled")
+
+    def test_chat_session_cancel_endpoint_marks_running_turn_cancel_requested(self) -> None:
+        session = self.client.post("/api/chat/sessions", json={"title": "停止接口"}).json()
+        app_module.agent_sessions.mark_active(session["id"])
+        self.addCleanup(lambda: app_module.agent_sessions.mark_idle(session["id"]))
+
+        cancelled = self.client.post(f"/api/chat/sessions/{session['id']}/cancel")
+
+        self.assertEqual(cancelled.status_code, 200)
+        self.assertTrue(cancelled.json()["cancel_requested"])
+        runtime = self.client.get(f"/api/chat/sessions/{session['id']}/runtime-state").json()["runtime"]
+        self.assertTrue(runtime["cancel_requested"])
+
+    def test_chat_stream_stops_when_cancel_is_requested(self) -> None:
+        session = self.client.post("/api/chat/sessions", json={"title": "强制停止"}).json()
+
+        async def fake_agent_stream(_messages):
+            yield {"type": "assistant_delta", "delta": "开始"}
+            app_module.agent_sessions.request_cancel(session["id"])
+            await app_module.asyncio.sleep(0)
+            yield {"type": "assistant_delta", "delta": " 不应该出现"}
+
+        class FakeRuntime:
+            stream = staticmethod(fake_agent_stream)
+
+        with patch.object(app_module, "_agent_runtime", lambda: FakeRuntime()):
+            with self.client.stream(
+                "POST",
+                f"/api/chat/sessions/{session['id']}/stream",
+                json={"content": "跑一个长任务"},
+            ) as response:
+                self.assertEqual(response.status_code, 200)
+                lines = [line for line in response.iter_lines() if line.strip()]
+
+        events = [app_module.json.loads(line) for line in lines]
+        event_types = [
+            event["event"]["event_type"]
+            for event in events
+            if event.get("type") == "runtime_event"
+        ]
+        self.assertIn("turn.cancelled", event_types)
+        self.assertNotIn("turn.completed", event_types)
+        self.assertFalse(any(event.get("delta") == " 不应该出现" for event in events))
+        assistant_done = [event for event in events if event.get("type") == "assistant_done"]
+        self.assertEqual(assistant_done, [])
 
     def test_chat_stream_queues_message_while_session_running(self) -> None:
         session = self.client.post("/api/chat/sessions", json={"title": "队列"}).json()

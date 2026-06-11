@@ -143,6 +143,7 @@ class GitStatus(BaseModel):
     branch: str | None = None
     dirty_count: int = 0
     files: list[GitFileStatus] = Field(default_factory=list)
+    partial: bool = False
 
 
 class WorkspaceMode(BaseModel):

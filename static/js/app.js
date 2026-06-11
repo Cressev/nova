@@ -27,6 +27,9 @@ const state = {
   selectedSessionId: null,
   selectedSessionTitle: "Nova Chat",
   sending: false,
+  turnCancelRequested: false,
+  streamAbortController: null,
+  showAllSessionGroups: readStorageBool("nova.showAllSessionGroups", false),
   collapsedProjects: new Set(readStorageList("nova.collapsedProjects")),
   expandedSessionGroups: new Set(readStorageList("nova.expandedSessionGroups")),
   workspaceCandidates: [],
@@ -161,6 +164,7 @@ let workspaceDialogTimer = null;
 const TOOL_TOOLTIP_DELAY_MS = 1000;
 const MCP_DEMO_TOOL = "mcp__demo__echo";
 const SESSION_PREVIEW_LIMIT = 5;
+const SESSION_GROUP_PREVIEW_LIMIT = 8;
 
 let commandMatches = [];
 
@@ -252,14 +256,19 @@ async function loadHealth() {
   }
 }
 
-async function loadWorkspaceStatus() {
+async function loadWorkspaceStatus({ quick = false, includePicker = true } = {}) {
   try {
+    const workspaceStatusRequest = quick
+      ? api("/api/workspace/status?quick=true")
+      : api("/api/workspace/status");
     const [status, workspaces] = await Promise.all([
-      api("/api/workspace/status"),
-      api("/api/workspaces"),
+      workspaceStatusRequest,
+      includePicker ? api("/api/workspaces") : Promise.resolve(null),
     ]);
     renderWorkspace(status);
-    renderWorkspacePicker(workspaces);
+    if (workspaces) {
+      renderWorkspacePicker(workspaces);
+    }
   } catch (error) {
     workspacePathEl.textContent = "工作区状态读取失败";
     dirtyCountEl.textContent = "-";
@@ -271,6 +280,46 @@ async function loadWorkspaceCandidates(query = "") {
   const workspaces = await api(`/api/workspaces${suffix}`);
   renderWorkspacePicker(workspaces);
   return workspaces;
+}
+
+async function loadRuntimeShell() {
+  const requestId = ++state.runtimePanelsRequestId;
+  const [config, tools, processes, statusline, worktrees] = await Promise.all([
+    api("/api/runtime/config"),
+    api("/api/tools"),
+    api("/api/processes"),
+    loadStatuslineData(),
+    api("/api/worktrees"),
+  ]);
+  if (requestId !== state.runtimePanelsRequestId) {
+    return;
+  }
+  state.runtimeConfig = config;
+  state.worktrees = worktrees;
+  state.statusline = statusline;
+  state.processes = processes.items || [];
+  renderRuntimeConfig(config);
+  renderWorktrees(worktrees);
+  renderToolCount(tools.items || []);
+  renderProcessesPanel(state.processes);
+  renderStatusline();
+  renderSettings();
+}
+
+function scheduleRuntimeShellLoad() {
+  const run = () => {
+    void loadRuntimeShell().catch((error) => {
+      streamStateEl.textContent = `运行状态加载失败：${error instanceof Error ? error.message : "未知错误"}`;
+    });
+  };
+  const scheduleIdle = () => {
+    if ("requestIdleCallback" in window) {
+      window.requestIdleCallback(run, { timeout: 1200 });
+      return;
+    }
+    run();
+  };
+  window.setTimeout(scheduleIdle, 650);
 }
 
 async function loadRuntimePanels() {
@@ -312,6 +361,55 @@ async function loadRuntimePanels() {
   renderMemory(memory);
   renderStatusline();
   renderSettings();
+}
+
+async function loadInspectorPanelDetails(panel) {
+  if (panel === "workspace") {
+    await loadWorkspaceStatus({ quick: false });
+    return;
+  }
+  if (panel === "review") {
+    await refreshReviewPanel();
+    return;
+  }
+  if (panel === "run") {
+    const worktrees = await api("/api/worktrees");
+    state.worktrees = worktrees;
+    renderWorktrees(worktrees);
+    return;
+  }
+  if (panel === "processes") {
+    await refreshProcessesPanel();
+    return;
+  }
+  if (panel === "tools") {
+    const [tools, mcp, lsp, skills] = await Promise.all([
+      api("/api/tools"),
+      api("/api/mcp/status"),
+      api("/api/lsp/status"),
+      api("/api/skills/status"),
+    ]);
+    state.mcp = mcp;
+    state.lsp = lsp;
+    state.skills = skills;
+    renderTools(tools.items || []);
+    renderMcpPanel(mcp);
+    renderLspPanel(lsp);
+    renderSkillsPanel(skills);
+    return;
+  }
+  if (panel === "subagents") {
+    await refreshSubagentsPanel();
+    return;
+  }
+  if (panel === "memory") {
+    const memory = await api("/api/memory/status");
+    renderMemory(memory);
+    return;
+  }
+  if (panel === "config" || panel === "permissions") {
+    await loadRuntimeShell();
+  }
 }
 
 async function loadStatuslineData() {
@@ -515,7 +613,7 @@ function renderWorkspace(status) {
   workspaceInputEl.value = status.project_root;
   workspacePathEl.textContent = status.project_root;
   gitBranchEl.textContent = status.git.available ? status.git.branch || "detached" : "no git";
-  dirtyCountEl.textContent = String(status.git.dirty_count);
+  dirtyCountEl.textContent = status.git.partial ? "…" : String(status.git.dirty_count);
 
   const localMode = status.modes.find((mode) => mode.id === "local");
   modePillEl.textContent = localMode?.enabled ? "本地模式" : "模式未就绪";
@@ -560,6 +658,10 @@ function renderGitFiles(git) {
     return;
   }
   if (git.files.length === 0) {
+    if (git.partial) {
+      gitFilesEl.innerHTML = '<p class="muted">改动文件将在打开工作区详情时加载。</p>';
+      return;
+    }
     gitFilesEl.innerHTML = '<p class="muted">工作区干净。</p>';
     return;
   }
@@ -717,14 +819,18 @@ async function cleanupCurrentWorktree() {
 async function refreshWorkspaceSurface() {
   await Promise.all([
     loadWorkspaceStatus(),
-    loadRuntimePanels(),
+    loadRuntimeShell(),
     loadSessions({ refreshMessages: false }),
     refreshStatusline(),
   ]);
 }
 
-function renderTools(items) {
+function renderToolCount(items) {
   toolCountEl.textContent = `${items.length}`;
+}
+
+function renderTools(items) {
+  renderToolCount(items);
   toolListEl.innerHTML = "";
   for (const item of items) {
     const node = document.createElement("button");
@@ -1361,7 +1467,7 @@ async function approveMemoryCandidate(candidateId) {
     return;
   }
   await api(`/api/memory/candidates/${encodeURIComponent(candidateId)}/approve`, { method: "POST", body: "{}" });
-  await loadRuntimePanels();
+  await loadRuntimeShell();
   streamStateEl.textContent = "记忆候选已确认写入";
 }
 
@@ -1384,7 +1490,7 @@ async function denyMemoryCandidate(candidateId) {
     method: "POST",
     body: JSON.stringify({ reason: "用户在界面拒绝" }),
   });
-  await loadRuntimePanels();
+  await loadRuntimeShell();
   streamStateEl.textContent = "记忆候选已拒绝";
 }
 
@@ -1496,7 +1602,7 @@ async function saveMemoryDialog() {
       });
     }
     memoryDialogEl.close();
-    await loadRuntimePanels();
+    await loadRuntimeShell();
     streamStateEl.textContent = isCandidate ? `已确认候选记忆 ${name}` : `已更新${isPersona ? "人格" : "记忆"} ${name}`;
   } catch (error) {
     memoryDialogStateEl.textContent = `保存失败：${error instanceof Error ? error.message : "未知错误"}`;
@@ -1557,7 +1663,11 @@ async function loadSessions({ refreshMessages = true } = {}) {
   }
 
   const groups = groupSessionsByProject(sessions);
-  for (const group of groups) {
+  const visibleGroups = selectVisibleSessionGroups(groups, {
+    selectedSessionId: state.selectedSessionId,
+    currentWorkspace: projectRootEl.textContent.trim(),
+  });
+  for (const group of visibleGroups) {
     const groupNode = document.createElement("section");
     groupNode.className = "session-group";
     const collapsed = state.collapsedProjects.has(group.workspace);
@@ -1585,6 +1695,19 @@ async function loadSessions({ refreshMessages = true } = {}) {
     }
     sessionListEl.appendChild(groupNode);
   }
+  if (!state.showAllSessionGroups && visibleGroups.length < groups.length) {
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "session-more session-group-more";
+    more.textContent = `展开更多项目 ${groups.length - visibleGroups.length} 组`;
+    more.addEventListener("click", (event) => {
+      event.preventDefault();
+      state.showAllSessionGroups = true;
+      writeStorageBool("nova.showAllSessionGroups", true);
+      loadSessions({ refreshMessages: false });
+    });
+    sessionListEl.appendChild(more);
+  }
 
   const selected = sessions.find((session) => session.id === state.selectedSessionId);
   if (selected) {
@@ -1595,6 +1718,27 @@ async function loadSessions({ refreshMessages = true } = {}) {
     await loadMessages();
     await refreshStatusline();
   }
+}
+
+function selectVisibleSessionGroups(groups, { selectedSessionId = null, currentWorkspace = "" } = {}) {
+  if (state.showAllSessionGroups || groups.length <= SESSION_GROUP_PREVIEW_LIMIT) {
+    return groups;
+  }
+  const selectedGroup = groups.find((group) =>
+    group.sessions.some((session) => session.id === selectedSessionId),
+  );
+  const currentGroup = groups.find((group) => group.workspace === currentWorkspace);
+  const visible = [];
+  for (const group of [selectedGroup, currentGroup, ...groups]) {
+    if (!group || visible.some((item) => item.workspace === group.workspace)) {
+      continue;
+    }
+    visible.push(group);
+    if (visible.length >= SESSION_GROUP_PREVIEW_LIMIT) {
+      break;
+    }
+  }
+  return visible;
 }
 
 function toggleSessionGroup(groupNode, workspace) {
@@ -1710,7 +1854,7 @@ async function selectSession(session) {
         method: "POST",
         body: JSON.stringify({ path: session.workspace }),
       });
-      await Promise.all([loadWorkspaceStatus(), loadRuntimePanels()]);
+      await Promise.all([loadWorkspaceStatus(), loadRuntimeShell()]);
     } catch (error) {
       streamStateEl.textContent = `项目切换失败：${error instanceof Error ? error.message : "未知错误"}`;
       return;
@@ -2324,7 +2468,7 @@ async function processApproval(node, approved) {
       appendMessage(response.message);
       streamStateEl.textContent = "已拒绝工具调用，Nova 已给出替代路径";
     }
-    await Promise.all([loadRuntimePanels(), refreshStatusline()]);
+    await Promise.all([loadRuntimeShell(), refreshStatusline()]);
   } catch (error) {
     node.querySelector(".permission-event-head em").textContent = "审批失败";
     node.querySelectorAll("button").forEach((button) => {
@@ -2500,7 +2644,7 @@ workspaceDialogCreateEl.addEventListener("click", async () => {
 });
 
 settingsOpenEl.addEventListener("click", async () => {
-  await loadRuntimePanels();
+  await loadRuntimeShell();
   settingsDialogEl.showModal();
 });
 
@@ -2529,7 +2673,7 @@ for (const button of document.querySelectorAll("[data-inspector-target]")) {
 
 for (const button of document.querySelectorAll("[data-inspector-tab]")) {
   button.addEventListener("click", () => {
-    activateInspectorPanel(button.dataset.inspectorTab || "workspace");
+    openInspectorDialog(button.dataset.inspectorTab || "workspace");
   });
 }
 
@@ -2568,7 +2712,7 @@ settingsSaveEl.addEventListener("click", async () => {
         ? "配置已保存，重启后生效"
         : "配置已保存并立即生效";
     }
-    await Promise.all([loadHealth(), loadRuntimePanels(), refreshStatusline()]);
+    await Promise.all([loadHealth(), loadRuntimeShell(), refreshStatusline()]);
     renderSettings();
   } catch (error) {
     streamStateEl.textContent = `配置保存失败：${error instanceof Error ? error.message : "未知错误"}`;
@@ -2588,7 +2732,12 @@ settingsRestartEl.addEventListener("click", async () => {
 
 function openInspectorDialog(panel = "workspace") {
   activateInspectorPanel(panel);
-  inspectorDialogEl?.showModal();
+  if (inspectorDialogEl && !inspectorDialogEl.open) {
+    inspectorDialogEl.showModal();
+  }
+  void loadInspectorPanelDetails(panel).catch((error) => {
+    streamStateEl.textContent = `加载 ${INSPECTOR_PANEL_TITLES[panel] || "面板"} 失败：${error instanceof Error ? error.message : "未知错误"}`;
+  });
 }
 
 function activateInspectorPanel(panel = "workspace") {
@@ -2710,7 +2859,7 @@ async function createWorkspaceFolderFromDialog() {
     });
     workspaceDialogEl.close();
     state.selectedSessionId = null;
-    await Promise.all([loadWorkspaceStatus(), loadRuntimePanels(), loadSessions()]);
+    await Promise.all([loadWorkspaceStatus(), loadRuntimeShell(), loadSessions()]);
     streamStateEl.textContent = "目录已新建并切换";
   } catch (error) {
     const message = error instanceof Error ? error.message : "新建目录失败";
@@ -2887,7 +3036,7 @@ async function switchWorkspace(path) {
       body: JSON.stringify({ path }),
     });
     state.selectedSessionId = null;
-    await Promise.all([loadWorkspaceStatus(), loadRuntimePanels(), loadSessions()]);
+    await Promise.all([loadWorkspaceStatus(), loadRuntimeShell(), loadSessions()]);
     streamStateEl.textContent = "项目已切换";
   } catch (error) {
     const message = error instanceof Error ? error.message : "切换失败";
@@ -3001,6 +3150,39 @@ function updateAllTurnToolControls() {
   }
 }
 
+function setSendButtonMode(mode) {
+  if (mode === "stop") {
+    sendButtonEl.dataset.mode = "stop";
+    sendButtonEl.classList.add("stop");
+    sendButtonEl.querySelector(".send-label").textContent = "停止";
+    sendButtonEl.querySelector(".send-icon").textContent = "■";
+    return;
+  }
+  sendButtonEl.dataset.mode = "send";
+  sendButtonEl.classList.remove("stop");
+  sendButtonEl.querySelector(".send-label").textContent = "发送";
+  sendButtonEl.querySelector(".send-icon").textContent = "→";
+}
+
+async function cancelActiveTurn() {
+  const sessionId = state.selectedSessionId;
+  if (!sessionId || !state.sending) {
+    return;
+  }
+  state.turnCancelRequested = true;
+  streamStateEl.textContent = "正在停止当前运行";
+  setSendButtonMode("stop");
+  const cancelRequest = api(`/api/chat/sessions/${encodeURIComponent(sessionId)}/cancel`, {
+    method: "POST",
+    body: "{}",
+  }).catch((error) => {
+    streamStateEl.textContent = `停止请求失败：${error instanceof Error ? error.message : "未知错误"}`;
+  });
+  state.streamAbortController?.abort();
+  await cancelRequest;
+  streamStateEl.textContent = "已请求停止当前运行";
+}
+
 function setupInspectorCards() {
   for (const card of document.querySelectorAll(".inspector-panel")) {
     const title = card.querySelector(".card-title");
@@ -3037,6 +3219,14 @@ document.addEventListener("click", (event) => {
   updateCommandPalette();
 });
 
+sendButtonEl.addEventListener("click", (event) => {
+  if (!state.sending) {
+    return;
+  }
+  event.preventDefault();
+  void cancelActiveTurn();
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const content = messageEl.value.trim();
@@ -3065,8 +3255,10 @@ form.addEventListener("submit", async (event) => {
     return;
   }
   state.sending = true;
+  state.turnCancelRequested = false;
+  state.streamAbortController = new AbortController();
   sendButtonEl.disabled = false;
-  sendButtonEl.querySelector(".send-label").textContent = "排队";
+  setSendButtonMode("stop");
   streamStateEl.textContent = "正在连接模型";
 
   let assistantNode = null;
@@ -3093,15 +3285,22 @@ form.addEventListener("submit", async (event) => {
     messageEl.value = "";
     autoResizeTextarea();
     const ok = await streamAssistant(sessionId, content, assistantNode);
-    streamStateEl.textContent = ok ? "回复完成" : "请求失败";
+    streamStateEl.textContent = state.turnCancelRequested ? "已停止" : (ok ? "回复完成" : "请求失败");
     await Promise.all([
       loadSessions({ refreshMessages: false }),
       loadWorkspaceStatus(),
-      loadRuntimePanels(),
+      loadRuntimeShell(),
       loadHealth(),
     ]);
     renderStatusline();
   } catch (error) {
+    if (state.turnCancelRequested && error?.name === "AbortError") {
+      if (assistantNode) {
+        assistantNode.classList.remove("streaming");
+      }
+      streamStateEl.textContent = "已停止";
+      return;
+    }
     const message = error instanceof Error ? error.message : "请求失败";
     if (assistantNode) {
       assistantNode.className = "message error";
@@ -3117,8 +3316,9 @@ form.addEventListener("submit", async (event) => {
     streamStateEl.textContent = "请求失败";
   } finally {
     state.sending = false;
+    state.streamAbortController = null;
     sendButtonEl.disabled = false;
-    sendButtonEl.querySelector(".send-label").textContent = "发送";
+    setSendButtonMode("send");
     messageEl.focus();
   }
 });
@@ -3128,6 +3328,7 @@ async function streamAssistant(sessionId, content, assistantNode) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),
+    signal: state.streamAbortController?.signal,
   });
   if (!response.ok || !response.body) {
     throw new Error(await response.text());
@@ -3150,6 +3351,14 @@ async function streamAssistant(sessionId, content, assistantNode) {
     }
     if (event.event_type === "turn.completed") {
       streamStateEl.textContent = event.title || "回复完成";
+      return;
+    }
+    if (event.event_type === "turn.cancelled") {
+      state.turnCancelRequested = true;
+      streamStateEl.textContent = event.title || "已停止";
+      currentAssistantNode.classList.remove("streaming");
+      appendStatusEvent(event.message || event.title || "已停止当前运行", { beforeNode: currentAssistantNode });
+      updateTurnToolControl(currentAssistantNode);
       return;
     }
     if (event.event_type === "turn.failed") {
@@ -3269,6 +3478,9 @@ async function streamAssistant(sessionId, content, assistantNode) {
       onQueuedMessage: handleQueuedMessage,
     }, { updateMessage, updateMessageMeta });
     ok = ok && result.ok;
+  }
+  if (state.turnCancelRequested) {
+    currentAssistantNode.classList.remove("streaming");
   }
   return ok;
 }
@@ -3396,9 +3608,9 @@ async function loadCommands() {
 
 loadHealth();
 loadCommands();
-loadWorkspaceStatus();
-loadRuntimePanels();
+loadWorkspaceStatus({ quick: true, includePicker: false });
 loadSessions();
+scheduleRuntimeShellLoad();
 activateInspectorPanel("workspace");
 setupInspectorCards();
 applyShellChromeState();
