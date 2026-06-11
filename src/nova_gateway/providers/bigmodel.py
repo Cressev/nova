@@ -70,6 +70,24 @@ class BigModelProvider:
             encoding="utf-8",
         )
 
+    def _assistant_message_text(self, message: dict) -> str:
+        content = message.get("content")
+        if isinstance(content, str) and content:
+            return content
+        reasoning_content = message.get("reasoning_content")
+        if (
+            isinstance(reasoning_content, str)
+            and ("<tool_call" in reasoning_content or "<tool_calls" in reasoning_content)
+        ):
+            # GLM 系列有时把工具调用放进 reasoning_content，同时 content 为空。
+            # 只在明确是工具调用标记时交给 runtime 解析，避免把普通推理内容展示给用户。
+            return reasoning_content
+        return content if isinstance(content, str) else ""
+
+    def _stream_delta_text(self, delta: dict) -> str | None:
+        content = delta.get("content")
+        return content if isinstance(content, str) and content else None
+
     async def complete(self, messages: list[ChatMessage]) -> str:
         api_key = self._api_key()
         if not api_key:
@@ -103,7 +121,7 @@ class BigModelProvider:
 
         data = response.json()
         try:
-            return data["choices"][0]["message"]["content"]
+            return self._assistant_message_text(data["choices"][0]["message"])
         except (KeyError, IndexError, TypeError) as exc:
             raise ProviderError("GLM 返回结构异常，无法提取 assistant 消息。") from exc
 
@@ -149,7 +167,10 @@ class BigModelProvider:
                         payload = json.loads(data)
                     except json.JSONDecodeError:
                         continue
-                    delta = payload.get("choices", [{}])[0].get("delta", {})
-                    content = delta.get("content")
+                    choices = payload.get("choices") or []
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta", {})
+                    content = self._stream_delta_text(delta if isinstance(delta, dict) else {})
                     if content:
                         yield content
