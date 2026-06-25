@@ -13,7 +13,7 @@ class DocumentationTest(unittest.TestCase):
             "runtime",
             "sessions",
             "tools",
-            "approvals",
+            "permissions",
             "processes",
             "memory",
             "workspace",

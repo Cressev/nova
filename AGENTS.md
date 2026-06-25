@@ -177,7 +177,7 @@
 - 中文化扫描：对 Markdown 文件扫描明显英文段落或旧路径引用。
 - 目录 README 检查：确认 durable 目录包含 `README.md`。
 - 当前测试命令：`PYTHONPATH=src python3 -m unittest discover -s tests`。
-- 当前启动命令：`PYTHONPATH=src python3 -m nova_gateway.cli serve --host 127.0.0.1 --port 8765`。
+- 当前启动命令：`PYTHONPATH=src python3 -m nova.cli serve --host 127.0.0.1 --port 8765`。
 
 ## Durable Artifacts
 

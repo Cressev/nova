@@ -9,10 +9,10 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from nova_gateway import main as app_module
-from nova_gateway.main import app
-from nova_gateway.pending_approvals import PendingApprovalStore
-from nova_gateway.process_manager import ProcessManager
+from nova.app import main as app_module
+from nova.app.main import app
+from nova.permissions.store import PendingApprovalStore
+from nova.processes.manager import ProcessManager
 
 
 class RuntimeControlTest(unittest.TestCase):

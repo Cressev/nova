@@ -1,6 +1,6 @@
 export const BUILTIN_COMMANDS = [
   { name: "/help", description: "查看内置指令说明", group: "help" },
-  { name: "/status", description: "查看网关、模型、权限、工作区和 Git 状态", group: "runtime" },
+  { name: "/status", description: "查看网关、模型、权限和工作区状态", group: "runtime" },
   { name: "/model", description: "查看模型与 Base URL", group: "config" },
   { name: "/tools", description: "列出当前可用工具和并行能力", group: "tools" },
   { name: "/skills", description: "列出当前可用技能和触发方式", group: "skills" },

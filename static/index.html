@@ -112,10 +112,16 @@
           ></textarea>
           <div id="composer-statusline" class="statusline" aria-live="polite"></div>
           <div id="command-palette" class="command-palette" hidden></div>
-          <button id="send-button" type="submit">
-            <span class="send-label">发送</span>
-            <span class="send-icon">→</span>
-          </button>
+          <div class="composer-actions">
+            <button id="stop-button" class="stop-button" type="button" disabled aria-disabled="true">
+              <span class="stop-label">停止</span>
+              <span class="stop-icon">■</span>
+            </button>
+            <button id="send-button" type="submit">
+              <span class="send-label">发送</span>
+              <span class="send-icon">→</span>
+            </button>
+          </div>
         </form>
       </section>
 
@@ -124,7 +130,7 @@
         <section class="inspector-card inspector-summary">
           <div class="card-title">
             <span>概览</span>
-            <strong id="git-branch">main</strong>
+            <strong id="workspace-state">local</strong>
           </div>
           <dl class="metric-list">
             <div>
@@ -132,8 +138,8 @@
               <dd id="workspace-path">读取中</dd>
             </div>
             <div>
-              <dt>变更数量</dt>
-              <dd id="dirty-count">0</dd>
+              <dt>当前项目</dt>
+              <dd id="workspace-project">读取中</dd>
             </div>
           </dl>
         </section>
@@ -146,7 +152,7 @@
           <div class="hub-grid">
             <button type="button" data-inspector-target="review" aria-label="打开 Review">Review</button>
             <button type="button" data-inspector-target="run" aria-label="打开运行与工作树">Run</button>
-            <button type="button" data-inspector-target="tools" aria-label="打开工具、MCP 和 LSP">Tools <strong id="tool-count">0</strong></button>
+            <button type="button" data-inspector-target="tools" aria-label="打开工具和 MCP">Tools <strong id="tool-count">0</strong></button>
             <button type="button" data-inspector-target="processes" aria-label="打开后台任务">Jobs</button>
             <button type="button" data-inspector-target="config" aria-label="打开更多配置和能力">More</button>
           </div>
@@ -185,9 +191,9 @@
           <section class="inspector-card inspector-panel" data-inspector-panel="workspace">
             <div class="card-title">
               <span>Workspace</span>
-              <strong>Git</strong>
+              <strong>项目</strong>
             </div>
-            <div id="git-files" class="git-files"></div>
+            <div id="workspace-details" class="workspace-details"></div>
           </section>
 
           <section class="inspector-card inspector-panel" data-inspector-panel="review">
@@ -259,13 +265,6 @@
                 <strong id="mcp-state">读取中</strong>
               </div>
               <div id="mcp-list" class="mcp-list"></div>
-            </div>
-            <div class="lsp-panel">
-              <div class="lsp-panel-head">
-                <span>LSP</span>
-                <strong id="lsp-state">读取中</strong>
-              </div>
-              <div id="lsp-list" class="lsp-list"></div>
             </div>
           </section>
 

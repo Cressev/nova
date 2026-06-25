@@ -35,14 +35,14 @@ Nova 不是单纯聊天页。它的目标是做成个人长期使用的本地开
 当前版本可以直接从源码启动：
 
 ```bash
-PYTHONPATH=src python3 -m nova_gateway.cli serve --host 127.0.0.1 --port 8765
+PYTHONPATH=src python3 -m nova.cli serve --host 127.0.0.1 --port 8765
 ```
 
 如需启用 GLM-4.7 对话模型，启动前设置环境变量：
 
 ```bash
 export BIGMODEL_API_KEY="你的 BigModel API Key"
-PYTHONPATH=src python3 -m nova_gateway.cli serve --host 127.0.0.1 --port 8765
+PYTHONPATH=src python3 -m nova.cli serve --host 127.0.0.1 --port 8765
 ```
 
 备用启动方式：
@@ -81,7 +81,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests
 ├── reports/
 ├── references/
 ├── src/
-│   └── nova_gateway/
+│   └── nova/
 ├── static/
 ├── tests/
 ├── 产品研发文档集/

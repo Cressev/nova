@@ -27,6 +27,7 @@ const state = {
   selectedSessionId: null,
   selectedSessionTitle: "Nova Chat",
   sending: false,
+  sessionActive: false,
   turnCancelRequested: false,
   streamAbortController: null,
   showAllSessionGroups: readStorageBool("nova.showAllSessionGroups", false),
@@ -54,7 +55,6 @@ const state = {
   commands: BUILTIN_COMMANDS,
   commandSelectionIndex: -1,
   mcp: null,
-  lsp: null,
   review: null,
   subagents: [],
   skills: null,
@@ -66,6 +66,7 @@ const newChatEl = document.querySelector("#new-chat");
 const form = document.querySelector("#chat-form");
 const messageEl = document.querySelector("#message");
 const sendButtonEl = document.querySelector("#send-button");
+const stopButtonEl = document.querySelector("#stop-button");
 const streamStateEl = document.querySelector("#stream-state");
 const sessionListEl = document.querySelector("#session-list");
 const messagesEl = document.querySelector("#messages");
@@ -73,9 +74,9 @@ const chatTitleEl = document.querySelector("#chat-title");
 const projectNameEl = document.querySelector("#project-name");
 const projectRootEl = document.querySelector("#project-root");
 const workspacePathEl = document.querySelector("#workspace-path");
-const gitBranchEl = document.querySelector("#git-branch");
-const dirtyCountEl = document.querySelector("#dirty-count");
-const gitFilesEl = document.querySelector("#git-files");
+const workspaceStateEl = document.querySelector("#workspace-state");
+const workspaceProjectEl = document.querySelector("#workspace-project");
+const workspaceDetailsEl = document.querySelector("#workspace-details");
 const reviewStateEl = document.querySelector("#review-state");
 const reviewSummaryEl = document.querySelector("#review-summary");
 const reviewRisksEl = document.querySelector("#review-risks");
@@ -106,8 +107,6 @@ const toolCountEl = document.querySelector("#tool-count");
 const toolListEl = document.querySelector("#tool-list");
 const mcpStateEl = document.querySelector("#mcp-state");
 const mcpListEl = document.querySelector("#mcp-list");
-const lspStateEl = document.querySelector("#lsp-state");
-const lspListEl = document.querySelector("#lsp-list");
 const memoryStateEl = document.querySelector("#memory-state");
 const memoryListEl = document.querySelector("#memory-list");
 const configStateEl = document.querySelector("#config-state");
@@ -271,7 +270,8 @@ async function loadWorkspaceStatus({ quick = false, includePicker = true } = {})
     }
   } catch (error) {
     workspacePathEl.textContent = "工作区状态读取失败";
-    dirtyCountEl.textContent = "-";
+    workspaceProjectEl.textContent = "-";
+    workspaceDetailsEl.innerHTML = '<p class="muted">工作区状态读取失败。</p>';
   }
 }
 
@@ -324,11 +324,10 @@ function scheduleRuntimeShellLoad() {
 
 async function loadRuntimePanels() {
   const requestId = ++state.runtimePanelsRequestId;
-  const [config, tools, mcp, lsp, review, subagents, processes, skills, memory, statusline, worktrees] = await Promise.all([
+  const [config, tools, mcp, review, subagents, processes, skills, memory, statusline, worktrees] = await Promise.all([
     api("/api/runtime/config"),
     api("/api/tools"),
     api("/api/mcp/status"),
-    api("/api/lsp/status"),
     api("/api/review/summary"),
     api("/api/subagents"),
     api("/api/processes"),
@@ -344,7 +343,6 @@ async function loadRuntimePanels() {
   state.worktrees = worktrees;
   state.statusline = statusline;
   state.mcp = mcp;
-  state.lsp = lsp;
   state.review = review;
   state.subagents = subagents.items || [];
   state.processes = processes.items || [];
@@ -353,7 +351,6 @@ async function loadRuntimePanels() {
   renderWorktrees(worktrees);
   renderTools(tools.items || []);
   renderMcpPanel(mcp);
-  renderLspPanel(lsp);
   renderReviewPanel(review);
   renderSubagentsPanel(state.subagents);
   renderProcessesPanel(state.processes);
@@ -383,18 +380,15 @@ async function loadInspectorPanelDetails(panel) {
     return;
   }
   if (panel === "tools") {
-    const [tools, mcp, lsp, skills] = await Promise.all([
+    const [tools, mcp, skills] = await Promise.all([
       api("/api/tools"),
       api("/api/mcp/status"),
-      api("/api/lsp/status"),
       api("/api/skills/status"),
     ]);
     state.mcp = mcp;
-    state.lsp = lsp;
     state.skills = skills;
     renderTools(tools.items || []);
     renderMcpPanel(mcp);
-    renderLspPanel(lsp);
     renderSkillsPanel(skills);
     return;
   }
@@ -491,6 +485,24 @@ function renderSettings() {
       <span>BigModel API Key</span>
       <input name="bigmodel_api_key" type="password" value="" autocomplete="off" placeholder="${escapeHtml(config.api_key_set ? "已设置，输入新 Key 可替换" : "填写后立即生效，无需重启")}" />
       <small>${escapeHtml(config.api_key_set ? `当前来源：${config.api_key_source === "runtime" ? "设置页" : "环境变量"}` : "仅保存在本机 .nova/runtime-secrets.json，不会回显明文")}</small>
+    </label>
+    <label class="setting-field setting-field-wide setting-secret-field">
+      <span>Langfuse Public Key</span>
+      <input name="langfuse_public_key" type="password" value="" autocomplete="off" placeholder="${escapeHtml(config.langfuse_public_key_set ? "已设置，输入新 Key 可替换" : "用于捕捉 Agent 执行轨迹")}" />
+      <small>${escapeHtml(config.langfuse_configured ? "Langfuse 已配置，下一轮请求开始上报 trace" : "需要 Public Key 和 Secret Key；不会回显明文")}</small>
+    </label>
+    <label class="setting-field setting-field-wide setting-secret-field">
+      <span>Langfuse Secret Key</span>
+      <input name="langfuse_secret_key" type="password" value="" autocomplete="off" placeholder="${escapeHtml(config.langfuse_secret_key_set ? "已设置，输入新 Key 可替换" : "填写后立即生效")}" />
+      <small>仅保存在当前项目的 .nova/runtime-secrets.json。</small>
+    </label>
+    <label class="setting-field">
+      <span>Langfuse Host</span>
+      <input name="langfuse_host" type="text" value="${escapeHtml(config.langfuse_host || "https://cloud.langfuse.com")}" autocomplete="off" />
+    </label>
+    <label class="setting-field setting-field-inline">
+      <span>Langfuse 上报</span>
+      <input name="langfuse_enabled" type="checkbox" ${config.langfuse_enabled === false ? "" : "checked"} />
     </label>
     ${renderSettingsField("provider_model", "模型", pending.provider_model ?? config.model ?? line.model ?? "", "text")}
     ${renderSettingsField("provider_base_url", "Base URL", pending.provider_base_url ?? config.base_url ?? "", "text")}
@@ -612,8 +624,8 @@ function renderWorkspace(status) {
   projectRootEl.textContent = status.project_root;
   workspaceInputEl.value = status.project_root;
   workspacePathEl.textContent = status.project_root;
-  gitBranchEl.textContent = status.git.available ? status.git.branch || "detached" : "no git";
-  dirtyCountEl.textContent = status.git.partial ? "…" : String(status.git.dirty_count);
+  workspaceStateEl.textContent = status.permissions?.permission_mode || "local";
+  workspaceProjectEl.textContent = status.project_root ? projectName(status.project_root) : "-";
 
   const localMode = status.modes.find((mode) => mode.id === "local");
   modePillEl.textContent = localMode?.enabled ? "本地模式" : "模式未就绪";
@@ -632,7 +644,7 @@ function renderWorkspace(status) {
     modeListEl.appendChild(item);
   }
 
-  renderGitFiles(status.git);
+  renderWorkspaceDetails(status);
   renderPermissions(status.permissions);
   bindCommandChip(testCommandEl, status.commands.test, "运行测试");
   bindCommandChip(serveCommandEl, status.commands.serve, "启动服务");
@@ -652,29 +664,20 @@ function renderWorkspacePicker(workspaces) {
   renderWorkspaceSuggestions();
 }
 
-function renderGitFiles(git) {
-  if (!git.available) {
-    gitFilesEl.innerHTML = '<p class="muted">当前目录不是 Git 仓库。</p>';
-    return;
-  }
-  if (git.files.length === 0) {
-    if (git.partial) {
-      gitFilesEl.innerHTML = '<p class="muted">改动文件将在打开工作区详情时加载。</p>';
-      return;
-    }
-    gitFilesEl.innerHTML = '<p class="muted">工作区干净。</p>';
-    return;
-  }
-  gitFilesEl.innerHTML = "";
-  for (const file of git.files.slice(0, 12)) {
-    const item = document.createElement("div");
-    item.className = "git-file";
-    item.innerHTML = `
-      <span>${escapeHtml(file.status)}</span>
-      <strong title="${escapeHtml(file.path)}">${escapeHtml(file.path)}</strong>
-    `;
-    gitFilesEl.appendChild(item);
-  }
+function renderWorkspaceDetails(status) {
+  const rows = [
+    ["项目", projectName(status.project_root)],
+    ["路径", status.project_root],
+    ["权限", status.permissions?.approval_policy || "-"],
+    ["Shell", status.permissions?.shell_commands ? "允许" : "关闭"],
+    ["网络", status.permissions?.network_access ? "允许" : "关闭"],
+  ];
+  workspaceDetailsEl.innerHTML = rows.map(([label, value]) => `
+    <div class="workspace-detail-row">
+      <span>${escapeHtml(label)}</span>
+      <strong title="${escapeHtml(String(value))}">${escapeHtml(String(value))}</strong>
+    </div>
+  `).join("");
 }
 
 function renderPermissions(permissions) {
@@ -701,6 +704,7 @@ function renderRuntimeConfig(config) {
   const rows = [
     ["模型", config.model],
     ["API Key", config.api_key_set ? `已配置 · ${config.api_key_source === "runtime" ? "设置页" : "环境变量"}` : "未配置"],
+    ["Langfuse", config.langfuse_configured ? `已配置 · ${config.langfuse_host || "cloud"}` : "未配置"],
     ["上下文窗口", `${formatCompactNumber(config.context_window_tokens || 0)} tokens`],
     ["自动压缩阈值", `${formatCompactNumber(state.statusline?.auto_compact_threshold_tokens || 0)} tokens`],
     ["预算状态", `${contextBudgetLabel(state.statusline?.context_budget_status)}${state.statusline?.compact_recommended ? " · 建议 /compact" : ""}`],
@@ -915,54 +919,6 @@ function renderMcpPanel(mcp) {
       button.addEventListener("click", () => callMcpDemoTool(button.dataset.mcpTool || MCP_DEMO_TOOL));
     });
     mcpListEl.appendChild(card);
-  }
-}
-
-function renderLspPanel(lsp) {
-  if (!lspStateEl || !lspListEl) {
-    return;
-  }
-  const servers = lsp?.servers || [];
-  const languages = lsp?.languages || [];
-  lspStateEl.textContent = servers.length > 0 ? `${languages.join(", ")} · ready` : "未识别";
-  lspListEl.innerHTML = "";
-  if (servers.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "lsp-empty";
-    empty.textContent = "当前项目暂未识别可用语言服务";
-    lspListEl.appendChild(empty);
-    return;
-  }
-  for (const server of servers) {
-    const card = document.createElement("article");
-    card.className = `lsp-server ${server.state === "ready" ? "ready" : ""}`;
-    const summary = server.diagnostics || {};
-    const samplePath = (server.sample_paths || [])[0] || "";
-    const sampleDefinition = server.sample_definition || {};
-    const definitionPath = sampleDefinition.path || samplePath;
-    const sampleSymbol = server.sample_symbol || "";
-    card.dataset.samplePath = samplePath;
-    card.dataset.definitionPath = definitionPath;
-    card.dataset.sampleSymbol = sampleSymbol;
-    card.innerHTML = `
-      <div class="lsp-server-head">
-        <strong>${escapeHtml(server.name || server.language || "lsp")}</strong>
-        <span>${escapeHtml(server.transport || "builtin")} · ${escapeHtml(server.state || "-")}</span>
-      </div>
-      <div class="lsp-diagnostics">
-        <span>错误 ${Number(summary.error || 0)}</span>
-        <span>警告 ${Number(summary.warning || 0)}</span>
-        <span>信息 ${Number(summary.information || 0)}</span>
-      </div>
-      <div class="lsp-actions">
-        <button type="button" data-action="lsp-diagnostics">读取诊断</button>
-        <button type="button" data-action="lsp-definition">查定义</button>
-      </div>
-      <pre class="lsp-output">${escapeHtml(samplePath ? `示例文件：${samplePath}${sampleSymbol ? `\n示例符号：${sampleSymbol}` : ""}` : "暂无示例文件")}</pre>
-    `;
-    card.querySelector('[data-action="lsp-diagnostics"]')?.addEventListener("click", () => runLspDiagnostics(card));
-    card.querySelector('[data-action="lsp-definition"]')?.addEventListener("click", () => runLspDefinition(card));
-    lspListEl.appendChild(card);
   }
 }
 
@@ -1222,46 +1178,6 @@ async function killProcess(id) {
     await refreshProcessesPanel();
   } catch (error) {
     streamStateEl.textContent = `终止后台任务失败：${error instanceof Error ? error.message : "未知错误"}`;
-  }
-}
-
-async function runLspDiagnostics(card) {
-  const output = card.querySelector(".lsp-output");
-  const path = card.dataset.samplePath || "";
-  if (!output || !path) {
-    return;
-  }
-  output.textContent = "正在读取诊断...";
-  try {
-    const payload = await api(`/api/lsp/diagnostics?path=${encodeURIComponent(path)}`);
-    const diagnostics = payload.diagnostics || [];
-    output.textContent = diagnostics.length === 0
-      ? `${path}\n未发现诊断问题。`
-      : diagnostics.map((item) => (
-        `${item.path}:${item.range?.start?.line || 1}:${item.range?.start?.character || 1} ${item.severity} ${item.message}`
-      )).join("\n");
-    streamStateEl.textContent = "LSP 诊断已更新";
-  } catch (error) {
-    output.textContent = `诊断失败：${error instanceof Error ? error.message : "未知错误"}`;
-  }
-}
-
-async function runLspDefinition(card) {
-  const output = card.querySelector(".lsp-output");
-  const path = card.dataset.definitionPath || card.dataset.samplePath || "";
-  const symbol = card.dataset.sampleSymbol || "";
-  if (!output || !path || !symbol) {
-    return;
-  }
-  output.textContent = `正在查找 ${symbol} 定义...`;
-  try {
-    const payload = await api(`/api/lsp/definition?path=${encodeURIComponent(path)}&symbol=${encodeURIComponent(symbol)}`);
-    output.textContent = payload.ok && payload.definition
-      ? `${payload.definition.symbol} · ${payload.definition.kind}\n${payload.definition.path}:${payload.definition.range?.start?.line || 1}:${payload.definition.range?.start?.character || 1}`
-      : (payload.error || "未找到 main 定义");
-    streamStateEl.textContent = "LSP 定义查询已更新";
-  } catch (error) {
-    output.textContent = `定义查询失败：${error instanceof Error ? error.message : "未知错误"}`;
   }
 }
 
@@ -1650,6 +1566,8 @@ async function loadSessions({ refreshMessages = true } = {}) {
     sessionListEl.innerHTML = '<div class="section-label">暂无对话</div>';
     state.selectedSessionId = null;
     state.selectedSessionTitle = "Nova Chat";
+    state.sessionActive = false;
+    syncComposerRunState();
     chatTitleEl.textContent = state.selectedSessionTitle;
     if (refreshMessages) {
       renderEmptyState();
@@ -1871,7 +1789,7 @@ function renderEmptyState() {
   messagesEl.innerHTML = `
     <div class="empty-state">
       <h3>启动一个开发线程</h3>
-      <p>像使用 Codex 一样，把目标、上下文、约束和验收标准写进同一个 thread。右侧会持续显示项目、Git 和验证状态。</p>
+      <p>像使用 Codex 一样，把目标、上下文、约束和验收标准写进同一个 thread。右侧会持续显示项目、权限和验证状态。</p>
       <div class="quick-actions">
         <button type="button" data-prompt="/plan 帮我把下一个开发任务拆成可执行步骤">/plan</button>
         <button type="button" data-prompt="/review 检查当前未提交变更">/review</button>
@@ -1915,6 +1833,8 @@ function renderMessageLoadError(error) {
 
 async function loadMessages() {
   if (!state.selectedSessionId) {
+    state.sessionActive = false;
+    syncComposerRunState();
     renderEmptyState();
     return;
   }
@@ -1935,10 +1855,14 @@ async function loadMessages() {
     return;
   }
   if (runtimeState.unavailable) {
+    state.sessionActive = false;
+    syncComposerRunState();
     renderMessageLoadError(new Error(runtimeState.unavailable_reason || "历史线程所属项目不可用"));
     streamStateEl.textContent = "历史线程暂不可用";
     return;
   }
+  state.sessionActive = Boolean(runtimeState.active);
+  syncComposerRunState();
   const items = runtimeState.timeline?.items || [];
   const hasRuntimeRestorations = Boolean(
     runtimeState.pending_approvals?.length
@@ -2182,6 +2106,11 @@ function updateMessageMeta(node, message) {
     : "生成中";
 }
 
+function toolPurposeText(event) {
+  const purpose = event.data?.annotation || event.annotation || event.title || "";
+  return String(purpose || "").trim() || "工具执行中";
+}
+
 function appendToolEvent(event, beforeNode = null, options = {}) {
   const node = document.createElement("article");
   node.className = "tool-event running";
@@ -2193,7 +2122,7 @@ function appendToolEvent(event, beforeNode = null, options = {}) {
   node.innerHTML = `
     <div class="tool-event-head">
       <span>${escapeHtml(event.tool || "tool")}</span>
-      <strong>${escapeHtml(event.title || "工具执行中")}</strong>
+      <strong class="tool-event-purpose">${escapeHtml(toolPurposeText(event))}</strong>
       <em>${event.parallel ? "并行" : "运行中"}</em>
     </div>
     ${renderToolMetadata(event.data || {})}
@@ -2244,6 +2173,30 @@ async function cancelToolCall(node) {
   }
 }
 
+function markRunningToolsAsCancelRequested() {
+  for (const node of messagesEl.querySelectorAll(".tool-event.running")) {
+    node.classList.remove("running");
+    node.classList.add("failed");
+    const status = node.querySelector(".tool-event-head em");
+    if (status) {
+      status.textContent = "已请求停止";
+    }
+    const button = node.querySelector('[data-action="cancel-tool"]');
+    if (button) {
+      button.disabled = true;
+      button.textContent = "停止中";
+    }
+  }
+  for (const node of messagesEl.querySelectorAll(".message.assistant.streaming")) {
+    node.classList.remove("streaming");
+    const time = node.querySelector(".message-time");
+    if (time) {
+      time.textContent = "已停止";
+    }
+  }
+  updateAllTurnToolControls();
+}
+
 function finishToolEvent(node, event, options = {}) {
   if (!node) {
     node = appendToolEvent(event);
@@ -2259,7 +2212,7 @@ function finishToolEvent(node, event, options = {}) {
   node.innerHTML = `
     <div class="tool-event-head">
       <span>${escapeHtml(event.tool || "tool")}</span>
-      <strong>${escapeHtml(event.title || "工具完成")}</strong>
+      <strong class="tool-event-purpose">${escapeHtml(toolPurposeText(event) || "工具完成")}</strong>
       <em>${statusLabel}</em>
     </div>
     ${renderToolMetadata(data)}
@@ -2699,7 +2652,7 @@ settingsSaveEl.addEventListener("click", async () => {
       method: "PATCH",
       body: JSON.stringify(payload),
     });
-    if (secrets.bigmodel_api_key) {
+    if (Object.keys(secrets).length > 0) {
       await api("/api/runtime/secrets", {
         method: "PATCH",
         body: JSON.stringify(secrets),
@@ -2801,9 +2754,25 @@ function collectRuntimeSettings() {
 
 function collectRuntimeSecrets() {
   const form = settingsDialogEl.querySelector(".settings-panel");
-  return {
-    bigmodel_api_key: form.querySelector('[name="bigmodel_api_key"]').value.trim(),
-  };
+  const secrets = {};
+  const bigmodelKey = form.querySelector('[name="bigmodel_api_key"]').value.trim();
+  const langfusePublicKey = form.querySelector('[name="langfuse_public_key"]').value.trim();
+  const langfuseSecretKey = form.querySelector('[name="langfuse_secret_key"]').value.trim();
+  const langfuseHost = form.querySelector('[name="langfuse_host"]').value.trim();
+  if (bigmodelKey) {
+    secrets.bigmodel_api_key = bigmodelKey;
+  }
+  if (langfusePublicKey) {
+    secrets.langfuse_public_key = langfusePublicKey;
+  }
+  if (langfuseSecretKey) {
+    secrets.langfuse_secret_key = langfuseSecretKey;
+  }
+  if (langfuseHost) {
+    secrets.langfuse_host = langfuseHost;
+  }
+  secrets.langfuse_enabled = form.querySelector('[name="langfuse_enabled"]').checked;
+  return secrets;
 }
 
 function applyShellChromeState() {
@@ -3150,37 +3119,68 @@ function updateAllTurnToolControls() {
   }
 }
 
+function isTurnActive() {
+  return Boolean(state.sending || state.sessionActive);
+}
+
+function syncComposerRunState() {
+  setSendButtonMode(isTurnActive() ? "queue" : "send");
+}
+
 function setSendButtonMode(mode) {
-  if (mode === "stop") {
-    sendButtonEl.dataset.mode = "stop";
-    sendButtonEl.classList.add("stop");
-    sendButtonEl.querySelector(".send-label").textContent = "停止";
-    sendButtonEl.querySelector(".send-icon").textContent = "■";
+  if (mode === "queue") {
+    sendButtonEl.dataset.mode = "queue";
+    sendButtonEl.classList.add("queue");
+    sendButtonEl.querySelector(".send-label").textContent = "排队";
+    sendButtonEl.querySelector(".send-icon").textContent = "+";
+    if (stopButtonEl) {
+      stopButtonEl.disabled = false;
+      stopButtonEl.setAttribute("aria-disabled", "false");
+      stopButtonEl.querySelector(".stop-label").textContent = "停止";
+      stopButtonEl.querySelector(".stop-icon").textContent = "■";
+    }
     return;
   }
   sendButtonEl.dataset.mode = "send";
-  sendButtonEl.classList.remove("stop");
+  sendButtonEl.classList.remove("queue");
   sendButtonEl.querySelector(".send-label").textContent = "发送";
   sendButtonEl.querySelector(".send-icon").textContent = "→";
+  if (stopButtonEl) {
+    stopButtonEl.disabled = true;
+    stopButtonEl.setAttribute("aria-disabled", "true");
+    stopButtonEl.querySelector(".stop-label").textContent = "停止";
+    stopButtonEl.querySelector(".stop-icon").textContent = "■";
+  }
 }
+
+setSendButtonMode("send");
 
 async function cancelActiveTurn() {
   const sessionId = state.selectedSessionId;
-  if (!sessionId || !state.sending) {
+  if (!sessionId || !isTurnActive()) {
     return;
   }
   state.turnCancelRequested = true;
+  state.sessionActive = false;
   streamStateEl.textContent = "正在停止当前运行";
-  setSendButtonMode("stop");
-  const cancelRequest = api(`/api/chat/sessions/${encodeURIComponent(sessionId)}/cancel`, {
+  if (stopButtonEl) {
+    stopButtonEl.disabled = true;
+    stopButtonEl.setAttribute("aria-disabled", "true");
+    stopButtonEl.querySelector(".stop-label").textContent = "停止中";
+    stopButtonEl.querySelector(".stop-icon").textContent = "…";
+  }
+  markRunningToolsAsCancelRequested();
+  state.streamAbortController?.abort();
+  state.sending = false;
+  syncComposerRunState();
+  streamStateEl.textContent = "已请求停止当前运行";
+  void api(`/api/chat/sessions/${encodeURIComponent(sessionId)}/cancel`, {
     method: "POST",
     body: "{}",
   }).catch((error) => {
     streamStateEl.textContent = `停止请求失败：${error instanceof Error ? error.message : "未知错误"}`;
+    setSendButtonMode(state.sending ? "queue" : "send");
   });
-  state.streamAbortController?.abort();
-  await cancelRequest;
-  streamStateEl.textContent = "已请求停止当前运行";
 }
 
 function setupInspectorCards() {
@@ -3219,11 +3219,7 @@ document.addEventListener("click", (event) => {
   updateCommandPalette();
 });
 
-sendButtonEl.addEventListener("click", (event) => {
-  if (!state.sending) {
-    return;
-  }
-  event.preventDefault();
+stopButtonEl?.addEventListener("click", () => {
   void cancelActiveTurn();
 });
 
@@ -3233,7 +3229,7 @@ form.addEventListener("submit", async (event) => {
   if (!content) {
     return;
   }
-  if (state.sending) {
+  if (isTurnActive()) {
     try {
       const sessionId = await ensureSession();
       const queued = await fetch(`/api/chat/sessions/${sessionId}/stream`, {
@@ -3255,10 +3251,11 @@ form.addEventListener("submit", async (event) => {
     return;
   }
   state.sending = true;
+  state.sessionActive = true;
   state.turnCancelRequested = false;
   state.streamAbortController = new AbortController();
   sendButtonEl.disabled = false;
-  setSendButtonMode("stop");
+  syncComposerRunState();
   streamStateEl.textContent = "正在连接模型";
 
   let assistantNode = null;
@@ -3316,9 +3313,10 @@ form.addEventListener("submit", async (event) => {
     streamStateEl.textContent = "请求失败";
   } finally {
     state.sending = false;
+    state.sessionActive = false;
     state.streamAbortController = null;
     sendButtonEl.disabled = false;
-    setSendButtonMode("send");
+    syncComposerRunState();
     messageEl.focus();
   }
 });

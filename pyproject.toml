@@ -1,17 +1,20 @@
 [project]
-name = "nova-gateway"
+name = "nova"
 version = "0.1.0"
-description = "Nova Web-first local agent gateway MVP"
+description = "Nova local coding agent runtime and workbench"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115",
   "httpx>=0.28",
+  "langfuse>=3.0",
+  "openai>=2.0",
   "uvicorn>=0.30",
   "pydantic>=2.0",
+  "zai-sdk>=0.2.2",
 ]
 
 [project.scripts]
-nova = "nova_gateway.cli:main"
+nova = "nova.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]

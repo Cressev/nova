@@ -7,8 +7,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from nova_gateway import main as app_module
-from nova_gateway.main import app
+from nova.app import main as app_module
+from nova.app.main import app
 
 
 class McpApiTest(unittest.TestCase):
@@ -89,7 +89,7 @@ class McpApiTest(unittest.TestCase):
                         "demo": {
                             "type": "stdio",
                             "command": "python3",
-                            "args": ["-m", "nova_gateway.mcp.demo_server"],
+                            "args": ["-m", "nova.mcp.demo_server"],
                         },
                         "docs-http": {
                             "type": "http",

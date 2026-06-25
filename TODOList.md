@@ -1143,3 +1143,284 @@ ui设置中添加可以填写apikey的地方，不需要重启就能生效。你
 - 本地网站：`http://127.0.0.1:8765`。
 
 ------ todo-list end at 2026/06/07/17:15:49 -----
+
+------ todo-list begin at 2026/06/16/11:19:01 -----
+
+用户请求：
+你是高级高级高高级前端ui设计师，用于非常高级的审美。你给我审视一下项目peraonal dev agent的ui设计。
+
+制定清单：
+- [x] 1. 读取项目上下文与前端实现
+  - [x] 1.1 读取 AGENTS.md、CURRENT.md、PROGRESS.md、durable README、log 和 user-queries
+  - [x] 1.2 读取 README、前端 HTML/CSS/JS 和项目结构
+- [x] 2. 运行或连接本地 Web UI
+  - [x] 2.1 启动或确认 Nova 本地服务
+  - [x] 2.2 用真实浏览器检查桌面和移动视口
+- [x] 3. 从高级 UI 设计角度审视
+  - [x] 3.1 评估信息架构、视觉层级、密度、品牌感和组件一致性
+  - [x] 3.2 识别最影响高级感和使用效率的问题
+  - [x] 3.3 给出可执行的改进优先级
+- [x] 4. 收尾
+  - [x] 4.1 追加 log、标记 Done
+  - [x] 4.2 给出审视结论和可验证 URL
+
+执行问题记录：
+暂无
+
+交付记录：
+- 已基于真实运行的 Nova Web UI 做设计审视，服务端口为 `http://127.0.0.1:8766`。`8765` 被其他静态服务占用，未终止该进程。
+- 已检查桌面主工作台、移动视口、Tools 弹窗、Settings 弹窗和 `/status` 消息流。
+- 验证截图：`output/playwright/nova-ui-design-audit-desktop.png`、`output/playwright/nova-ui-design-audit-mobile.png`、`output/playwright/nova-ui-design-audit-tools-dialog.png`、`output/playwright/nova-ui-design-audit-settings.png`、`output/playwright/nova-ui-design-audit-status-message.png`。
+- 控制台检查无 error/warning。
+
+------ todo-list end at 2026/06/16/11:22:10 -----
+
+------ todo-list begin at 2026/06/16/14:00:25 -----
+
+用户请求：
+只有主页面啊，你用静态网页做原型图，画谁不会画啊，关键是做出来。
+
+制定清单：
+- [x] 1. 创建独立静态网页原型
+  - [x] 1.1 不修改 `src/`、`static/` 产品源码
+  - [x] 1.2 在 `output/prototypes/` 创建可打开的 HTML 原型
+- [x] 2. 原型覆盖 VSCode-like 工作台核心交互
+  - [x] 2.1 Activity Bar 切换 Sessions、Workspace、Git、Runs、Stats、Hooks、Skills、Settings
+  - [x] 2.2 Sidebar 随功能切换
+  - [x] 2.3 Editor 支持打开和切换多标签页面
+  - [x] 2.4 Bottom Panel 支持 Runs、Approvals、Trace、Output 等切换
+- [x] 3. 验证原型
+  - [x] 3.1 用浏览器打开原型
+  - [x] 3.2 截图确认桌面布局和交互无控制台错误
+- [x] 4. 收尾
+  - [x] 4.1 追加 log 和 Done
+  - [x] 4.2 给出本地原型路径
+
+执行问题记录：
+暂无
+
+交付记录：
+- 已创建独立静态网页原型：`output/prototypes/nova-workbench-vscode-prototype.html`。
+- 原型采用 VSCode-like 工作台结构：Activity Bar、Primary Sidebar、Tabbed Editor Area、Bottom Panel、Secondary Inspector、Status Bar。
+- 已验证 Activity Bar 切换 `Sessions/Workspace/Git/Runs/Stats/Hooks/Skills/Settings`，Sidebar 随功能切换；Editor tab 可切 `Chat/Git Diff/Stats/Settings/Hooks/Memory`；Bottom Panel 可切 `Runs/Approvals/Trace/Output/Problems/Terminal`。
+- Playwright 验证控制台无 error/warning。
+- 验证截图：`output/playwright/nova-workbench-vscode-prototype-home.png`、`output/playwright/nova-workbench-vscode-prototype-diff-trace.png`、`output/playwright/nova-workbench-vscode-prototype-stats-tab.png`、`output/playwright/nova-workbench-vscode-prototype-settings-tab.png`。
+
+------ todo-list end at 2026/06/16/14:07:53 -----
+
+------ todo-list begin at 2026/06/16/14:25:36 -----
+
+用户请求：
+这和你刚刚画的图也不一样啊，绿了吧唧的，左侧只有字母根本分辨不出来是什么。而且展示有问题，worksapce中也不是文件树啊，包阔seesion中也不要用卡片形式展示历史记录，就一行文字就行。设计美观太差了啊
+
+制定清单：
+- [x] 1. 重做 v2 静态网页原型
+  - [x] 1.1 颜色改为 VSCode 风格蓝灰工作台，减少绿色
+  - [x] 1.2 Activity Bar 使用可辨识图标和短标签，不再只放字母
+  - [x] 1.3 Sessions 侧边栏改为单行列表，不用卡片
+  - [x] 1.4 Workspace 侧边栏改为文件树
+- [x] 2. 保留核心工作台交互
+  - [x] 2.1 Activity Bar 切换侧边栏
+  - [x] 2.2 Editor 多标签切换
+  - [x] 2.3 Bottom Panel 切换
+- [x] 3. 浏览器验证
+  - [x] 3.1 打开 v2 原型并截图
+  - [x] 3.2 检查控制台无错误
+- [x] 4. 收尾
+  - [x] 4.1 更新 log 和 Done
+  - [x] 4.2 给出 v2 原型路径
+
+执行问题记录：
+暂无
+
+交付记录：
+- 已创建 v2 静态原型：`output/prototypes/nova-workbench-vscode-prototype-v2.html`。
+- v2 改为 VSCode 蓝灰视觉系统，Activity Bar 使用图标 + 中文短标签，降低绿色占比。
+- Sessions 侧边栏改为单行列表；Workspace 侧边栏改为文件树；Git、Stats、Settings 等仍作为 Editor Tab 打开。
+- Playwright 验证控制台无 error/warning。
+- 验证截图：`output/playwright/nova-workbench-v2-sessions.png`、`output/playwright/nova-workbench-v2-workspace-tree.png`、`output/playwright/nova-workbench-v2-git-diff.png`、`output/playwright/nova-workbench-v2-stats.png`。
+
+------ todo-list end at 2026/06/16/14:30:29 -----
+
+------ todo-list begin at 2026/06/16/14:36:04 -----
+
+用户请求：
+配色能否高级一些，用亮色，毛玻璃。
+
+制定清单：
+- [x] 1. 创建 v3 亮色毛玻璃原型
+  - [x] 1.1 保留 VSCode-like 结构
+  - [x] 1.2 改为亮色高级配色和克制毛玻璃
+  - [x] 1.3 保留 Sessions 单行列表和 Workspace 文件树
+- [x] 2. 浏览器验证
+  - [x] 2.1 打开 v3 原型并截图
+  - [x] 2.2 检查控制台无错误
+- [x] 3. 收尾
+  - [x] 3.1 更新 log 和 Done
+  - [x] 3.2 给出 v3 原型路径
+
+执行问题记录：
+暂无
+
+交付记录：
+- 已创建 v3 静态原型：`output/prototypes/nova-workbench-glass-prototype-v3.html`。
+- v3 采用亮色冷调玻璃工作台：玻璃用于 Title Bar、Activity Bar、Sidebar、Bottom Panel、Inspector，主编辑区保持白底高可读。
+- 保留 Sessions 单行列表、Workspace 文件树、Editor 多标签和底部面板。
+- Playwright 验证控制台无 error/warning。
+- 验证截图：`output/playwright/nova-workbench-v3-glass-sessions.png`、`output/playwright/nova-workbench-v3-glass-workspace.png`、`output/playwright/nova-workbench-v3-glass-stats.png`。
+
+------ todo-list end at 2026/06/16/14:40:18 -----
+
+------ todo-list begin at 2026/06/16/14:41:00 -----
+
+用户请求：
+[Image #1] 能参考这个风格嘛，线条极简风
+
+制定清单：
+- [x] 1. 基于参考图重做 v4 静态网页原型
+  - [x] 1.1 保留 VSCode-like 工作台结构
+  - [x] 1.2 视觉语言改为亮底、超细线、低饱和、极简分区
+  - [x] 1.3 保留 Activity Bar 图标、Sessions 单行列表、Workspace 文件树、多标签编辑区
+- [x] 2. 浏览器验证
+  - [x] 2.1 打开 v4 原型并截图
+  - [x] 2.2 检查控制台无错误
+- [x] 3. 收尾
+  - [x] 3.1 更新 log 和 Done
+  - [x] 3.2 给出 v4 原型路径
+
+执行问题记录：
+- 暂无
+
+交付记录：
+- 已创建 v4 静态原型：`output/prototypes/nova-workbench-editorial-minimal-v4.html`。
+- v4 保留 VSCode-like 工作台结构，但视觉语言改为参考图导向的 `Editorial Minimal`：暖白背景、超细描边、轻纹理、低饱和、非卡片化内容。
+- Activity Bar 保留可辨识图标；Sessions 为单行历史列表；Workspace 为真实文件树；Editor 提供 Session、Git Diff、Stats、Settings、Hooks 多标签；Bottom Panel 提供 Output、Approvals、Trace、Terminal。
+- 同步新增设计与计划文档：`docs/superpowers/specs/2026-06-16-nova-workbench-editorial-minimal-v4-design.md`、`docs/superpowers/plans/2026-06-16-nova-workbench-editorial-minimal-v4.md`。
+- Playwright 验证截图：`output/playwright/nova-workbench-v4-editorial-sessions.png`、`output/playwright/nova-workbench-v4-editorial-workspace.png`、`output/playwright/nova-workbench-v4-editorial-gitdiff.png`。
+- 控制台检查：`console error` 与 `console warning` 均为 0。
+
+------ todo-list end at 2026/06/16/19:10:17 -----
+
+------ todo-list begin at 2026/06/25/13:49:45 -----
+
+用户请求：
+行吧，暂时先不用他来开发了。你继续开发吧，根据你列的todo表，开始最急迫的开发
+
+制定清单：
+- [x] 1. 确认当前仓库状态和最紧急开发项。
+- [x] 2. 新增 NovaCore 容器，集中初始化核心运行对象。
+- [x] 3. 调整 main.py 使用 NovaCore 派生现有全局对象，保持 API 行为不变。
+- [x] 4. 补充核心容器测试，验证对象初始化和路径配置。
+- [x] 5. 运行相关测试、编译检查和启动服务，给出可验证 URL。
+
+执行问题记录：
+- 暂无
+
+交付记录：
+- 已新增 `src/nova_gateway/core.py`，提供 `NovaCore.from_settings()` 统一创建 settings/store/workspace/provider/process/subagent/session 服务。
+- 已调整 `src/nova_gateway/main.py` 顶层对象从 `NovaCore` 派生，并挂载 `app.state.core`，现有路由变量名保持兼容。
+- 已新增 `tests/test_core.py`，并更新 `tests/test_package_layout.py` 保护 `nova_gateway.core.NovaCore`。
+- 验证：`PYTHONPATH=src /Users/liam/.miniforge3/envs/claude/bin/python -m unittest tests.test_core tests.test_package_layout tests.test_api` 通过，35 tests；`compileall` 通过；目标 diff `git diff --check` 通过；`http://127.0.0.1:8767/api/health` 和 `/api/runtime/statusline` 通过。
+- 服务地址：`http://127.0.0.1:8767`。
+
+------ todo-list end at 2026/06/25/13:53:32 -----
+
+------ todo-list begin at 2026/06/25/14:10:02 -----
+
+用户请求：
+全改，就按更合理的长期结构改为 `src/nova/app`、`core`、`runtime`、`tools`、`permissions`、`sessions`、`memory`、`workspace`、`providers`、`observability`、`subagents`、`skills`、`api`。后面还会开发 TUI，所以都提前设计好，并测试通过。
+
+制定清单：
+- [x] 1. 将后端主包从 `src/nova_gateway` 迁移为 `src/nova`。
+- [x] 2. 将 Web 入口移动到 `src/nova/app/main.py`，CLI/脚本入口改为 `nova.app.main:app`。
+- [x] 3. 将 `core.py` 调整为 `src/nova/core/container.py`，并通过 `nova.core` 导出 `NovaCore`。
+- [x] 4. 将 `approvals` 迁移为 `permissions`，更新代码、测试和架构文档。
+- [x] 5. 新增 `api` 和 `tui` 预留包，为后续 HTTP 路由拆分和 TUI 共用 core/runtime 做准备。
+- [x] 6. 删除旧根目录薄封装模块，测试改用真实分层 import。
+- [x] 7. 跑 Python、前端、编译、旧路径扫描和 HTTP 启动验证。
+
+执行问题记录：
+- 全量测试暴露 macOS `/var` 与 `/private/var` 规范化不一致：权限判断需要用真实路径比较，但 UI/候选列表和 MCP config_path 要保留用户可见路径。已在 workspace 和 MCP 管理器中修复。
+
+交付记录：
+- 后端长期目录已落到 `src/nova/`，包含 `app/core/runtime/tools/permissions/sessions/memory/workspace/providers/observability/subagents/skills/api/tui`。
+- 新启动入口：`PYTHONPATH=src /Users/liam/.miniforge3/envs/claude/bin/python -m nova.cli serve --host 127.0.0.1 --port 8767`。
+- 验证：Python 全量单测 172 tests OK；全部前端 Node 测试 OK；`compileall` OK；旧 `nova_gateway`/旧入口扫描无命中；`git diff --check` OK。
+- 服务地址：`http://127.0.0.1:8767`。
+
+------ todo-list end at 2026/06/25/14:21:28 -----
+
+------ todo-list begin at 2026/06/25/14:23:00 -----
+
+用户请求：
+同意继续把 `app/main.py` 的大路由拆进 `src/nova/api/`，让 `main.py` 退回应用入口。
+
+制定清单：
+- [x] 1. 将现有 HTTP 路由实现移动到 `src/nova/api/routes.py`。
+- [x] 2. 保持 `nova.app.main:app` 启动入口不变。
+- [x] 3. 处理测试和旧调用对 `app_module` 全局运行态的依赖，避免复制出两套状态。
+- [x] 4. 更新结构测试和架构职责文档。
+- [x] 5. 清理残留 `Nova Gateway` 命名。
+- [x] 6. 跑全量 Python、前端、编译、旧命名扫描和 diff 检查。
+
+执行问题记录：
+- `nova.app.main` 如果只做 `from nova.api.routes import *`，测试替换 `process_manager/subagent_manager/pending_approvals` 时会改到入口模块副本，路由仍看旧对象。因此入口改为 `sys.modules[__name__] = routes`，让旧入口和新 API 模块共享同一模块对象。
+- 第一次把 `unittest` 与 `compileall` 并行运行时，Langfuse 依赖导入链出现一次 Python import lock `KeyError`；单独重跑全量测试通过，判断为并行检查干扰，不是业务代码失败。
+
+交付记录：
+- `src/nova/api/routes.py` 承载当前 API 路由实现。
+- `src/nova/app/main.py` 保持启动入口，别名到 `nova.api.routes`。
+- FastAPI title 已从 `Nova Gateway` 改为 `Nova`。
+- 验证：Python 全量单测 172 tests OK；全部前端 Node 测试 OK；`compileall` OK；旧命名扫描无命中；`git diff --check` OK。
+
+------ todo-list end at 2026/06/25/14:51:32 -----
+
+------ todo-list begin at 2026/06/25/14:52:00 -----
+
+用户请求：
+api 就不能再拆了吗？拆。
+
+制定清单：
+- [x] 1. 将 `api/routes.py` 中的 endpoint 按领域拆分到多个 router 文件。
+- [x] 2. 保留共享运行态和 helper，避免复制核心对象。
+- [x] 3. 注册所有 router，保持对外 API 路径不变。
+- [x] 4. 更新结构测试，锁定 API 分层。
+- [x] 5. 跑目标 API 测试、全量 Python、前端、编译、旧入口扫描和 diff 检查。
+- [x] 6. 启动服务供用户验证。
+
+执行问题记录：
+- 直接 `from routes import *` 会复制运行态引用，不适合当前测试和运行时；改为各 router `from . import routes as ctx`，运行时访问 `ctx.process_manager` 等动态对象。
+- 机械拆分后格式较差，已临时在 conda `claude` 环境安装并运行 `black` 格式化 `src/nova/api`；后续建议把 formatter 正式纳入项目检查命令。
+
+交付记录：
+- 新增 API router：`system.py`、`runtime.py`、`chat.py`、`workspace.py`、`tools.py`、`memory.py`、`permissions.py`、`processes.py`、`subagents.py`。
+- `routes.py` 现在负责共享上下文和 `register_api_routes()`。
+- 验证：目标 API 测试 65 tests OK；Python 全量 172 tests OK；全部前端 Node 测试 OK；`compileall` OK；旧入口/旧命名/`@app` 扫描无命中；`git diff --check` OK。
+
+------ todo-list end at 2026/06/25/15:03:04 -----
+
+------ todo-list begin at 2026/06/25/15:08:00 -----
+
+用户请求：
+行，开始改。记得 git 做本地提交（暂时先不做远程提交了）。
+
+制定清单：
+- [x] 1. 评估现有 runtime/tools/sessions/processes/permissions 运行态能力。
+- [x] 2. 新增 `RunOrchestrator`，集中单轮 turn 事件、状态、取消和审批登记。
+- [x] 3. 将 `api/chat.py` 的内联 runtime event 和 pending approval 逻辑接入 orchestrator。
+- [x] 4. 新增 orchestrator 单测并更新包结构测试。
+- [x] 5. 跑目标测试、全量 Python、前端、编译、旧入口扫描和 diff 检查。
+- [x] 6. 启动服务供用户验证。
+- [x] 7. 本地 git commit，不推远程。
+
+执行问题记录：
+- 当前项目其实已经具备进程分片、取消、后台 job、pending approval 和 runtime_state 雏形，主要问题是这些状态更新散落在 API 层和执行器里。本轮先抽编排器，不重写整条 agent loop，避免一次性破坏现有体感。
+
+交付记录：
+- 新增 `src/nova/runtime/orchestrator.py`。
+- `api/chat.py` 的 turn started/completed/failed/cancelled、context budget、permission request 登记改由 `RunOrchestrator` 统一处理。
+- 验证：目标测试 45 tests OK；Python 全量 174 tests OK；全部前端 Node 测试 OK；`compileall` OK；旧入口扫描无命中；`git diff --check` OK。
+- 服务已通过 `screen` 后台会话 `nova-8767` 启动，验证地址：`http://127.0.0.1:8767`；`/api/health`、`/api/runtime/statusline` 和首页均已返回正常。
+- 本轮按用户要求只执行本地 git commit，不推远程。
+
+------ todo-list end at 2026/06/25/15:39:39 -----

@@ -8,11 +8,11 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from nova_gateway import main as app_module
-from nova_gateway.main import app
-from nova_gateway.models import ChatMessage, ChatRole
-from nova_gateway.provider import BigModelProvider
-from nova_gateway.agent_runtime import CodexLikeAgentRuntime
+from nova.app import main as app_module
+from nova.app.main import app
+from nova.models import ChatMessage, ChatRole
+from nova.providers.bigmodel import BigModelProvider
+from nova.runtime import CodexLikeAgentRuntime
 
 
 class SkillsApiTest(unittest.TestCase):

@@ -5,9 +5,9 @@ import unittest
 import json
 from pathlib import Path
 
-from nova_gateway.agent_tools import WorkspaceTools
-from nova_gateway.tool_executor import ToolExecutor
-from nova_gateway.tool_hooks import ToolHookRunner
+from nova.tools.workspace import WorkspaceTools
+from nova.tools.executor import ToolExecutor
+from nova.tools.hooks import ToolHookRunner
 
 
 class ToolHooksTest(unittest.TestCase):

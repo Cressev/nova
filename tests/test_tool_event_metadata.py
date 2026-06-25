@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from nova_gateway.tools.executor import ToolExecutor
-from nova_gateway.tools.workspace import WorkspaceTools
+from nova.tools.executor import ToolExecutor
+from nova.tools.workspace import WorkspaceTools
 
 
 class ToolEventMetadataTest(unittest.TestCase):
@@ -50,6 +50,22 @@ class ToolEventMetadataTest(unittest.TestCase):
         self.assertIn("文件不存在", done["data"]["failure_reason"])
         self.assertTrue(done["data"]["retryable"])
         self.assertEqual(done["data"]["spec"]["permission"], "read")
+
+    def test_tool_annotation_becomes_card_title_metadata_and_is_not_executed_argument(self) -> None:
+        events, result_json = self.executor.run_one_stream(
+            "tool_read_annotated",
+            "read_file",
+            {"path": "README.md", "annotation": "读取项目说明"},
+        )
+
+        start = next(event for event in events if event["type"] == "tool_start")
+        done = next(event for event in events if event["type"] == "tool_done")
+
+        self.assertEqual(start["title"], "读取项目说明")
+        self.assertEqual(start["data"]["annotation"], "读取项目说明")
+        self.assertNotIn("annotation", start["arguments"])
+        self.assertEqual(done["data"]["annotation"], "读取项目说明")
+        self.assertIn('"annotation": "读取项目说明"', result_json)
 
 
 if __name__ == "__main__":

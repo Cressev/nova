@@ -7,10 +7,11 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from nova_gateway import main as app_module
-from nova_gateway.approvals.store import PendingApprovalStore
-from nova_gateway.main import app
-from nova_gateway.processes.manager import ProcessManager
+from nova.app import main as app_module
+from nova.permissions.store import PendingApprovalStore
+from nova.app.main import app
+from nova.observability.trace import TraceRecorder
+from nova.processes.manager import ProcessManager
 
 
 class ApiTest(unittest.TestCase):
@@ -25,6 +26,12 @@ class ApiTest(unittest.TestCase):
     def test_favicon(self) -> None:
         response = self.client.get("/favicon.ico")
         self.assertEqual(response.status_code, 204)
+
+    def test_index_cache_busts_frontend_bundle(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("no-store", response.headers.get("cache-control", ""))
+        self.assertRegex(response.text, r"/static/js/app\.js\?v=\d+")
 
     def test_workspace_status(self) -> None:
         response = self.client.get("/api/workspace/status")
@@ -227,6 +234,37 @@ class ApiTest(unittest.TestCase):
                 after = self.client.get("/api/provider")
                 self.assertTrue(after.json()["configured"])
 
+    def test_langfuse_secrets_update_status_without_echoing_secret_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            secret_file = Path(tmpdir) / "runtime-secrets.json"
+            old_path = app_module.settings.runtime_secret_file
+            object.__setattr__(app_module.settings, "runtime_secret_file", secret_file)
+            self.addCleanup(lambda: object.__setattr__(app_module.settings, "runtime_secret_file", old_path))
+
+            response = self.client.patch(
+                "/api/runtime/secrets",
+                json={
+                    "langfuse_public_key": "pk-lf-test",
+                    "langfuse_secret_key": "sk-lf-test",
+                    "langfuse_host": "https://cloud.langfuse.com",
+                },
+            )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertTrue(payload["langfuse_configured"])
+            self.assertTrue(payload["langfuse_public_key_set"])
+            self.assertTrue(payload["langfuse_secret_key_set"])
+            self.assertNotIn("pk-lf-test", response.text)
+            self.assertNotIn("sk-lf-test", response.text)
+            saved = secret_file.read_text(encoding="utf-8")
+            self.assertIn("LANGFUSE_PUBLIC_KEY", saved)
+            self.assertIn("LANGFUSE_SECRET_KEY", saved)
+
+            config = self.client.get("/api/runtime/config").json()
+            self.assertTrue(config["langfuse_configured"])
+            self.assertEqual(config["langfuse_host"], "https://cloud.langfuse.com")
+
     def test_runtime_statusline_estimates_session_tokens(self) -> None:
         session_response = self.client.post(
             "/api/chat/sessions",
@@ -354,15 +392,9 @@ class ApiTest(unittest.TestCase):
         self.assertIn(current, queried.json()["candidates"])
         self.assertIn("query_status", queried.json())
 
-    def test_create_task(self) -> None:
-        response = self.client.post("/api/tasks", json={"prompt": "测试任务"})
-        self.assertEqual(response.status_code, 201)
-        payload = response.json()
-        self.assertTrue(payload["id"].startswith("task_"))
-        self.assertEqual(payload["prompt"], "测试任务")
-
-        detail = self.client.get(f"/api/tasks/{payload['id']}")
-        self.assertEqual(detail.status_code, 200)
+    def test_task_api_is_removed_for_chat_session_first_runtime(self) -> None:
+        self.assertEqual(self.client.get("/api/tasks").status_code, 404)
+        self.assertEqual(self.client.post("/api/tasks", json={"prompt": "测试任务"}).status_code, 404)
 
     def test_chat_session_and_missing_provider_key(self) -> None:
         session_response = self.client.post(
@@ -385,6 +417,45 @@ class ApiTest(unittest.TestCase):
         messages = self.client.get(f"/api/chat/sessions/{session['id']}/messages")
         self.assertEqual(messages.status_code, 200)
         self.assertGreaterEqual(len(messages.json()), 2)
+
+    def test_stream_trace_is_written_by_chat_session_without_task_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_state_dir = app_module.store.state_dir
+            old_trace = app_module.store.trace
+            old_chat_file = app_module.store.chat_file
+            old_session_file = getattr(app_module.store, "session_file", None)
+            state_dir = Path(tmpdir) / "sessions"
+            object.__setattr__(app_module.store, "state_dir", state_dir)
+            object.__setattr__(app_module.store, "chat_file", state_dir / "chats.json")
+            if hasattr(app_module.store, "session_file"):
+                object.__setattr__(app_module.store, "session_file", state_dir / "sessions.json")
+            object.__setattr__(app_module.store, "trace", TraceRecorder(state_dir))
+            self.addCleanup(lambda: object.__setattr__(app_module.store, "state_dir", old_state_dir))
+            self.addCleanup(lambda: object.__setattr__(app_module.store, "trace", old_trace))
+            self.addCleanup(lambda: object.__setattr__(app_module.store, "chat_file", old_chat_file))
+            if old_session_file is not None:
+                self.addCleanup(lambda: object.__setattr__(app_module.store, "session_file", old_session_file))
+
+            session = self.client.post("/api/chat/sessions", json={"title": "trace"}).json()
+
+            class FakeStreamingRuntime:
+                async def stream(self, messages):
+                    yield {"type": "agent_status", "status": "测试运行"}
+                    yield {"type": "assistant_delta", "delta": "完成"}
+                    yield {"type": "assistant_done_content", "content": "完成"}
+
+            with patch.object(app_module, "_agent_runtime", lambda: FakeStreamingRuntime()):
+                response = self.client.post(
+                    f"/api/chat/sessions/{session['id']}/stream",
+                    json={"content": "记录 trace"},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse((state_dir / "sessions.json").exists())
+            trace_files = sorted((state_dir / "traces").glob(f"*_{session['id']}.json"))
+            self.assertEqual(len(trace_files), 1)
+            self.assertTrue(trace_files[0].name.endswith(f"_{session['id']}.json"))
+            self.assertGreaterEqual(len(app_module.store.trace.read(session["id"])), 2)
 
     def test_chat_sessions_are_project_scoped_and_deletable(self) -> None:
         session_response = self.client.post(
@@ -425,6 +496,8 @@ class ApiTest(unittest.TestCase):
             project_b = root / "project-b"
             project_a.mkdir()
             project_b.mkdir()
+            (project_a / ".nova").mkdir()
+            (project_b / ".nova").mkdir()
             old_current = app_module.workspace_manager.current_root
             old_allowed = app_module.workspace_manager.allowed_roots
             old_browse = app_module.workspace_manager.browse_roots
@@ -470,6 +543,8 @@ class ApiTest(unittest.TestCase):
             project_b = root / "project-b"
             project_a.mkdir()
             project_b.mkdir()
+            (project_a / ".nova").mkdir()
+            (project_b / ".nova").mkdir()
             old_current = app_module.workspace_manager.current_root
             old_allowed = app_module.workspace_manager.allowed_roots
             old_browse = app_module.workspace_manager.browse_roots
@@ -501,7 +576,7 @@ class ApiTest(unittest.TestCase):
                 json={"permission_mode": "ask", "sandbox_mode": "workspace_write", "approval_policy": "on_request"},
             )
             self.assertEqual(response_a.status_code, 200)
-            self.assertTrue((project_a / ".nova" / "runtime-config.json").exists())
+            self.assertTrue((project_a / ".nova" / "config" / "runtime-config.json").exists())
 
             switch_b = self.client.post("/api/workspace/select", json={"path": str(project_b)})
             self.assertEqual(switch_b.status_code, 200)
@@ -510,7 +585,7 @@ class ApiTest(unittest.TestCase):
                 json={"permission_mode": "read_only", "sandbox_mode": "read_only", "approval_policy": "never"},
             )
             self.assertEqual(response_b.status_code, 200)
-            self.assertTrue((project_b / ".nova" / "runtime-config.json").exists())
+            self.assertTrue((project_b / ".nova" / "config" / "runtime-config.json").exists())
 
             switch_a_again = self.client.post("/api/workspace/select", json={"path": str(project_a)})
 
@@ -880,7 +955,6 @@ class ApiTest(unittest.TestCase):
             session["id"],
             turn_id="turn_state",
             user_message_id="msg_user",
-            task_id="task_state",
         )
         app_module.agent_sessions.record_tool_call(
             session["id"],

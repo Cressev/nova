@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from nova_gateway.workspace import WorkspaceError, WorkspaceManager
+from nova.workspace import WorkspaceError, WorkspaceManager
 
 
 class WorkspaceManagerTest(unittest.TestCase):
@@ -49,24 +49,25 @@ class WorkspaceManagerTest(unittest.TestCase):
         self.assertEqual(selected, work.resolve())
 
     def test_browsing_handles_windows_mount_case_mismatch(self) -> None:
-        real_root = self.root / "Documents" / "Study" / "Code"
+        root = Path(tempfile.mkdtemp(dir=self.root))
+        real_root = root / "Documents" / "Study" / "Code"
         real_project = real_root / "nova"
         real_project.mkdir(parents=True)
         manager = WorkspaceManager(
             initial_root=real_project,
-            allowed_roots=[self.root / "documents" / "study" / "code"],
+            allowed_roots=[root / "documents" / "study" / "code"],
         )
 
-        candidates = manager.status(query=str(self.root))["candidates"]
+        candidates = manager.status(query=str(root))["candidates"]
 
-        self.assertIn(str(self.root / "Documents"), candidates)
+        self.assertIn(str(root / "Documents"), candidates)
 
     def test_query_resolves_existing_path_case_insensitively(self) -> None:
-        work = self.root / "Documents" / "Work"
+        work = self.root / "CaseProbe" / "Work"
         child = work / "ZhiPu"
         child.mkdir(parents=True)
 
-        candidates = self.manager.status(query=str(self.root / "documents" / "work"))["candidates"]
+        candidates = self.manager.status(query=str(self.root / "caseprobe" / "work"))["candidates"]
 
         self.assertEqual(candidates, [str(child)])
 

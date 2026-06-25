@@ -16,6 +16,14 @@ assert(
   "刷新历史线程时应把 runtime-state 里的审批、后台任务和排队输入恢复到页面",
 );
 assert(
+  app.includes("state.sessionActive") && app.includes("runtimeState.active"),
+  "停止按钮和排队逻辑应同步后端 runtime-state.active，而不是只依赖本地 sending",
+);
+assert(
+  app.includes("isTurnActive()"),
+  "运行态判断应集中到 isTurnActive，覆盖本地 stream 和后端 active session",
+);
+assert(
   /runtimeState\.pending_approvals/.test(app)
     && /runtimeState\.processes/.test(app)
     && /runtimeState\.queued_messages/.test(app),

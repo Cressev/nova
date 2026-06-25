@@ -6,8 +6,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from nova_gateway import main as app_module
-from nova_gateway.main import app
+from nova.app import main as app_module
+from nova.app.main import app
 
 
 class LspApiTest(unittest.TestCase):

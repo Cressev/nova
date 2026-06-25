@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from nova_gateway.models import ChatMessage, ChatRole
-from nova_gateway.sessions.agent_session import AgentSessionService
-from nova_gateway import main as app_module
+from nova.models import ChatMessage, ChatRole
+from nova.sessions.agent_session import AgentSessionService
+from nova.app import main as app_module
 
 
 class AgentSessionServiceTest(unittest.TestCase):
@@ -57,7 +57,7 @@ class AgentSessionServiceTest(unittest.TestCase):
     def test_turn_runtime_tracks_tools_background_cancel_and_final_answer(self) -> None:
         service = AgentSessionService()
 
-        service.start_turn("chat_a", turn_id="turn_a", user_message_id="msg_user", task_id="task_a")
+        service.start_turn("chat_a", turn_id="turn_a", user_message_id="msg_user")
         service.record_tool_call(
             "chat_a",
             turn_id="turn_a",
