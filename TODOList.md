@@ -1424,3 +1424,28 @@ api 就不能再拆了吗？拆。
 - 本轮按用户要求只执行本地 git commit，不推远程。
 
 ------ todo-list end at 2026/06/25/15:39:39 -----
+
+------ todo-list begin at 2026/06/25/16:05:15 -----
+
+用户请求：
+搞吧。
+
+制定清单：
+- [x] 1. 确认现有 Nova 已有早期 agent loop，但尚未独立成稳定模块。
+- [x] 2. 新增 `AgentLoop`，承接模型-工具-模型多轮循环、内置指令、直达工具和最终回答路径。
+- [x] 3. 新增 `ToolOrchestrator`，承接工具调用归一化、只读并行、流式执行和权限请求判断。
+- [x] 4. 保留 `CodexLikeAgentRuntime` 旧私有方法作为兼容代理，避免破坏现有测试和外部调用。
+- [x] 5. 补充 AgentLoop、ToolOrchestrator 和包结构测试。
+- [x] 6. 跑目标测试、全量 Python、前端、编译和 diff 检查。
+- [x] 7. 重启本地服务供用户验证。
+- [x] 8. 本地 git commit，不推远程。
+
+执行问题记录：
+- 新增 `ToolOrchestrator` 单测时，最初误以为 trace 回调只接收 `tool_done`；实际 runtime 的 `_trace_tool_event()` 会自己过滤，编排器应把 `tool_start/tool_done` 都交给回调，已修正测试断言。
+
+交付记录：
+- 新增 `src/nova/runtime/loop.py` 和 `src/nova/runtime/tool_orchestrator.py`。
+- `CodexLikeAgentRuntime` 现在持有 `agent_loop` 与 `tool_orchestrator`，自身更多退回依赖组装、provider、trace、记忆和兼容 API。
+- 验证：目标测试 83 tests OK；Python 全量 177 tests OK；全部前端 Node 测试 OK；`compileall` OK；`git diff --check` OK。
+
+------ todo-list end at 2026/06/25/16:05:15 -----

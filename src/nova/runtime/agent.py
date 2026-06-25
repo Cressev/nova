@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import re
 from collections.abc import AsyncIterator
@@ -17,6 +16,8 @@ from ..tools.executor import ToolExecutor
 from ..tools.hooks import ToolHookRunner
 from ..tools.workspace import TOOL_SPECS, WorkspaceTools
 from .commands import builtin_help_text
+from .loop import AgentLoop
+from .tool_orchestrator import ToolOrchestrator
 
 TOOL_CALL_PATTERN = re.compile(
     r"<tool_call>\s*(?P<payload>\{.*?\})\s*(?:</tool_call>)?",
@@ -65,6 +66,14 @@ class CodexLikeAgentRuntime:
         self.sandbox_mode = sandbox_mode
         self.approval_policy = approval_policy
         self.trace_recorder = trace_recorder
+        self.agent_loop = AgentLoop(self)
+        self.tool_orchestrator = ToolOrchestrator(
+            tools=self.tools,
+            executor=self.executor,
+            permission_mode=self.permission_mode,
+            approval_policy=self.approval_policy,
+            trace_tool_event=self._trace_tool_event,
+        )
 
     async def stream(
         self,
@@ -94,95 +103,12 @@ class CodexLikeAgentRuntime:
         trace_turn_id: str,
         trace_output_parts: list[str],
     ) -> AsyncIterator[dict]:
-        if latest_user.startswith("$"):
-            yield {"type": "agent_status", "status": "读取技能 SKILL.md"}
-            text = self._skill_response_from_dollar(latest_user)
-            for chunk in self._chunk_text(text, 36):
-                yield {"type": "assistant_delta", "delta": chunk}
-            yield {"type": "assistant_done_content", "content": text}
-            return
-        if latest_user.startswith("/"):
-            yield {"type": "agent_status", "status": "处理内置指令"}
-            async for event in self._handle_builtin_command(latest_user, messages):
-                yield event
-            return
-        direct_tool_calls = self._direct_tool_calls_from_user(latest_user)
-        if direct_tool_calls:
-            yield {"type": "agent_status", "status": "识别到明确工具意图"}
-            tool_results: list[str] = []
-            async for event in self._run_tool_calls(direct_tool_calls):
-                if event["type"] == "tool_result_json":
-                    tool_results.append(event["result_json"])
-                    continue
-                yield event
-            yield {"type": "agent_status", "status": "模型基于工具结果生成回答"}
-            async for event in self._stream_tool_result_answer(messages, tool_results):
-                yield event
-            return
-
-        working_messages = [
-            ChatMessage(
-                session_id="agent",
-                role=ChatRole.SYSTEM,
-                content=self._system_prompt(),
-            ),
-            *messages,
-        ]
-        used_tools = False
-        all_tool_results: list[str] = []
-
-        for _round in range(self.max_tool_rounds):
-            yield {"type": "agent_status", "status": f"模型决策中，第 {_round + 1} 轮"}
-            decision = await self._complete_tool_decision(working_messages)
-            self._trace_generation(
-                trace_turn_id,
-                name=f"tool-decision-{_round + 1}",
-                messages=working_messages,
-                content=str(decision["content"] or ""),
-                tool_calls=decision["tool_calls"] if isinstance(decision["tool_calls"], list) else [],
-            )
-            decision_text = decision["content"]
-            tool_calls = decision["tool_calls"] or self._parse_tool_calls(decision_text)
-            if not tool_calls:
-                if str(decision_text).strip():
-                    yield {"type": "agent_status", "status": "生成最终回答"}
-                    for chunk in self._chunk_text(str(decision_text), 36):
-                        yield {"type": "assistant_delta", "delta": chunk}
-                    yield {"type": "assistant_done_content", "content": str(decision_text)}
-                    return
-                yield {"type": "agent_status", "status": "生成最终回答"}
-                async for event in self._stream_final(working_messages, decision_text):
-                    yield event
-                return
-
-            used_tools = True
-            tool_results: list[str] = []
-            async for event in self._run_tool_calls(tool_calls):
-                if event["type"] == "tool_result_json":
-                    tool_results.append(event["result_json"])
-                    all_tool_results.append(event["result_json"])
-                    continue
-                yield event
-
-            working_messages.extend(
-                [
-                    ChatMessage(
-                        session_id="agent",
-                        role=ChatRole.ASSISTANT,
-                        content=decision_text or "已选择工具调用。",
-                    ),
-                    ChatMessage(
-                        session_id="agent",
-                        role=ChatRole.USER,
-                        content="工具结果：\n" + "\n".join(tool_results),
-                    ),
-                ]
-            )
-
-        if used_tools:
-            yield {"type": "agent_status", "status": "基于最近工具结果生成回答"}
-            async for event in self._stream_tool_result_answer(working_messages, all_tool_results):
-                yield event
+        async for event in self.agent_loop.run(
+            messages,
+            latest_user=latest_user,
+            trace_turn_id=trace_turn_id,
+        ):
+            yield event
 
     async def _complete_tool_decision(self, messages: list[ChatMessage]) -> dict[str, object]:
         complete_with_tools = getattr(self.provider, "complete_with_tools", None)
@@ -508,50 +434,9 @@ class CodexLikeAgentRuntime:
         return []
 
     async def _run_tool_calls(self, tool_calls: list[dict]) -> AsyncIterator[dict]:
-        normalized = [
-            (f"tool_{uuid4().hex[:12]}", name, arguments)
-            for name, arguments in (self._normalize_tool_call(call) for call in tool_calls)
-            if name
-        ]
-        skipped = len(tool_calls) - len(normalized)
-        if skipped:
-            # 模型偶尔会输出空工具名或半截 JSON；跳过而不是在 UI 上刷一屏“未知工具”。
-            yield {"type": "agent_status", "status": f"已跳过 {skipped} 个无效工具调用"}
-        if not normalized:
-            yield {
-                "type": "tool_result_json",
-                "result_json": json.dumps(
-                    {"ok": False, "error": "模型输出了无效工具调用，请按工具 schema 重新选择工具。"},
-                    ensure_ascii=False,
-                ),
-            }
-            return
-        parallel = len(normalized) > 1 and all(self.tools.supports_parallel(name) for _id, name, _args in normalized)
-
-        if parallel:
-            yield {"type": "agent_status", "status": f"并行执行 {len(normalized)} 个只读工具"}
-            results = await asyncio.gather(
-                *(
-                    asyncio.to_thread(self.executor.run_one, call_id, name, args, parallel=True)
-                    for call_id, name, args in normalized
-                )
-            )
-            for events, result_json in results:
-                for event in events:
-                    self._trace_tool_event(event)
-                    yield event
-                yield {"type": "tool_result_json", "result_json": result_json}
-            return
-
-        for call_id, name, arguments in normalized:
-            async for event in self._iter_executor_events(
-                call_id,
-                name,
-                arguments,
-                require_permission=self._requires_permission_request(name),
-            ):
-                self._trace_tool_event(event)
-                yield event
+        self._sync_tool_orchestrator_policy()
+        async for event in self.tool_orchestrator.run(tool_calls):
+            yield event
 
     async def _iter_executor_events(
         self,
@@ -561,25 +446,17 @@ class CodexLikeAgentRuntime:
         *,
         require_permission: bool = False,
     ) -> AsyncIterator[dict]:
-        iterator = self.executor.iter_one_stream(call_id, name, arguments, require_permission=require_permission)
-        sentinel = object()
-        while True:
-            event = await asyncio.to_thread(next, iterator, sentinel)
-            if event is sentinel:
-                break
+        async for event in self.tool_orchestrator.iter_executor_events(
+            call_id,
+            name,
+            arguments,
+            require_permission=require_permission,
+        ):
             yield event
 
     def _requires_permission_request(self, tool_name: str) -> bool:
-        spec = TOOL_SPECS.get(tool_name)
-        if not spec or spec.permission == "read":
-            return False
-        if self.permission_mode == "bypass_permissions":
-            return False
-        if self.permission_mode in {"ask", "plan"}:
-            return True
-        if self.approval_policy == "on_request":
-            return spec.permission in {"write", "shell"}
-        return False
+        self._sync_tool_orchestrator_policy()
+        return self.tool_orchestrator.requires_permission_request(tool_name)
 
     def _run_permission_request_hooks(self, call_id: str, tool_name: str, arguments: dict) -> tuple[list[dict], str | None]:
         events: list[dict] = []
@@ -654,27 +531,11 @@ class CodexLikeAgentRuntime:
         )
 
     def _normalize_tool_call(self, tool_call: dict) -> tuple[str, dict]:
-        function_call = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
-        tool_name = str(
-            tool_call.get("tool")
-            or tool_call.get("name")
-            or function_call.get("name")
-            or ""
-        ).strip()
-        arguments = (
-            tool_call.get("arguments")
-            or tool_call.get("parameters")
-            or tool_call.get("input")
-            or function_call.get("arguments")
-            or {}
-        )
-        if isinstance(arguments, str):
-            try:
-                parsed = json.loads(arguments)
-            except json.JSONDecodeError:
-                parsed = {}
-            arguments = parsed
-        return tool_name, arguments if isinstance(arguments, dict) else {}
+        return self.tool_orchestrator.normalize_tool_call(tool_call)
+
+    def _sync_tool_orchestrator_policy(self) -> None:
+        self.tool_orchestrator.permission_mode = self.permission_mode
+        self.tool_orchestrator.approval_policy = self.approval_policy
 
     def _latest_user_content(self, messages: list[ChatMessage]) -> str:
         for message in reversed(messages):

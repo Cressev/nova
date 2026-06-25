@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from nova.runtime import CodexLikeAgentRuntime
+from nova.runtime import AgentLoop
 from nova.providers.bigmodel import BigModelProvider
 from nova.providers.bigmodel import ProviderDecision
 
@@ -288,6 +289,33 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertFalse(any(item["type"] == "web_search" for item in provider.seen_tools))
         function_names = [item["function"]["name"] for item in provider.seen_tools if item["type"] == "function"]
         self.assertIn("read_file", function_names)
+
+    def test_runtime_delegates_model_tool_loop_to_agent_loop(self) -> None:
+        from nova.models import ChatMessage, ChatRole
+
+        provider = _DecisionProvider(ProviderDecision(content="Loop 已接管", tool_calls=[]))
+        runtime = CodexLikeAgentRuntime(
+            provider=provider,  # type: ignore[arg-type]
+            project_root=Path(self.tmpdir.name),
+        )
+
+        async def collect_events() -> list[dict]:
+            return [
+                event
+                async for event in runtime.agent_loop.run(
+                    [ChatMessage(session_id="s", role=ChatRole.USER, content="直接回答")],
+                    latest_user="直接回答",
+                    trace_turn_id="trace_test",
+                )
+            ]
+
+        events = asyncio.run(collect_events())
+        text = "".join(event.get("delta", "") for event in events if event["type"] == "assistant_delta")
+
+        self.assertIsInstance(runtime.agent_loop, AgentLoop)
+        self.assertIs(runtime.agent_loop.runtime, runtime)
+        self.assertIn("Loop 已接管", text)
+        self.assertFalse(provider.stream_called)
 
     def test_web_search_intent_routes_to_local_zai_tool(self) -> None:
         runtime = CodexLikeAgentRuntime(
