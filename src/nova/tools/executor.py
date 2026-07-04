@@ -36,12 +36,15 @@ class ToolExecutor:
         *,
         parallel: bool = False,
         require_permission: bool = False,
+        approved: bool = False,
     ) -> tuple[list[dict], str]:
         events: list[dict] = []
         current_arguments = dict(arguments)
         annotation = self._pop_annotation(current_arguments)
         hook_contexts: list[str] = []
-        permission_preapproved = False
+        # approved 来自用户在前端点击“允许”后的续跑。它只跳过工具权限二次询问，
+        # 仍然保留 Pre/Post hook、黑名单和工具失败兜底。
+        permission_preapproved = approved
 
         pre_outcomes = self._run_hooks(
             events,
@@ -201,10 +204,18 @@ class ToolExecutor:
         *,
         parallel: bool = False,
         require_permission: bool = False,
+        approved: bool = False,
     ) -> tuple[list[dict], str]:
         events: list[dict] = []
         result_json = ""
-        for event in self.iter_one_stream(call_id, tool_name, arguments, parallel=parallel, require_permission=require_permission):
+        for event in self.iter_one_stream(
+            call_id,
+            tool_name,
+            arguments,
+            parallel=parallel,
+            require_permission=require_permission,
+            approved=approved,
+        ):
             if event["type"] == "tool_result_json":
                 result_json = str(event["result_json"])
             else:
@@ -219,9 +230,17 @@ class ToolExecutor:
         *,
         parallel: bool = False,
         require_permission: bool = False,
+        approved: bool = False,
     ) -> Iterator[dict[str, Any]]:
         if tool_name != "shell_command":
-            events, result_json = self.run_one(call_id, tool_name, arguments, parallel=parallel, require_permission=require_permission)
+            events, result_json = self.run_one(
+                call_id,
+                tool_name,
+                arguments,
+                parallel=parallel,
+                require_permission=require_permission,
+                approved=approved,
+            )
             yield from events
             yield {"type": "tool_result_json", "result_json": result_json}
             return
@@ -230,7 +249,8 @@ class ToolExecutor:
         current_arguments = dict(arguments)
         annotation = self._pop_annotation(current_arguments)
         hook_contexts: list[str] = []
-        permission_preapproved = False
+        # approved 表示这次执行来自 pending approval 的续跑，不再重复问同一个权限。
+        permission_preapproved = approved
         pre_outcomes = self._run_hooks(events, "PreToolUse", call_id, tool_name, current_arguments)
         self._collect_hook_contexts(hook_contexts, pre_outcomes)
         for outcome in pre_outcomes:

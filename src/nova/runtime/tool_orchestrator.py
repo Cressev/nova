@@ -57,7 +57,13 @@ class ToolOrchestrator:
             yield {"type": "agent_status", "status": f"并行执行 {len(normalized)} 个只读工具"}
             results = await asyncio.gather(
                 *(
-                    asyncio.to_thread(self.executor.run_one, call_id, name, arguments, parallel=True)
+                    asyncio.to_thread(
+                        self.executor.run_one,
+                        call_id,
+                        name,
+                        arguments,
+                        parallel=True,
+                    )
                     for call_id, name, arguments in normalized
                 )
             )
@@ -85,12 +91,14 @@ class ToolOrchestrator:
         arguments: dict,
         *,
         require_permission: bool = False,
+        approved: bool = False,
     ) -> AsyncIterator[dict]:
         iterator = self.executor.iter_one_stream(
             call_id,
             name,
             arguments,
             require_permission=require_permission,
+            approved=approved,
         )
         sentinel = object()
         while True:
@@ -98,6 +106,34 @@ class ToolOrchestrator:
             if event is sentinel:
                 break
             yield event
+
+    async def resume_approved_tool(
+        self,
+        call_id: str,
+        name: str,
+        arguments: dict,
+    ) -> tuple[list[dict], str]:
+        """从用户审批暂停点继续执行单个工具。
+
+        这里不重新走模型决策，只把已保存的工具调用送回统一执行器。approved=True
+        代表用户已经批准了这次 pending approval，执行器仍会继续跑 hook、黑名单、
+        stdout/stderr 分片和失败兜底。
+        """
+
+        events: list[dict] = []
+        result_json = ""
+        async for event in self.iter_executor_events(
+            call_id,
+            name,
+            arguments,
+            approved=True,
+        ):
+            if event.get("type") == "tool_result_json":
+                result_json = str(event.get("result_json") or "")
+                continue
+            self._trace(event)
+            events.append(event)
+        return events, result_json
 
     def requires_permission_request(self, tool_name: str) -> bool:
         spec = TOOL_SPECS.get(tool_name)

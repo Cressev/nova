@@ -93,6 +93,13 @@ class RunOrchestrator:
         *,
         runtime_event: dict[str, Any] | None = None,
     ) -> None:
+        raw_data = raw_event.get("data") if isinstance(raw_event.get("data"), dict) else {}
+        runtime_data = (
+            runtime_event.get("data")
+            if runtime_event is not None and isinstance(runtime_event.get("data"), dict)
+            else {}
+        )
+        checkpoint_data = {**raw_data, **runtime_data}
         self.agent_sessions.create_pending_approval(
             session_id=self.session_id,
             turn_id=self.turn_id,
@@ -101,6 +108,13 @@ class RunOrchestrator:
             arguments=raw_event.get("arguments") if isinstance(raw_event.get("arguments"), dict) else {},
             permission=str(raw_event.get("permission") or ""),
             reason=str(raw_event.get("message") or "执行工具前需要用户确认。"),
+            risk=str(checkpoint_data.get("risk") or "") or None,
+            checkpoint_event_id=(
+                str(runtime_event.get("id"))
+                if runtime_event is not None and runtime_event.get("id")
+                else None
+            ),
+            checkpoint_data=checkpoint_data,
         )
 
     def event(

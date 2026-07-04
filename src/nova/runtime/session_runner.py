@@ -31,6 +31,9 @@ class SessionRunDependencies:
     context_window_tokens: int
     project_root_provider: Callable[[], Any]
     global_agent_file_provider: Callable[[], Any]
+    tool_orchestrator_factory: Callable[[], Any]
+    event_builder_for_existing_turn: Callable[[str, str], Callable[..., dict[str, Any]]]
+    denied_tool_message_builder: Callable[..., str]
 
 
 class SessionRunner:
@@ -42,6 +45,91 @@ class SessionRunner:
 
     def __init__(self, deps: SessionRunDependencies) -> None:
         self.deps = deps
+
+    async def approve_tool_call(self, approval_id: str) -> dict | None:
+        """批准一个 pending tool call，并从 checkpoint 继续执行。
+
+        API/TUI 只表达“用户批准了”，真正的工具续跑、事件转换和持久化都在这里
+        统一完成，避免不同入口各自拼执行器导致行为漂移。
+        """
+
+        item = self.deps.agent_sessions.approve_pending_approval(approval_id)
+        if item is None:
+            return None
+
+        events, result_json = await self.deps.tool_orchestrator_factory().resume_approved_tool(
+            item.call_id,
+            item.tool,
+            item.arguments,
+        )
+        build_event = self.deps.event_builder_for_existing_turn(
+            item.session_id,
+            item.turn_id,
+        )
+        runtime_events: list[dict[str, Any]] = []
+        for event in events:
+            runtime_event = self.deps.runtime_event_from_agent_event(event, build_event)
+            if runtime_event is None:
+                continue
+            self._persist_existing_runtime_event(runtime_event)
+            runtime_events.append(runtime_event)
+
+        return {
+            "ok": True,
+            "status": "approved",
+            "approval": item.as_dict(),
+            "events": events,
+            "runtime_events": runtime_events,
+            "result_json": result_json,
+        }
+
+    def deny_tool_call(self, approval_id: str, *, reason: str) -> dict | None:
+        """拒绝 pending tool call，并把拒绝结果写回会话上下文。"""
+
+        item = self.deps.agent_sessions.deny_pending_approval(
+            approval_id,
+            reason=reason,
+        )
+        if item is None:
+            return None
+
+        event = self.deps.event_builder_for_existing_turn(
+            item.session_id,
+            item.turn_id,
+        )(
+            "permission.denied",
+            category="permission",
+            phase="denied",
+            status="failed",
+            title=f"已拒绝：{item.tool}",
+            message=reason,
+            tool=item.tool,
+            call_id=item.call_id,
+            arguments=item.arguments,
+            data={
+                "permission": item.permission,
+                "risk": item.risk,
+                "checkpoint_event_id": item.checkpoint_event_id,
+            },
+        )
+        self._persist_existing_runtime_event(event)
+        assistant_message = ChatMessage(
+            session_id=item.session_id,
+            role=ChatRole.ASSISTANT,
+            content=self.deps.denied_tool_message_builder(
+                tool=item.tool,
+                arguments=item.arguments,
+                reason=reason,
+            ),
+        )
+        self.deps.store.add_chat_message(assistant_message)
+        return {
+            "ok": True,
+            "status": "denied",
+            "approval": item.as_dict(),
+            "event": event,
+            "message": assistant_message.model_dump(mode="json"),
+        }
 
     async def run_message(self, session_id: str, content: str) -> AsyncIterator[dict]:
         first_message = ChatMessage(
@@ -237,3 +325,7 @@ class SessionRunner:
             },
         )
         yield {"type": "runtime_event", "event": compacted}
+
+    def _persist_existing_runtime_event(self, event: dict[str, Any]) -> None:
+        self.deps.persist_event(event)
+        self.deps.agent_sessions.record_runtime_event(event)

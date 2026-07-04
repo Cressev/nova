@@ -20,6 +20,9 @@ class PendingApproval:
     arguments: dict[str, Any]
     permission: str
     reason: str
+    risk: str | None = None
+    checkpoint_event_id: str | None = None
+    checkpoint_data: dict[str, Any] = field(default_factory=dict)
     status: str = "pending"
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
@@ -34,6 +37,9 @@ class PendingApproval:
             "arguments": self.arguments,
             "permission": self.permission,
             "reason": self.reason,
+            "risk": self.risk,
+            "checkpoint_event_id": self.checkpoint_event_id,
+            "checkpoint_data": self.checkpoint_data,
             "status": self.status,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -57,6 +63,9 @@ class PendingApprovalStore:
         arguments: dict[str, Any],
         permission: str,
         reason: str,
+        risk: str | None = None,
+        checkpoint_event_id: str | None = None,
+        checkpoint_data: dict[str, Any] | None = None,
     ) -> PendingApproval:
         with self._lock:
             item = PendingApproval(
@@ -68,6 +77,9 @@ class PendingApprovalStore:
                 arguments=dict(arguments),
                 permission=permission,
                 reason=reason,
+                risk=risk,
+                checkpoint_event_id=checkpoint_event_id,
+                checkpoint_data=dict(checkpoint_data or {}),
             )
             self._items[item.id] = item
             return item

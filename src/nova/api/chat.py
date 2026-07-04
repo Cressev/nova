@@ -225,6 +225,9 @@ async def stream_chat_message(
                 context_window_tokens=ctx.settings.context_window_tokens,
                 project_root_provider=lambda: ctx.workspace_manager.current_root,
                 global_agent_file_provider=lambda: ctx.settings.global_agent_file,
+                tool_orchestrator_factory=ctx._tool_orchestrator,
+                event_builder_for_existing_turn=ctx._event_builder_for_existing_turn,
+                denied_tool_message_builder=ctx._denied_tool_alternative_message,
             )
         )
         try:

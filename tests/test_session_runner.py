@@ -82,6 +82,34 @@ class SessionRunnerTest(unittest.TestCase):
         self.assertEqual(assistant_messages, ["第一轮", "第二轮"])
         self.assertEqual(self.sessions.runtime_state(self.chat.id)["queued_messages"], [])
 
+    def test_approved_tool_call_resumes_through_runner(self) -> None:
+        self.sessions.create_pending_approval(
+            session_id=self.chat.id,
+            turn_id="turn_a",
+            call_id="tool_shell",
+            tool="shell_command",
+            arguments={"command": "pwd", "workdir": "."},
+            permission="shell",
+            reason="需要审批",
+            risk="medium",
+            checkpoint_event_id="evt_permission",
+            checkpoint_data={"risk": "medium"},
+        )
+        runner = self._runner(_FakeRuntime([]))
+
+        result = asyncio.run(runner.approve_tool_call("tool_shell"))
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["status"], "approved")
+        self.assertTrue(any(event["type"] == "tool_done" for event in result["events"]))
+        self.assertEqual(self.sessions.list_pending_approvals(), [])
+        stored = self.store.list_chat_events(self.chat.id)
+        self.assertTrue(any(event.event_type == "tool.completed" for event in stored))
+        runtime = self.sessions.runtime_state(self.chat.id)
+        self.assertEqual(runtime["tool_calls"][0]["call_id"], "tool_shell")
+        self.assertEqual(runtime["tool_calls"][0]["status"], "completed")
+
     def _runner(self, runtime: object) -> SessionRunner:
         return SessionRunner(
             SessionRunDependencies(
@@ -95,6 +123,9 @@ class SessionRunnerTest(unittest.TestCase):
                 context_window_tokens=128000,
                 project_root_provider=lambda: self.root,
                 global_agent_file_provider=lambda: None,
+                tool_orchestrator_factory=lambda: _FakeToolOrchestrator(),
+                event_builder_for_existing_turn=_event_builder_for_existing_turn,
+                denied_tool_message_builder=_denied_tool_message,
             )
         )
 
@@ -103,7 +134,11 @@ class SessionRunnerTest(unittest.TestCase):
             ChatEvent(
                 id=str(event.get("id") or new_id("evt")),
                 session_id=str(event["session_id"]),
-                type="turn" if event.get("category") == "turn" else "status",
+                type=(
+                    "tool"
+                    if event.get("category") == "tool"
+                    else "turn" if event.get("category") == "turn" else "status"
+                ),
                 event_type=str(event.get("event_type") or ""),
                 phase=str(event.get("phase") or ""),
                 turn_id=str(event.get("turn_id") or ""),
@@ -135,7 +170,58 @@ class _FailingRuntime:
         yield {}
 
 
+class _FakeToolOrchestrator:
+    async def resume_approved_tool(
+        self,
+        call_id: str,
+        name: str,
+        arguments: dict,
+    ) -> tuple[list[dict], str]:
+        return (
+            [
+                {
+                    "type": "tool_start",
+                    "call_id": call_id,
+                    "tool": name,
+                    "arguments": arguments,
+                },
+                {
+                    "type": "tool_done",
+                    "call_id": call_id,
+                    "tool": name,
+                    "ok": True,
+                    "title": "pwd",
+                    "output": "/tmp",
+                    "data": {},
+                },
+            ],
+            '{"ok": true}',
+        )
+
+
 def _runtime_event_from_agent_event(event: dict, build_event) -> dict | None:
+    if event.get("type") == "tool_start":
+        return build_event(
+            "tool.started",
+            category="tool",
+            phase="started",
+            status="running",
+            title=str(event.get("tool") or "工具执行中"),
+            tool=str(event.get("tool") or "tool"),
+            call_id=str(event.get("call_id") or "tool"),
+            arguments=event.get("arguments") if isinstance(event.get("arguments"), dict) else {},
+        )
+    if event.get("type") == "tool_done":
+        return build_event(
+            "tool.completed",
+            category="tool",
+            phase="completed",
+            title=str(event.get("title") or "工具完成"),
+            tool=str(event.get("tool") or "tool"),
+            call_id=str(event.get("call_id") or "tool"),
+            output=str(event.get("output") or ""),
+            data=event.get("data") if isinstance(event.get("data"), dict) else {},
+        )
     if event.get("type") == "agent_status":
         return build_event(
             "agent.status",
@@ -144,6 +230,51 @@ def _runtime_event_from_agent_event(event: dict, build_event) -> dict | None:
             title=str(event.get("status") or "运行中"),
         )
     return None
+
+
+def _event_builder_for_existing_turn(session_id: str, turn_id: str):
+    sequence = 0
+
+    def build_event(
+        event_type: str,
+        *,
+        category: str,
+        phase: str,
+        title: str,
+        message: str | None = None,
+        status: str = "ok",
+        tool: str | None = None,
+        call_id: str | None = None,
+        arguments: dict | None = None,
+        output: str | None = None,
+        data: dict | None = None,
+        persist: bool = False,
+    ) -> dict:
+        nonlocal sequence
+        sequence += 1
+        return {
+            "id": call_id or new_id("evt"),
+            "session_id": session_id,
+            "turn_id": turn_id,
+            "sequence": sequence,
+            "event_type": event_type,
+            "category": category,
+            "phase": phase,
+            "status": status,
+            "title": title,
+            "message": message or title,
+            "tool": tool,
+            "call_id": call_id,
+            "arguments": arguments or {},
+            "output": output,
+            "data": data or {},
+        }
+
+    return build_event
+
+
+def _denied_tool_message(*, tool: str, arguments: dict, reason: str) -> str:
+    return f"已拒绝 {tool}: {reason}"
 
 
 async def _collect(iterator) -> list[dict]:

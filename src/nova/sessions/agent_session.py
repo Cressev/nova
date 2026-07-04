@@ -348,6 +348,9 @@ class AgentSessionService:
         arguments: dict,
         permission: str,
         reason: str,
+        risk: str | None = None,
+        checkpoint_event_id: str | None = None,
+        checkpoint_data: dict | None = None,
     ) -> PendingApproval:
         return self.pending_approvals.create(
             session_id=session_id,
@@ -357,6 +360,9 @@ class AgentSessionService:
             arguments=arguments,
             permission=permission,
             reason=reason,
+            risk=risk,
+            checkpoint_event_id=checkpoint_event_id,
+            checkpoint_data=checkpoint_data,
         )
 
     def list_pending_approvals(self, *, session_id: str | None = None) -> list[PendingApproval]:

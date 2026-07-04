@@ -62,6 +62,27 @@ class ToolOrchestratorTest(unittest.TestCase):
         orchestrator.approval_policy = "on_request"
         self.assertTrue(orchestrator.requires_permission_request("shell_command"))
 
+    def test_resume_approved_tool_marks_executor_call_as_approved(self) -> None:
+        executor = _FakeExecutor()
+        orchestrator = ToolOrchestrator(
+            tools=_FakeTools(),
+            executor=executor,
+            permission_mode="ask",
+            approval_policy="on_request",
+        )
+
+        events, result_json = asyncio.run(
+            orchestrator.resume_approved_tool(
+                "tool_shell",
+                "shell_command",
+                {"command": "pwd"},
+            )
+        )
+
+        self.assertTrue(json.loads(result_json)["ok"])
+        self.assertEqual(events[0]["call_id"], "tool_shell")
+        self.assertTrue(events[0]["approved"])
+
 
 class _FakeTools:
     def __init__(self, parallel_tools: set[str] | None = None) -> None:
@@ -92,13 +113,22 @@ class _FakeExecutor:
         ]
         return events, json.dumps({"ok": True, "tool": name, **arguments}, ensure_ascii=False)
 
-    def iter_one_stream(self, call_id: str, name: str, arguments: dict, *, require_permission: bool = False):
+    def iter_one_stream(
+        self,
+        call_id: str,
+        name: str,
+        arguments: dict,
+        *,
+        require_permission: bool = False,
+        approved: bool = False,
+    ):
         yield {
             "type": "tool_start",
             "call_id": call_id,
             "tool": name,
             "arguments": arguments,
             "require_permission": require_permission,
+            "approved": approved,
         }
         yield {
             "type": "tool_done",
@@ -106,6 +136,10 @@ class _FakeExecutor:
             "tool": name,
             "arguments": arguments,
             "ok": True,
+        }
+        yield {
+            "type": "tool_result_json",
+            "result_json": json.dumps({"ok": True, "tool": name, **arguments}, ensure_ascii=False),
         }
 
 

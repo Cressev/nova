@@ -41,6 +41,7 @@ from ..runtime import (
     RunOrchestrator,
     SessionRunDependencies,
     SessionRunner,
+    ToolOrchestrator,
 )
 from ..runtime.commands import list_builtin_commands
 from ..sessions import AgentSessionService, SessionStore
@@ -214,6 +215,16 @@ def patch_runtime_for_test(runtime):
 
 def app_module_tool_executor(tools: WorkspaceTools) -> ToolExecutor:
     return ToolExecutor(tools, process_manager=process_manager)
+
+
+def _tool_orchestrator() -> ToolOrchestrator:
+    tools = _workspace_tools()
+    return ToolOrchestrator(
+        tools=tools,
+        executor=app_module_tool_executor(tools),
+        permission_mode=settings.permission_mode,
+        approval_policy=settings.approval_policy,
+    )
 
 
 def _same_path(left: Path, right: Path) -> bool:
