@@ -103,7 +103,7 @@ async def runtime_statusline(
         }
     )
     context_window = ctx.settings.context_window_tokens
-    processes = ctx.process_manager.list_jobs()
+    processes = ctx._process_jobs_for_session(session.id if session else None)
     background_task_count = len(
         [job for job in processes if job.get("status") in {"running", "started"}]
     )

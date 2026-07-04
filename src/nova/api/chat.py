@@ -88,6 +88,7 @@ async def chat_runtime_state(session_id: str) -> dict:
     if session is None:
         raise ctx.HTTPException(status_code=404, detail="Chat session not found")
     runtime = ctx.agent_sessions.runtime_state(session_id)
+    processes = ctx._process_jobs_for_session(session_id)
     return {
         "session": session.model_dump(mode="json"),
         "timeline": {
@@ -98,7 +99,7 @@ async def chat_runtime_state(session_id: str) -> dict:
             item.as_dict()
             for item in ctx.agent_sessions.list_pending_approvals(session_id=session_id)
         ],
-        "processes": ctx.process_manager.list_jobs(),
+        "processes": processes,
         "active": ctx.agent_sessions.is_active(session_id),
         "queued_messages": runtime["queued_messages"],
         "unavailable": bool(unavailable_reason),

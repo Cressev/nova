@@ -42,3 +42,9 @@ assert(
   app.includes("process.call_id") && app.includes("shortId(process.call_id)"),
   "Processes 面板应展示 call_id，方便从后台进程反查工具调用",
 );
+assert(
+  app.includes("function processesEndpoint()")
+    && app.includes("session_id=${encodeURIComponent(state.selectedSessionId)}")
+    && app.includes("api(processesEndpoint())"),
+  "Processes 面板应按当前 session 读取后台任务，避免不同会话任务混在一起",
+);

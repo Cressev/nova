@@ -287,7 +287,7 @@ async function loadRuntimeShell() {
   const [config, tools, processes, statusline, worktrees] = await Promise.all([
     api("/api/runtime/config"),
     api("/api/tools"),
-    api("/api/processes"),
+    api(processesEndpoint()),
     loadStatuslineData(),
     api("/api/worktrees"),
   ]);
@@ -330,7 +330,7 @@ async function loadRuntimePanels() {
     api("/api/mcp/status"),
     api("/api/review/summary"),
     api("/api/subagents"),
-    api("/api/processes"),
+    api(processesEndpoint()),
     api("/api/skills/status"),
     api("/api/memory/status"),
     loadStatuslineData(),
@@ -409,6 +409,11 @@ async function loadInspectorPanelDetails(panel) {
 async function loadStatuslineData() {
   const suffix = state.selectedSessionId ? `?session_id=${encodeURIComponent(state.selectedSessionId)}` : "";
   return api(`/api/runtime/statusline${suffix}`);
+}
+
+function processesEndpoint() {
+  const suffix = state.selectedSessionId ? `?session_id=${encodeURIComponent(state.selectedSessionId)}` : "";
+  return `/api/processes${suffix}`;
 }
 
 async function refreshStatusline() {
@@ -1143,7 +1148,7 @@ function renderProcessesPanel(processes = []) {
 }
 
 async function refreshProcessesPanel() {
-  const payload = await api("/api/processes");
+  const payload = await api(processesEndpoint());
   state.processes = payload.items || [];
   renderProcessesPanel(state.processes);
   await refreshStatusline();

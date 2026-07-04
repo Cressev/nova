@@ -497,6 +497,34 @@ def _context_budget_status(session_id: str):
     )
 
 
+def _process_jobs_for_session(session_id: str | None = None) -> list[dict]:
+    jobs = process_manager.list_jobs()
+    if not session_id:
+        return jobs
+    runtime = agent_sessions.runtime_state(session_id)
+    job_ids = set(runtime.get("background_job_ids") or [])
+    call_ids: set[str] = set()
+    for item in runtime.get("tool_calls") or []:
+        if not isinstance(item, dict):
+            continue
+        call_id = item.get("call_id")
+        if isinstance(call_id, str) and call_id:
+            call_ids.add(call_id)
+        data = item.get("data") if isinstance(item.get("data"), dict) else {}
+        job_id = data.get("job_id")
+        nested_job = data.get("job") if isinstance(data.get("job"), dict) else {}
+        nested_job_id = nested_job.get("id")
+        if isinstance(job_id, str) and job_id:
+            job_ids.add(job_id)
+        if isinstance(nested_job_id, str) and nested_job_id:
+            job_ids.add(nested_job_id)
+    return [
+        job
+        for job in jobs
+        if job.get("id") in job_ids or job.get("call_id") in call_ids
+    ]
+
+
 def _empty_context_budget(context_window_tokens: int) -> dict:
     plan = build_context_budget_plan(
         session_id="empty",

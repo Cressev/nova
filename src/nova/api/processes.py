@@ -8,8 +8,12 @@ router = APIRouter()
 
 
 @router.get("/api/processes")
-async def list_processes() -> dict:
-    return {"items": ctx.process_manager.list_jobs()}
+async def list_processes(
+    session_id: str | None = ctx.Query(default=None, max_length=80)
+) -> dict:
+    if session_id and ctx.store.get_chat_session(session_id) is None:
+        raise ctx.HTTPException(status_code=404, detail="Chat session not found")
+    return {"items": ctx._process_jobs_for_session(session_id)}
 
 
 @router.get("/api/processes/{job_id}")

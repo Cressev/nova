@@ -939,15 +939,40 @@ class ApiTest(unittest.TestCase):
             job = app_module.process_manager.start_background(
                 "python3 -c 'import time; time.sleep(20)'",
                 cwd=Path(tmpdir),
+                call_id="tool_restore_bg",
+            )
+            other_job = app_module.process_manager.start_background(
+                "python3 -c 'import time; time.sleep(20)'",
+                cwd=Path(tmpdir),
+                call_id="tool_other_bg",
+            )
+            app_module.agent_sessions.record_background_job(
+                session["id"],
+                turn_id="turn_restore",
+                job_id=job["id"],
+                call_id="tool_restore_bg",
             )
 
             response = self.client.get(f"/api/chat/sessions/{session['id']}/runtime-state")
+            scoped_processes = self.client.get(
+                "/api/processes",
+                params={"session_id": session["id"]},
+            )
+            statusline = self.client.get(
+                "/api/runtime/statusline",
+                params={"session_id": session["id"]},
+            )
 
             self.assertEqual(response.status_code, 200)
             payload = response.json()
             self.assertTrue(any(item["kind"] == "message" for item in payload["timeline"]["items"]))
             self.assertEqual(payload["pending_approvals"][0]["id"], "tool_restore")
             self.assertTrue(any(item["id"] == job["id"] for item in payload["processes"]))
+            self.assertFalse(any(item["id"] == other_job["id"] for item in payload["processes"]))
+            self.assertEqual(scoped_processes.status_code, 200)
+            self.assertEqual([item["id"] for item in scoped_processes.json()["items"]], [job["id"]])
+            self.assertEqual(statusline.status_code, 200)
+            self.assertEqual(statusline.json()["background_task_count"], 1)
 
     def test_session_runtime_state_exposes_agent_session_turn_runtime(self) -> None:
         session = self.client.post("/api/chat/sessions", json={"title": "运行态"}).json()
