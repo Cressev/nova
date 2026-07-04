@@ -1126,7 +1126,7 @@ function renderProcessesPanel(processes = []) {
           <span>${escapeHtml(status)}</span>
         </div>
         <code>${escapeHtml(shortText(process.command || "", 180))}</code>
-        <small>${escapeHtml(process.cwd || "")}</small>
+        <small>${escapeHtml(process.cwd || "")}${process.call_id ? ` · call ${escapeHtml(shortId(process.call_id))}` : ""}</small>
         <div class="process-actions">
           <button type="button" data-action="inspect">Output</button>
           <button type="button" data-action="kill" ${status === "running" ? "" : "disabled"}>Kill</button>
@@ -2234,6 +2234,7 @@ function finishToolEvent(node, event, options = {}) {
   node.dataset.argumentsRaw = rawArgs;
   node.dataset.toolData = JSON.stringify(data);
   node.querySelector('[data-action="retry-tool"]')?.addEventListener("click", () => retryToolCall(node));
+  syncBackgroundProcessFromToolDone(data);
   if (options.autoscroll !== false) {
     scrollMessagesToBottom();
   }
@@ -2241,10 +2242,13 @@ function finishToolEvent(node, event, options = {}) {
 
 function renderToolMetadata(data = {}) {
   const spec = data.spec || {};
+  const job = data.job || {};
+  const jobId = data.job_id || job.id || "";
   const items = [
     ["权限", spec.permission || data.permission],
     ["风险", spec.risk],
     ["分类", spec.category],
+    ["后台任务", data.background && jobId ? shortId(jobId) : ""],
     ["耗时", typeof data.duration_ms === "number" ? `${data.duration_ms} ms` : ""],
   ].filter(([, value]) => value !== undefined && value !== null && value !== "");
   if (items.length === 0 && !spec.schema) {
@@ -2260,6 +2264,19 @@ function renderToolMetadata(data = {}) {
     ? `<details class="tool-schema"><summary>输入 Schema</summary><pre>${escapeHtml(JSON.stringify(spec.schema, null, 2))}</pre></details>`
     : "";
   return `<div class="tool-meta-grid">${meta}</div>${schema}`;
+}
+
+function syncBackgroundProcessFromToolDone(data = {}) {
+  const job = data.job || {};
+  const jobId = data.job_id || job.id || "";
+  if (!data.background && !jobId) {
+    return;
+  }
+  if (job && job.id) {
+    state.processes = [job, ...state.processes.filter((item) => item.id !== job.id)];
+    renderProcessesPanel(state.processes);
+  }
+  refreshProcessesPanel().catch(() => {});
 }
 
 function renderHookContexts(contexts = []) {

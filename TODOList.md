@@ -1475,3 +1475,81 @@ api 就不能再拆了吗？拆。
 - 验证：目标测试 47 tests OK；Python 全量 180 tests OK；全部前端 Node 测试 OK；`compileall` OK；`git diff --check` OK。
 
 ------ todo-list end at 2026/07/04/14:55:00 -----
+
+------ todo-list begin at 2026/07/04/15:08:12 -----
+
+用户请求：
+你需要给我美化一下。“发送”、“排队”按钮太大了，不美观你在开发过程中，需要截图并通过视觉验证。
+
+制定清单：
+- [x] 1. 定位发送/排队按钮样式和现有交互测试。
+- [x] 2. 调整 composer 操作区视觉，让发送/排队按钮更轻、更小、更协调。
+- [x] 3. 运行前端相关测试和语法检查。
+- [] 4. 启动 Nova 本地服务，用浏览器截图验证空闲发送态。
+- [] 5. 通过浏览器模拟运行态或真实交互，截图验证排队态。
+- [] 6. 检查控制台错误，更新日志、Done 记录并交付 URL。
+
+执行问题记录：
+- 暂无
+
+------ todo-list end at 进行中 -----
+
+------ todo-list begin at 2026/07/04/15:29:47 -----
+
+用户请求：
+开始开发吧。
+
+制定清单：
+- [x] 1. 继续按飞书计划开发 pending approval checkpoint/resume。
+- [x] 2. 给 `ToolExecutor` 增加显式 `approved` 参数，区分“需要询问”和“用户已批准后的续跑”。
+- [x] 3. 给 `ToolOrchestrator` 增加 `resume_approved_tool()`，统一承接审批通过后的工具执行。
+- [x] 4. 给 pending approval 增加 `risk`、`checkpoint_event_id` 和 `checkpoint_data` 元数据。
+- [x] 5. 把 `/api/approvals/{id}/approve|deny` 从 API 临时执行改为调用 `SessionRunner`。
+- [x] 6. 补充 runtime/orchestrator/session/API 相关测试，验证审批续跑、拒绝落库和 runtime state 更新。
+- [x] 7. 跑全量 Python、前端 Node、compileall 和 diff 检查。
+- [x] 8. 重启本地服务供用户验证。
+- [x] 9. 本地 git commit，不推远程。
+
+执行问题记录：
+- 旧实现的问题是审批 API 自己组装 `WorkspaceTools` 和 `ToolExecutor`，等于绕过 runtime 编排层直接执行工具。这样 Web 入口暂时能跑，但 TUI/CLI、runtime state、checkpoint 元数据和后续恢复能力会继续分叉。
+- 本轮把 approve/deny 收回 `SessionRunner`：HTTP 层只表达用户决策，工具续跑、事件转换、timeline 持久化和 runtime state 更新都由 runtime 层统一处理。
+- `approved=True` 只跳过同一个 pending approval 的二次权限询问，不跳过 Pre/Post hook、shell 黑名单、stdout/stderr 分片和失败兜底。
+- 测试过程中 `test_process_manager_cancels_foreground_job_by_call_id` 组测里偶发一次取消时序抖动，单测复跑和后续全量均通过；记录为既有进程取消测试时序风险。
+
+交付记录：
+- 修改 `src/nova/tools/executor.py`、`src/nova/runtime/tool_orchestrator.py`、`src/nova/runtime/session_runner.py`、`src/nova/runtime/orchestrator.py`、`src/nova/permissions/store.py`、`src/nova/sessions/agent_session.py`、`src/nova/api/permissions.py`、`src/nova/api/routes.py`、`src/nova/api/chat.py`。
+- 新增/更新 `tests/test_tool_orchestrator.py`、`tests/test_session_runner.py`，覆盖 approved 续跑和 SessionRunner 审批恢复。
+- 验证：目标测试 26 tests OK；宽测 117 tests OK；Python 全量 182 tests OK；全部前端 Node 测试 OK；`compileall` OK；`git diff --check` OK。
+- 本地提交：`547bdad Add approval checkpoint resume runner`。
+
+------ todo-list end at 2026/07/04/15:29:47 -----
+
+------ todo-list begin at 2026/07/04/15:43:58 -----
+
+用户请求：
+好的继续。
+
+制定清单：
+- [x] 1. 继续推进后台 shell job、取消/kill、`/ps` 和 UI 可观察链路。
+- [x] 2. 给后台进程绑定 `call_id`，让 tool-call cancel 能杀后台 job。
+- [x] 3. 增强 `/ps` 输出，展示 call id 和最近 stdout/stderr 尾巴。
+- [x] 4. 前端工具完成事件如果带后台 job，自动刷新 Processes 面板和状态线。
+- [x] 5. Processes 面板展示 `call_id`，方便从后台任务反查工具调用。
+- [x] 6. 补充后端和前端测试。
+- [x] 7. 跑全量 Python、前端、编译和 diff 检查。
+- [x] 8. 重启本地服务供用户验证。
+- [x] 9. 本地 git commit。
+
+执行问题记录：
+- 旧链路中后台 shell 虽然能启动和 kill，但 `start_background()` 没有保存工具 `call_id`，导致 `/api/tool-calls/{call_id}/cancel` 只能杀前台长命令，杀不到后台 job。
+- `/ps` 以前只是粗列表，不能看到 call id，也不能看到最近输出，用户很难判断后台任务是否真的在推进。
+- 前端工具卡完成后不会主动刷新 Processes，后台任务已经存在但 UI 需要手动切面板才知道。
+
+交付记录：
+- 后台 job 现在保存 `call_id`，tool-call cancel endpoint 能终止后台任务。
+- `/ps` 会显示 `call=<call_id>` 和最近输出 tail。
+- 工具卡元信息展示后台 job id，后台工具完成后自动刷新 Processes 面板；Processes 行展示 call id。
+- 验证：目标测试 50 tests OK；Python 全量 185 tests OK；全部前端 Node 测试 OK；`compileall` OK；`git diff --check` OK。
+- 本地提交：已完成，提交信息为 `Link background jobs to tool calls`。
+
+------ todo-list end at 2026/07/04/15:43:58 -----

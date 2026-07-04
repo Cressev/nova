@@ -29,3 +29,16 @@ assert(
     && /runtimeState\.queued_messages/.test(app),
   "前端恢复逻辑应显式消费 pending_approvals、processes 和 queued_messages",
 );
+assert(
+  app.includes("syncBackgroundProcessFromToolDone")
+    && app.includes("refreshProcessesPanel().catch"),
+  "后台 shell 工具完成后应主动刷新 Processes 面板和状态线",
+);
+assert(
+  app.includes('["后台任务", data.background && jobId ? shortId(jobId) : ""]'),
+  "工具卡元信息应展示后台任务 job id，方便用户从工具卡追到 Processes 面板",
+);
+assert(
+  app.includes("process.call_id") && app.includes("shortId(process.call_id)"),
+  "Processes 面板应展示 call_id，方便从后台进程反查工具调用",
+);

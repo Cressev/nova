@@ -345,7 +345,11 @@ class ToolExecutor:
         yield from events
         yield start_event
         if bool(current_arguments.get("background")):
-            job = self.process_manager.start_background(command, cwd=workdir)
+            job = self.process_manager.start_background(
+                command,
+                cwd=workdir,
+                call_id=call_id,
+            )
             done_data = self._tool_done_data(
                 tool_name,
                 {"job": job, "background": True},

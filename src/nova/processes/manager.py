@@ -147,8 +147,14 @@ class ProcessManager:
             "data": {"exit_code": job.exit_code, "workdir": str(cwd), "job_id": job.id, "status": job.status},
         }
 
-    def start_background(self, command: str, *, cwd: Path) -> dict[str, Any]:
-        job = self._start(command, cwd=cwd)
+    def start_background(
+        self,
+        command: str,
+        *,
+        cwd: Path,
+        call_id: str | None = None,
+    ) -> dict[str, Any]:
+        job = self._start(command, cwd=cwd, call_id=call_id)
         output_queue: queue.Queue[tuple[str, str | None]] = queue.Queue()
         self._start_reader(job, "stdout", output_queue)
         self._start_reader(job, "stderr", output_queue)

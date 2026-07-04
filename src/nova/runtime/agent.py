@@ -756,10 +756,11 @@ class CodexLikeAgentRuntime:
             jobs = self.process_manager.list_jobs()
             if not jobs:
                 return "当前没有后台任务。"
-            return "后台任务：\n" + "\n".join(
-                f"- {item['id']} [{item['status']}] exit={item.get('exit_code')} cwd={item['cwd']} cmd={item['command']}"
-                for item in jobs
-            )
+            rows = []
+            for item in jobs:
+                detail = self.process_manager.get(str(item.get("id") or "")) or item
+                rows.append(self._format_process_job(detail))
+            return "后台任务：\n" + "\n".join(rows)
         if command in {"/stop", "/kill"}:
             parts = raw_content.split(maxsplit=1)
             if len(parts) < 2:
@@ -815,6 +816,20 @@ class CodexLikeAgentRuntime:
             f"说明：{skill.description or '无'}\n\n"
             "SKILL.md：\n"
             f"{skill.content}"
+        )
+
+    def _format_process_job(self, item: dict) -> str:
+        stdout = str(item.get("stdout") or "").strip()
+        stderr = str(item.get("stderr") or "").strip()
+        output = stdout or stderr
+        if len(output) > 160:
+            output = output[-160:]
+        call = f" call={item.get('call_id')}" if item.get("call_id") else ""
+        tail = f" tail={output!r}" if output else ""
+        return (
+            f"- {item.get('id')} [{item.get('status')}]"
+            f" exit={item.get('exit_code')}{call}"
+            f" cwd={item.get('cwd')} cmd={item.get('command')}{tail}"
         )
 
     def _compact_response(self, result: dict) -> str:

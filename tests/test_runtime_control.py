@@ -119,6 +119,22 @@ class RuntimeControlTest(unittest.TestCase):
                 time.sleep(0.05)
             self.assertEqual(manager.get(job["id"])["status"], "killed")
 
+    def test_process_manager_cancels_background_job_by_call_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = ProcessManager(chunk_size=8)
+            self.addCleanup(manager.kill_all)
+            job = manager.start_background(
+                "python3 -u -c 'import time; print(\"bg\", flush=True); time.sleep(20)'",
+                cwd=Path(tmpdir),
+                call_id="tool_bg_cancel",
+            )
+            self.assertEqual(job["call_id"], "tool_bg_cancel")
+
+            cancelled = manager.cancel_call("tool_bg_cancel")
+
+            self.assertEqual(cancelled["status"], "cancelled")
+            self.assertEqual(manager.get(job["id"])["status"], "cancelled")
+
     def test_process_manager_emits_foreground_output_before_process_exits(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = ProcessManager(chunk_size=1024)
@@ -213,6 +229,26 @@ class RuntimeControlTest(unittest.TestCase):
             self.assertFalse(thread.is_alive())
             done = next(event for event in events if event["type"] == "tool_done")
             self.assertEqual(done["data"]["status"], "cancelled")
+
+    def test_tool_call_cancel_endpoint_terminates_running_background_job(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_process_manager = app_module.process_manager
+            app_module.process_manager = ProcessManager(chunk_size=8)
+            self.addCleanup(lambda: setattr(app_module, "process_manager", old_process_manager))
+            self.addCleanup(lambda: app_module.process_manager.kill_all())
+            job = app_module.process_manager.start_background(
+                "python3 -u -c 'import time; print(\"started\", flush=True); time.sleep(20)'",
+                cwd=Path(tmpdir),
+                call_id="tool_api_bg_cancel",
+            )
+
+            response = self.client.post("/api/tool-calls/tool_api_bg_cancel/cancel")
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["status"], "cancelled")
+            self.assertEqual(payload["job"]["id"], job["id"])
+            self.assertEqual(app_module.process_manager.get(job["id"])["status"], "cancelled")
 
     def test_chat_session_cancel_endpoint_marks_running_turn_cancel_requested(self) -> None:
         session = self.client.post("/api/chat/sessions", json={"title": "停止接口"}).json()

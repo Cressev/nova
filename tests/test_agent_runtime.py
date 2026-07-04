@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -20,6 +21,7 @@ class AgentRuntimeTest(unittest.TestCase):
         )
 
     def tearDown(self) -> None:
+        self.runtime.process_manager.kill_all()
         self.tmpdir.cleanup()
 
     def test_parse_closed_tool_call(self) -> None:
@@ -166,6 +168,26 @@ class AgentRuntimeTest(unittest.TestCase):
 
         self.assertIn("后台任务", jobs)
         self.assertIn("用法：/stop <后台任务ID>", stop)
+
+    def test_builtin_ps_shows_call_id_and_recent_output(self) -> None:
+        job = self.runtime.process_manager.start_background(
+            "python3 -u -c 'import time; print(\"hello-bg\", flush=True); time.sleep(20)'",
+            cwd=Path(self.tmpdir.name),
+            call_id="tool_bg_ps",
+        )
+        self.assertEqual(job["call_id"], "tool_bg_ps")
+
+        deadline = time.monotonic() + 2
+        text = ""
+        while time.monotonic() < deadline:
+            text = self.runtime._builtin_response("/ps", "/ps")
+            if "hello-bg" in text:
+                break
+            time.sleep(0.05)
+
+        self.assertIn(job["id"], text)
+        self.assertIn("call=tool_bg_ps", text)
+        self.assertIn("hello-bg", text)
 
     def test_memory_context_ignores_development_state_files(self) -> None:
         Path(self.tmpdir.name, "AGENTS.md").write_text("项目指令", encoding="utf-8")
