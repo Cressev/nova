@@ -1449,3 +1449,29 @@ api 就不能再拆了吗？拆。
 - 验证：目标测试 83 tests OK；Python 全量 177 tests OK；全部前端 Node 测试 OK；`compileall` OK；`git diff --check` OK。
 
 ------ todo-list end at 2026/06/25/16:05:15 -----
+
+------ todo-list begin at 2026/07/04/14:55:00 -----
+
+用户请求：
+开始吧。
+
+制定清单：
+- [x] 1. 按飞书计划从 `SessionRunner` 第一阶段开始开发。
+- [x] 2. 新增 `src/nova/runtime/session_runner.py`，把单轮 turn 执行从 API 层下沉到 runtime。
+- [x] 3. 保持 `/api/chat/sessions/{session_id}/stream` 的 NDJSON 协议不变，让 API 只负责 active/queue 入口和序列化。
+- [x] 4. 新增 `tests/test_session_runner.py`，覆盖成功、ProviderError 和队列续跑。
+- [x] 5. 更新包结构测试，锁定 `nova.runtime.session_runner.SessionRunner`。
+- [x] 6. 跑目标测试、全量 Python、前端、编译和 diff 检查。
+- [x] 7. 重启本地服务供用户验证。
+- [x] 8. 本地 git commit。
+
+执行问题记录：
+- 本轮没有改外部协议，刻意先不碰 pending approval 续跑和 shell 后台状态机，避免把两条高风险链路和 SessionRunner 迁移混在一起。
+- 目标测试和全量测试仍出现既有的 httpx/asyncio 关闭 warning，但测试结果为 OK，不是本轮失败。
+
+交付记录：
+- 新增 `SessionRunDependencies` 和 `SessionRunner`。
+- `api/chat.py` 的 stream endpoint 现在通过 `SessionRunner.run_message()` 产出事件，API 层只做 NDJSON 编码。
+- 验证：目标测试 47 tests OK；Python 全量 180 tests OK；全部前端 Node 测试 OK；`compileall` OK；`git diff --check` OK。
+
+------ todo-list end at 2026/07/04/14:55:00 -----

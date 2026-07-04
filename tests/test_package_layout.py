@@ -24,6 +24,7 @@ class PackageLayoutTest(unittest.TestCase):
             "nova.runtime.agent": "CodexLikeAgentRuntime",
             "nova.runtime.loop": "AgentLoop",
             "nova.runtime.orchestrator": "RunOrchestrator",
+            "nova.runtime.session_runner": "SessionRunner",
             "nova.runtime.tool_orchestrator": "ToolOrchestrator",
             "nova.sessions.store": "SessionStore",
             "nova.tools.workspace": "WorkspaceTools",

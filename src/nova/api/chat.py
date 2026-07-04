@@ -213,201 +213,23 @@ async def stream_chat_message(
     ctx.agent_sessions.mark_active(session_id)
 
     async def emit() -> ctx.AsyncIterator[str]:
-        async def run_turn(
-            user_message: ctx.ChatMessage, *, emit_user: bool
-        ) -> ctx.AsyncIterator[str]:
-            turn_id = ctx.new_id("turn")
-            orchestrator = ctx.RunOrchestrator(
-                session_id=session_id,
-                turn_id=turn_id,
+        runner = ctx.SessionRunner(
+            ctx.SessionRunDependencies(
+                store=ctx.store,
                 agent_sessions=ctx.agent_sessions,
-                persist_event=ctx._persist_runtime_event,
+                runtime_factory=ctx._agent_runtime,
                 id_factory=ctx.new_id,
+                persist_event=ctx._persist_runtime_event,
+                runtime_event_from_agent_event=ctx._runtime_event_from_agent_event,
+                build_context_budget_plan=ctx.build_context_budget_plan,
+                context_window_tokens=ctx.settings.context_window_tokens,
+                project_root_provider=lambda: ctx.workspace_manager.current_root,
+                global_agent_file_provider=lambda: ctx.settings.global_agent_file,
             )
-
-            if emit_user:
-                ctx.store.add_chat_message(user_message)
-                yield ctx._ndjson(
-                    {
-                        "type": "user_message",
-                        "message": user_message.model_dump(mode="json"),
-                    }
-                )
-
-            started = orchestrator.start_turn(
-                user_message_id=user_message.id,
-                message=user_message.content,
-            )
-            yield ctx._ndjson({"type": "runtime_event", "event": started})
-
-            answer_parts: list[str] = []
-            try:
-
-                def cancel_event() -> dict:
-                    return orchestrator.cancel_turn()
-
-                history = [
-                    message
-                    for message in ctx.store.list_chat_messages(session_id)
-                    if message.id != user_message.id
-                ]
-                all_turn_messages = [*history, user_message]
-                budget = ctx.build_context_budget_plan(
-                    session_id=session_id,
-                    messages=all_turn_messages,
-                    events=ctx.store.list_chat_events(session_id),
-                    context_window_tokens=ctx.settings.context_window_tokens,
-                )
-                if (
-                    budget.should_auto_compact
-                    and not user_message.content.lstrip().startswith("/compact")
-                ):
-                    memory = ctx.ProjectMemory(
-                        ctx.workspace_manager.current_root,
-                        global_agent_file=ctx.settings.global_agent_file,
-                    )
-                    result = memory.compact_session(
-                        all_turn_messages,
-                        instruction="自动上下文预算触发：保留关键事实、当前目标、最近决策和未完成事项。",
-                    )
-                    compacted = orchestrator.event(
-                        "memory.compacted",
-                        category="status",
-                        phase="completed",
-                        title="自动上下文压缩",
-                        message="上下文预算接近上限，已自动执行 /compact 并写入会话摘要。",
-                        data={
-                            "summary": str(result.get("summary") or ""),
-                            "path": str(result.get("path") or ""),
-                            "covered_messages": int(
-                                result.get("covered_messages") or 0
-                            ),
-                            "trigger": "auto_context_budget",
-                        },
-                    )
-                    yield ctx._ndjson({"type": "runtime_event", "event": compacted})
-
-                budgeted = orchestrator.event(
-                    "context.budgeted",
-                    category="status",
-                    phase="update",
-                    title="上下文预算已应用",
-                    message=(
-                        f"保留 {budget.retained_message_count} 条最近消息，"
-                        f"裁剪 {budget.dropped_message_count} 条历史消息，"
-                        f"关键工具结果 {budget.key_tool_result_count} 条。"
-                    ),
-                    data={
-                        **budget.as_dict(),
-                        "message_ids": [message.id for message in budget.messages],
-                    },
-                )
-                yield ctx._ndjson({"type": "runtime_event", "event": budgeted})
-                turn_messages = budget.messages
-                async for event in ctx._agent_runtime().stream(turn_messages):
-                    if orchestrator.is_cancel_requested():
-                        yield ctx._ndjson(
-                            {"type": "runtime_event", "event": cancel_event()}
-                        )
-                        return
-                    runtime = ctx._runtime_event_from_agent_event(
-                        event, orchestrator.event
-                    )
-                    if runtime is not None:
-                        yield ctx._ndjson({"type": "runtime_event", "event": runtime})
-                    if event["type"] == "permission_request":
-                        orchestrator.register_permission_request(
-                            event, runtime_event=runtime
-                        )
-                    if event["type"] == "assistant_delta":
-                        answer_parts.append(event["delta"])
-                        yield ctx._ndjson(event)
-                        if orchestrator.is_cancel_requested():
-                            yield ctx._ndjson(
-                                {"type": "runtime_event", "event": cancel_event()}
-                            )
-                            return
-                        continue
-                    if event["type"] == "assistant_done_content":
-                        if not answer_parts and event.get("content"):
-                            answer_parts.append(event["content"])
-                        continue
-                    yield ctx._ndjson(event)
-
-                assistant_message = ctx.ChatMessage(
-                    session_id=session_id,
-                    role=ctx.ChatRole.ASSISTANT,
-                    content="".join(answer_parts),
-                )
-                ctx.store.add_chat_message(assistant_message)
-                completed = orchestrator.complete_turn(
-                    message_id=assistant_message.id,
-                    content=assistant_message.content,
-                )
-                yield ctx._ndjson({"type": "runtime_event", "event": completed})
-                yield ctx._ndjson(
-                    {
-                        "type": "assistant_done",
-                        "message": assistant_message.model_dump(mode="json"),
-                    }
-                )
-            except ctx.ProviderError as exc:
-                failed = orchestrator.fail_turn(
-                    title="模型调用失败",
-                    message=str(exc),
-                )
-                error_message = ctx.ChatMessage(
-                    session_id=session_id,
-                    role=ctx.ChatRole.ERROR,
-                    content=str(exc),
-                )
-                ctx.store.add_chat_message(error_message)
-                yield ctx._ndjson({"type": "runtime_event", "event": failed})
-                yield ctx._ndjson(
-                    {"type": "error", "message": error_message.model_dump(mode="json")}
-                )
-            except Exception as exc:
-                detail = str(exc) or repr(exc)
-                failed = orchestrator.fail_turn(
-                    title="运行时异常",
-                    message=f"{type(exc).__name__}: {detail}",
-                )
-                error_message = ctx.ChatMessage(
-                    session_id=session_id,
-                    role=ctx.ChatRole.ERROR,
-                    content=f"Nova 运行时异常：{type(exc).__name__}: {detail}",
-                )
-                ctx.store.add_chat_message(error_message)
-                yield ctx._ndjson({"type": "runtime_event", "event": failed})
-                yield ctx._ndjson(
-                    {"type": "error", "message": error_message.model_dump(mode="json")}
-                )
-
-        first_message = ctx.ChatMessage(
-            session_id=session_id,
-            role=ctx.ChatRole.USER,
-            content=payload.content,
         )
         try:
-            async for chunk in run_turn(first_message, emit_user=True):
-                yield chunk
-            if ctx.agent_sessions.is_cancel_requested(session_id):
-                return
-            while True:
-                queued_messages = ctx.agent_sessions.drain_queued_messages(session_id)
-                if not queued_messages:
-                    break
-                for queued in queued_messages:
-                    yield ctx._ndjson(
-                        {
-                            "type": "queued_message",
-                            "message": queued.model_dump(mode="json"),
-                        }
-                    )
-                    async for chunk in run_turn(queued, emit_user=False):
-                        yield chunk
-                    if ctx.agent_sessions.is_cancel_requested(session_id):
-                        return
+            async for event in runner.run_message(session_id, payload.content):
+                yield ctx._ndjson(event)
         finally:
             ctx.agent_sessions.mark_idle(session_id)
 
