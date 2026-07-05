@@ -133,7 +133,29 @@ class AgentSessionService:
         with self._lock:
             self.queued_session_messages.setdefault(session_id, []).append(message)
 
+    def queued_message_count(self, session_id: str) -> int:
+        with self._lock:
+            return len(self.queued_session_messages.get(session_id, []))
+
+    def queued_messages(self, session_id: str) -> list[ChatMessage]:
+        with self._lock:
+            return list(self.queued_session_messages.get(session_id, []))
+
+    def pop_queued_message(self, session_id: str) -> ChatMessage | None:
+        with self._lock:
+            messages = self.queued_session_messages.get(session_id)
+            if not messages:
+                return None
+            message = messages.pop(0)
+            if not messages:
+                self.queued_session_messages.pop(session_id, None)
+            return message
+
     def drain_queued_messages(self, session_id: str) -> list[ChatMessage]:
+        with self._lock:
+            return self.queued_session_messages.pop(session_id, [])
+
+    def clear_queued_messages(self, session_id: str) -> list[ChatMessage]:
         with self._lock:
             return self.queued_session_messages.pop(session_id, [])
 

@@ -82,6 +82,63 @@ class SessionRunnerTest(unittest.TestCase):
         self.assertEqual(assistant_messages, ["第一轮", "第二轮"])
         self.assertEqual(self.sessions.runtime_state(self.chat.id)["queued_messages"], [])
 
+    def test_cancelled_first_turn_keeps_queued_messages(self) -> None:
+        queued = ChatMessage(session_id=self.chat.id, role=ChatRole.USER, content="不要误跑")
+        self.sessions.enqueue_message(self.chat.id, queued)
+
+        class CancellingRuntime:
+            async def stream(inner_self, _messages: list[ChatMessage]):
+                yield {"type": "assistant_delta", "delta": "开始"}
+                self.sessions.request_cancel(self.chat.id)
+                yield {"type": "assistant_delta", "delta": " 不应输出"}
+
+        runner = self._runner(CancellingRuntime())
+
+        events = asyncio.run(_collect(runner.run_message(self.chat.id, "第一条")))
+
+        self.assertFalse(any(event["type"] == "queued_message" for event in events))
+        self.assertEqual(
+            [message.id for message in self.sessions.queued_messages(self.chat.id)],
+            [queued.id],
+        )
+
+    def test_cancelled_queued_turn_keeps_later_queued_messages(self) -> None:
+        first = ChatMessage(session_id=self.chat.id, role=ChatRole.USER, content="第二条")
+        second = ChatMessage(session_id=self.chat.id, role=ChatRole.USER, content="第三条")
+        self.sessions.enqueue_message(self.chat.id, first)
+        self.sessions.enqueue_message(self.chat.id, second)
+
+        class CancelsDuringSecondTurn:
+            def __init__(inner_self) -> None:
+                inner_self.calls = 0
+
+            async def stream(inner_self, _messages: list[ChatMessage]):
+                inner_self.calls += 1
+                if inner_self.calls == 1:
+                    yield {"type": "assistant_delta", "delta": "第一轮"}
+                    yield {"type": "assistant_done_content", "content": "第一轮"}
+                    return
+                yield {"type": "assistant_delta", "delta": "第二轮"}
+                self.sessions.request_cancel(self.chat.id)
+                yield {"type": "assistant_delta", "delta": " 不应输出"}
+
+        runner = self._runner(CancelsDuringSecondTurn())
+
+        events = asyncio.run(_collect(runner.run_message(self.chat.id, "第一条")))
+
+        queued_events = [event for event in events if event["type"] == "queued_message"]
+        self.assertEqual([event["message"]["id"] for event in queued_events], [first.id])
+        self.assertEqual(
+            [message.id for message in self.sessions.queued_messages(self.chat.id)],
+            [second.id],
+        )
+        persisted_users = [
+            message.content
+            for message in self.store.list_chat_messages(self.chat.id)
+            if message.role == ChatRole.USER
+        ]
+        self.assertEqual(persisted_users, ["第一条", "第二条"])
+
     def test_approved_tool_call_resumes_through_runner(self) -> None:
         self.sessions.create_pending_approval(
             session_id=self.chat.id,

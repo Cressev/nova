@@ -142,18 +142,17 @@ class SessionRunner:
         if self.deps.agent_sessions.is_cancel_requested(session_id):
             return
         while True:
-            queued_messages = self.deps.agent_sessions.drain_queued_messages(session_id)
-            if not queued_messages:
+            queued = self.deps.agent_sessions.pop_queued_message(session_id)
+            if queued is None:
                 break
-            for queued in queued_messages:
-                yield {
-                    "type": "queued_message",
-                    "message": queued.model_dump(mode="json"),
-                }
-                async for event in self.run_turn(session_id, queued, emit_user=False):
-                    yield event
-                if self.deps.agent_sessions.is_cancel_requested(session_id):
-                    return
+            yield {
+                "type": "queued_message",
+                "message": queued.model_dump(mode="json"),
+            }
+            async for event in self.run_turn(session_id, queued, emit_user=False):
+                yield event
+            if self.deps.agent_sessions.is_cancel_requested(session_id):
+                return
 
     async def run_turn(
         self,
@@ -177,6 +176,12 @@ class SessionRunner:
                 "type": "user_message",
                 "message": user_message.model_dump(mode="json"),
             }
+        else:
+            existing_message_ids = {
+                message.id for message in self.deps.store.list_chat_messages(session_id)
+            }
+            if user_message.id not in existing_message_ids:
+                self.deps.store.add_chat_message(user_message)
 
         started = orchestrator.start_turn(
             user_message_id=user_message.id,

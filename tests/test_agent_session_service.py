@@ -33,6 +33,22 @@ class AgentSessionServiceTest(unittest.TestCase):
         self.assertEqual([message.content for message in drained], ["第一条", "第二条"])
         self.assertEqual(service.drain_queued_messages("chat_a"), [])
 
+    def test_queued_messages_can_pop_one_and_clear_remaining(self) -> None:
+        service = AgentSessionService()
+        first = ChatMessage(session_id="chat_a", role=ChatRole.USER, content="第一条")
+        second = ChatMessage(session_id="chat_a", role=ChatRole.USER, content="第二条")
+        service.enqueue_message("chat_a", first)
+        service.enqueue_message("chat_a", second)
+
+        popped = service.pop_queued_message("chat_a")
+
+        self.assertEqual(popped.id, first.id)
+        self.assertEqual(service.queued_message_count("chat_a"), 1)
+        self.assertEqual([message.id for message in service.queued_messages("chat_a")], [second.id])
+        cleared = service.clear_queued_messages("chat_a")
+        self.assertEqual([message.id for message in cleared], [second.id])
+        self.assertEqual(service.queued_messages("chat_a"), [])
+
     def test_pending_approvals_are_owned_by_session_service(self) -> None:
         service = AgentSessionService()
 

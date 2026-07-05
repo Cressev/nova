@@ -297,8 +297,9 @@ class RuntimeControlTest(unittest.TestCase):
 
     def test_chat_stream_queues_message_while_session_running(self) -> None:
         session = self.client.post("/api/chat/sessions", json={"title": "队列"}).json()
-        app_module._active_session_turns.add(session["id"])
-        self.addCleanup(lambda: app_module._active_session_turns.discard(session["id"]))
+        app_module.agent_sessions.mark_active(session["id"])
+        self.addCleanup(lambda: app_module.agent_sessions.mark_idle(session["id"]))
+        self.addCleanup(lambda: app_module.agent_sessions.clear_queued_messages(session["id"]))
 
         queued = self.client.post(
             f"/api/chat/sessions/{session['id']}/stream",
@@ -306,9 +307,34 @@ class RuntimeControlTest(unittest.TestCase):
         )
 
         self.assertEqual(queued.status_code, 202)
-        self.assertEqual(queued.json()["status"], "queued")
+        payload = queued.json()
+        self.assertEqual(payload["status"], "queued")
+        self.assertEqual(payload["queued_count"], 1)
+        self.assertEqual(payload["queued_messages"][0]["content"], "第二条")
         messages = self.client.get(f"/api/chat/sessions/{session['id']}/messages").json()
-        self.assertTrue(any(message["content"] == "第二条" for message in messages))
+        self.assertFalse(any(message["content"] == "第二条" for message in messages))
+        runtime = self.client.get(f"/api/chat/sessions/{session['id']}/runtime-state").json()
+        self.assertEqual(runtime["queued_messages"][0]["content"], "第二条")
+
+    def test_chat_session_queue_clear_endpoint_removes_pending_messages(self) -> None:
+        session = self.client.post("/api/chat/sessions", json={"title": "清空队列"}).json()
+        app_module.agent_sessions.enqueue_message(
+            session["id"],
+            app_module.ChatMessage(
+                session_id=session["id"],
+                role=app_module.ChatRole.USER,
+                content="待清空",
+            ),
+        )
+
+        cleared = self.client.post(f"/api/chat/sessions/{session['id']}/queue/clear")
+
+        self.assertEqual(cleared.status_code, 200)
+        payload = cleared.json()
+        self.assertEqual(payload["cleared_count"], 1)
+        self.assertEqual(payload["cleared_messages"][0]["content"], "待清空")
+        runtime = self.client.get(f"/api/chat/sessions/{session['id']}/runtime-state").json()
+        self.assertEqual(runtime["queued_messages"], [])
 
     def test_memory_api_reads_writes_and_marks_injected_sources(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

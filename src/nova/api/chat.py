@@ -34,6 +34,20 @@ async def cancel_chat_session_turn(session_id: str) -> dict:
     }
 
 
+@router.post("/api/chat/sessions/{session_id}/queue/clear")
+async def clear_chat_session_queue(session_id: str) -> dict:
+    if ctx.store.get_chat_session(session_id) is None:
+        raise ctx.HTTPException(status_code=404, detail="Chat session not found")
+    cleared = ctx.agent_sessions.clear_queued_messages(session_id)
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "cleared_count": len(cleared),
+        "cleared_messages": [message.model_dump(mode="json") for message in cleared],
+        "queued_messages": [],
+    }
+
+
 @router.get("/api/chat/sessions", response_model=list[ctx.ChatSession])
 async def list_chat_sessions() -> list[ctx.ChatSession]:
     return ctx.store.list_chat_sessions()
@@ -201,14 +215,18 @@ async def stream_chat_message(
             role=ctx.ChatRole.USER,
             content=payload.content,
         )
-        ctx.store.add_chat_message(queued)
         ctx.agent_sessions.enqueue_message(session_id, queued)
+        queued_messages = ctx.agent_sessions.queued_messages(session_id)
         return ctx.JSONResponse(
             status_code=202,
             content={
                 "ok": True,
                 "status": "queued",
                 "message": queued.model_dump(mode="json"),
+                "queued_count": len(queued_messages),
+                "queued_messages": [
+                    message.model_dump(mode="json") for message in queued_messages
+                ],
             },
         )
     ctx.agent_sessions.mark_active(session_id)

@@ -30,6 +30,7 @@ const state = {
   sessionActive: false,
   turnCancelRequested: false,
   streamAbortController: null,
+  queuedMessages: [],
   showAllSessionGroups: readStorageBool("nova.showAllSessionGroups", false),
   collapsedProjects: new Set(readStorageList("nova.collapsedProjects")),
   expandedSessionGroups: new Set(readStorageList("nova.expandedSessionGroups")),
@@ -2004,11 +2005,10 @@ function appendRuntimeStateRestorations(runtimeState, timelineItems = []) {
   }
 
   for (const message of runtimeState.queued_messages || []) {
-    if (knownMessageIds.has(message.id)) {
-      continue;
-    }
-    appendStatusEvent(`排队输入：${shortText(message.content || "", 80)}`, { autoscroll: false });
+    appendMessage(message, { queued: true });
+    knownMessageIds.add(message.id);
   }
+  setQueuedMessages(runtimeState.queued_messages || [], { autoscroll: false });
 }
 
 function collectProcessIds(value, target) {
@@ -2036,6 +2036,64 @@ function appendStatusEvent(text, options = {}) {
     scrollMessagesToBottom();
   }
   return node;
+}
+
+function setQueuedMessages(messages, options = {}) {
+  state.queuedMessages = Array.isArray(messages) ? messages.filter(Boolean) : [];
+  renderQueueControl(options);
+}
+
+function removeQueuedMessage(messageId) {
+  if (!messageId) {
+    return;
+  }
+  state.queuedMessages = state.queuedMessages.filter((message) => message.id !== messageId);
+  renderQueueControl();
+}
+
+function renderQueueControl(options = {}) {
+  messagesEl.querySelector("[data-queue-control]")?.remove();
+  if (!state.queuedMessages.length) {
+    return null;
+  }
+  const count = state.queuedMessages.length;
+  const preview = shortText(state.queuedMessages[0]?.content || "", 72);
+  const node = document.createElement("div");
+  node.className = "agent-status queue-control";
+  node.dataset.queueControl = "true";
+  node.innerHTML = `
+    <span>已排队 ${count} 条${preview ? `：${escapeHtml(preview)}` : ""}</span>
+    <button type="button" data-action="clear-queue">清空队列</button>
+  `;
+  node.querySelector('[data-action="clear-queue"]').addEventListener("click", () => {
+    void clearQueuedMessages();
+  });
+  messagesEl.appendChild(node);
+  if (options.autoscroll !== false) {
+    scrollMessagesToBottom();
+  }
+  return node;
+}
+
+function removeClearedQueueMessages(messages) {
+  for (const message of messages || []) {
+    if (!message?.id) {
+      continue;
+    }
+    const node = messagesEl.querySelector(`[data-message-id="${CSS.escape(message.id)}"]`);
+    if (!node) {
+      continue;
+    }
+    if (node.classList.contains("queued")) {
+      node.remove();
+      continue;
+    }
+    const badge = node.querySelector(".message-queue-badge");
+    if (badge) {
+      badge.hidden = true;
+    }
+  }
+  renderMessageRail();
 }
 
 function appendTurnDivider(message) {
@@ -3205,6 +3263,26 @@ async function cancelActiveTurn() {
   });
 }
 
+async function clearQueuedMessages() {
+  const sessionId = state.selectedSessionId;
+  if (!sessionId || state.queuedMessages.length === 0) {
+    return;
+  }
+  streamStateEl.textContent = "正在清空队列";
+  try {
+    const result = await api(`/api/chat/sessions/${encodeURIComponent(sessionId)}/queue/clear`, {
+      method: "POST",
+      body: "{}",
+    });
+    removeClearedQueueMessages(result.cleared_messages || state.queuedMessages);
+    setQueuedMessages(result.queued_messages || []);
+    appendStatusEvent(`已清空 ${result.cleared_count || 0} 条排队输入`);
+    streamStateEl.textContent = "队列已清空";
+  } catch (error) {
+    streamStateEl.textContent = `清空队列失败：${error instanceof Error ? error.message : "未知错误"}`;
+  }
+}
+
 function setupInspectorCards() {
   for (const card of document.querySelectorAll(".inspector-panel")) {
     const title = card.querySelector(".card-title");
@@ -3264,6 +3342,7 @@ form.addEventListener("submit", async (event) => {
       }
       const payload = await queued.json();
       appendMessage(payload.message, { queued: true });
+      setQueuedMessages(payload.queued_messages || [payload.message]);
       messageEl.value = "";
       autoResizeTextarea();
       streamStateEl.textContent = "消息已排队，当前工具轮结束后进入上下文";
@@ -3404,6 +3483,7 @@ async function streamAssistant(sessionId, content, assistantNode) {
       content: "排队消息",
       created_at: new Date().toISOString(),
     };
+    removeQueuedMessage(message.id);
     appendMessage(message, { queued: false });
     currentAssistantNode = appendMessage({
       id: `local_assistant_${Date.now()}`,

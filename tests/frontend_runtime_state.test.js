@@ -30,6 +30,17 @@ assert(
   "前端恢复逻辑应显式消费 pending_approvals、processes 和 queued_messages",
 );
 assert(
+  app.includes("state.queuedMessages")
+    && app.includes("setQueuedMessages")
+    && app.includes("/queue/clear"),
+  "排队输入应该有前端状态和真实清空队列接口",
+);
+assert(
+  app.includes("removeQueuedMessage(message.id)")
+    && app.includes("onQueuedMessage: handleQueuedMessage"),
+  "排队消息开始执行时，前端应从队列状态移除，而不是一直显示为待执行",
+);
+assert(
   app.includes("syncBackgroundProcessFromToolDone")
     && app.includes("refreshProcessesPanel().catch"),
   "后台 shell 工具完成后应主动刷新 Processes 面板和状态线",
