@@ -69,6 +69,7 @@ const messageEl = document.querySelector("#message");
 const sendButtonEl = document.querySelector("#send-button");
 const stopButtonEl = document.querySelector("#stop-button");
 const streamStateEl = document.querySelector("#stream-state");
+const threadStateEl = document.querySelector("#thread-state");
 const sessionListEl = document.querySelector("#session-list");
 const messagesEl = document.querySelector("#messages");
 const chatTitleEl = document.querySelector("#chat-title");
@@ -145,6 +146,18 @@ const memoryDialogStateEl = document.querySelector("#memory-dialog-state");
 const memoryDialogCloseEl = document.querySelector("#memory-dialog-close");
 const memoryDialogCancelEl = document.querySelector("#memory-dialog-cancel");
 const memoryDialogSaveEl = document.querySelector("#memory-dialog-save");
+
+if (threadStateEl && streamStateEl) {
+  const syncThreadState = () => {
+    threadStateEl.textContent = streamStateEl.textContent || "等待输入";
+  };
+  new MutationObserver(syncThreadState).observe(streamStateEl, {
+    characterData: true,
+    childList: true,
+    subtree: true,
+  });
+  syncThreadState();
+}
 const sidebarToggleEl = document.querySelector("#sidebar-toggle");
 const inspectorToggleEl = document.querySelector("#inspector-toggle");
 const statuslineToggleEl = document.querySelector("#statusline-toggle");

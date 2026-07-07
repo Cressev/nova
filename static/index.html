@@ -13,7 +13,7 @@
         <div class="brand">
           <div class="brand-mark" aria-label="Nova">
             <span class="brand-orbit"></span>
-            <span class="brand-core">✦</span>
+            <span class="brand-core">N</span>
           </div>
           <div>
             <h1>Nova</h1>
@@ -82,13 +82,14 @@
           </div>
         </header>
 
-        <section class="thread-plan">
-          <div>
-            <strong>计划优先</strong>
-            <span>复杂任务先用 <code>/plan</code> 拆解，再切到执行；变更完成后用右侧 Review 检查。</span>
+        <section class="thread-plan workbench-strip">
+          <div class="thread-strip-main">
+            <strong>当前线程</strong>
+            <span id="thread-state">等待输入</span>
           </div>
           <div class="thread-actions">
             <button class="ghost-button" type="button" data-prompt="/status">状态</button>
+            <button class="ghost-button" type="button" data-inspector-target="review">审查</button>
           </div>
         </section>
 
@@ -146,15 +147,15 @@
 
         <section class="inspector-card inspector-hub" aria-label="功能入口">
           <div class="card-title">
-            <span>Hub</span>
+            <span>操作</span>
             <strong id="process-state">0</strong>
           </div>
           <div class="hub-grid">
-            <button type="button" data-inspector-target="review" aria-label="打开 Review">Review</button>
-            <button type="button" data-inspector-target="run" aria-label="打开运行与工作树">Run</button>
-            <button type="button" data-inspector-target="tools" aria-label="打开工具和 MCP">Tools <strong id="tool-count">0</strong></button>
-            <button type="button" data-inspector-target="processes" aria-label="打开后台任务">Jobs</button>
-            <button type="button" data-inspector-target="config" aria-label="打开更多配置和能力">More</button>
+            <button type="button" data-inspector-target="review" aria-label="打开审查面板">审查</button>
+            <button type="button" data-inspector-target="run" aria-label="打开运行与工作树">运行</button>
+            <button type="button" data-inspector-target="tools" aria-label="打开工具和 MCP">工具 <strong id="tool-count">0</strong></button>
+            <button type="button" data-inspector-target="processes" aria-label="打开后台任务">任务</button>
+            <button type="button" data-inspector-target="config" aria-label="打开更多配置和能力">更多</button>
           </div>
         </section>
 
