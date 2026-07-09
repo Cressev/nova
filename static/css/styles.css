@@ -1198,6 +1198,55 @@ code {
   justify-content: flex-end;
 }
 
+.runtime-overview {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: flex-end;
+}
+
+.runtime-chip {
+  display: inline-flex;
+  min-height: 25px;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.runtime-chip span {
+  color: var(--faint);
+}
+
+.runtime-chip strong {
+  color: var(--text);
+  font-weight: 850;
+}
+
+.runtime-chip.running {
+  border-color: rgba(127, 183, 255, 0.34);
+  background: rgba(127, 183, 255, 0.08);
+}
+
+.runtime-chip.warning {
+  border-color: rgba(232, 177, 93, 0.36);
+  background: rgba(232, 177, 93, 0.08);
+}
+
+.runtime-chip.failed,
+.runtime-chip.cancelled {
+  border-color: rgba(255, 107, 97, 0.36);
+  background: rgba(255, 107, 97, 0.08);
+}
+
 .thread-plan div {
   display: grid;
   gap: 2px;

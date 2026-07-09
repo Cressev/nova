@@ -70,6 +70,7 @@ const sendButtonEl = document.querySelector("#send-button");
 const stopButtonEl = document.querySelector("#stop-button");
 const streamStateEl = document.querySelector("#stream-state");
 const threadStateEl = document.querySelector("#thread-state");
+const runtimeOverviewEl = document.querySelector("#runtime-overview");
 const sessionListEl = document.querySelector("#session-list");
 const messagesEl = document.querySelector("#messages");
 const chatTitleEl = document.querySelector("#chat-title");
@@ -480,6 +481,143 @@ function renderStatusline() {
     node.innerHTML = `<strong>${escapeHtml(label)}</strong><em>${escapeHtml(String(value ?? "-"))}</em>`;
     statuslineEl.appendChild(node);
   }
+}
+
+function turnStatusLabel(status, active = false) {
+  const labels = {
+    running: "运行中",
+    completed: "已完成",
+    failed: "失败",
+    cancelled: "已停止",
+  };
+  if (status) {
+    return labels[status] || status;
+  }
+  return active ? "运行中" : "空闲";
+}
+
+function countByStatus(items = [], statuses = []) {
+  const targets = new Set(statuses);
+  return items.filter((item) => targets.has(item.status)).length;
+}
+
+function buildRuntimeOverviewItems(runtimeState = {}) {
+  const runtime = runtimeState.runtime || runtimeState;
+  const tools = runtime.tool_calls || [];
+  const approvals = runtimeState.pending_approvals || [];
+  const processes = runtimeState.processes || [];
+  const queuedMessages = runtimeState.queued_messages || runtime.queued_messages || [];
+  const runningTools = countByStatus(tools, ["running", "started", "background"]);
+  const failedTools = countByStatus(tools, ["failed", "cancelled"]);
+  const runningProcesses = countByStatus(processes, ["running"]);
+  const turnStatus = runtime.current_turn?.status || (runtime.active || runtimeState.active ? "running" : "");
+  return [
+    {
+      kind: "turn",
+      label: "Turn",
+      value: turnStatusLabel(turnStatus, Boolean(runtime.active || runtimeState.active)),
+      status: turnStatus || "idle",
+    },
+    {
+      kind: "tool",
+      label: "工具",
+      value: tools.length ? `${runningTools}/${tools.length}` : "0",
+      status: failedTools ? "warning" : (runningTools ? "running" : "idle"),
+    },
+    {
+      kind: "approval",
+      label: "审批",
+      value: approvals.length ? `${approvals.length}` : "0",
+      status: approvals.length ? "warning" : "idle",
+    },
+    {
+      kind: "process",
+      label: "后台",
+      value: processes.length ? `${runningProcesses}/${processes.length}` : "0",
+      status: runningProcesses ? "running" : "idle",
+    },
+    {
+      kind: "queue",
+      label: "队列",
+      value: queuedMessages.length ? `${queuedMessages.length}` : "0",
+      status: queuedMessages.length ? "warning" : "idle",
+    },
+  ];
+}
+
+function renderRuntimeOverviewItems(items = []) {
+  if (!runtimeOverviewEl) {
+    return;
+  }
+  runtimeOverviewEl.innerHTML = "";
+  for (const item of items) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = `runtime-chip ${item.status || "idle"}`;
+    chip.dataset.runtimeKind = item.kind;
+    chip.innerHTML = `
+      <span>${escapeHtml(item.label)}</span>
+      <strong>${escapeHtml(String(item.value))}</strong>
+    `;
+    chip.addEventListener("click", () => {
+      if (item.kind === "tool" || item.kind === "approval") {
+        openInspectorDialog("tools");
+        return;
+      }
+      if (item.kind === "process") {
+        openInspectorDialog("processes");
+        return;
+      }
+      if (item.kind === "queue") {
+        messageEl.focus();
+      }
+    });
+    runtimeOverviewEl.appendChild(chip);
+  }
+}
+
+function renderRuntimeOverview(runtimeState = {}) {
+  renderRuntimeOverviewItems(buildRuntimeOverviewItems(runtimeState));
+}
+
+function renderIdleRuntimeOverview() {
+  const active = Boolean(state.sending || state.sessionActive);
+  renderRuntimeOverview({
+    runtime: {
+      active,
+      current_turn: active ? { status: "running" } : null,
+      tool_calls: [],
+      queued_messages: state.queuedMessages || [],
+    },
+    pending_approvals: [],
+    processes: state.processes || [],
+    queued_messages: state.queuedMessages || [],
+    active,
+  });
+}
+
+function renderRuntimeOverviewFromDom(turnStatus = "") {
+  const toolCalls = Array.from(messagesEl.querySelectorAll(".tool-event")).map((node) => ({
+    status: node.classList.contains("running")
+      ? "running"
+      : node.classList.contains("failed") ? "failed" : "completed",
+  }));
+  const pendingApprovals = Array.from(messagesEl.querySelectorAll(".permission-event.pending")).map((node) => ({
+    id: node.dataset.callId || "",
+  }));
+  const active = Boolean(state.sending || state.sessionActive || turnStatus === "running");
+  renderRuntimeOverview({
+    runtime: {
+      active,
+      current_turn: { status: turnStatus || (active ? "running" : "completed") },
+      tool_calls: toolCalls,
+      queued_messages: state.queuedMessages || [],
+    },
+    pending_approvals: pendingApprovals,
+    processes: state.processes || [],
+    queued_messages: state.queuedMessages || [],
+    active,
+  });
 }
 
 function contextBudgetLabel(status) {
@@ -1854,6 +1992,7 @@ async function loadMessages() {
   if (!state.selectedSessionId) {
     state.sessionActive = false;
     syncComposerRunState();
+    renderIdleRuntimeOverview();
     renderEmptyState();
     return;
   }
@@ -1867,6 +2006,7 @@ async function loadMessages() {
       return;
     }
     renderMessageLoadError(error);
+    renderIdleRuntimeOverview();
     streamStateEl.textContent = "历史线程暂不可用";
     return;
   }
@@ -1876,12 +2016,14 @@ async function loadMessages() {
   if (runtimeState.unavailable) {
     state.sessionActive = false;
     syncComposerRunState();
+    renderIdleRuntimeOverview();
     renderMessageLoadError(new Error(runtimeState.unavailable_reason || "历史线程所属项目不可用"));
     streamStateEl.textContent = "历史线程暂不可用";
     return;
   }
   state.sessionActive = Boolean(runtimeState.active);
   syncComposerRunState();
+  renderRuntimeOverview(runtimeState);
   const items = runtimeState.timeline?.items || [];
   const hasRuntimeRestorations = Boolean(
     runtimeState.pending_approvals?.length
@@ -1910,6 +2052,7 @@ async function loadMessages() {
     }
   }
   appendRuntimeStateRestorations(runtimeState, items);
+  renderRuntimeOverview(runtimeState);
   updateAllTurnToolControls();
   renderMessageRail();
   scrollMessagesToBottom();
@@ -2021,7 +2164,7 @@ function appendRuntimeStateRestorations(runtimeState, timelineItems = []) {
     appendMessage(message, { queued: true });
     knownMessageIds.add(message.id);
   }
-  setQueuedMessages(runtimeState.queued_messages || [], { autoscroll: false });
+  setQueuedMessages(runtimeState.queued_messages || [], { autoscroll: false, renderOverview: false });
 }
 
 function collectProcessIds(value, target) {
@@ -2048,12 +2191,16 @@ function appendStatusEvent(text, options = {}) {
   if (options.autoscroll !== false) {
     scrollMessagesToBottom();
   }
+  renderRuntimeOverviewFromDom("running");
   return node;
 }
 
 function setQueuedMessages(messages, options = {}) {
   state.queuedMessages = Array.isArray(messages) ? messages.filter(Boolean) : [];
   renderQueueControl(options);
+  if (options.renderOverview !== false) {
+    renderIdleRuntimeOverview();
+  }
 }
 
 function removeQueuedMessage(messageId) {
@@ -2062,6 +2209,7 @@ function removeQueuedMessage(messageId) {
   }
   state.queuedMessages = state.queuedMessages.filter((message) => message.id !== messageId);
   renderQueueControl();
+  renderIdleRuntimeOverview();
 }
 
 function renderQueueControl(options = {}) {
@@ -2240,6 +2388,7 @@ async function cancelToolCall(node) {
       status.textContent = "已取消";
     }
     streamStateEl.textContent = "已请求取消工具调用";
+    renderRuntimeOverviewFromDom("cancelled");
   } catch (error) {
     if (button) {
       button.disabled = false;
@@ -2271,6 +2420,7 @@ function markRunningToolsAsCancelRequested() {
     }
   }
   updateAllTurnToolControls();
+  renderRuntimeOverviewFromDom("cancelled");
 }
 
 function finishToolEvent(node, event, options = {}) {
@@ -2314,6 +2464,7 @@ function finishToolEvent(node, event, options = {}) {
   if (options.autoscroll !== false) {
     scrollMessagesToBottom();
   }
+  renderRuntimeOverviewFromDom(state.sending || state.sessionActive ? "running" : "completed");
 }
 
 function renderToolMetadata(data = {}) {
@@ -2477,6 +2628,7 @@ function appendPermissionEvent(event, beforeNode = null, options = {}) {
   if (options.autoscroll !== false) {
     scrollMessagesToBottom();
   }
+  renderRuntimeOverviewFromDom("running");
   return node;
 }
 
@@ -2515,6 +2667,7 @@ async function processApproval(node, approved) {
       streamStateEl.textContent = "已拒绝工具调用，Nova 已给出替代路径";
     }
     await Promise.all([loadRuntimeShell(), refreshStatusline()]);
+    renderRuntimeOverviewFromDom(state.sending || state.sessionActive ? "running" : "completed");
   } catch (error) {
     node.querySelector(".permission-event-head em").textContent = "审批失败";
     node.querySelectorAll("button").forEach((button) => {
@@ -3370,6 +3523,7 @@ form.addEventListener("submit", async (event) => {
   state.streamAbortController = new AbortController();
   sendButtonEl.disabled = false;
   syncComposerRunState();
+  renderIdleRuntimeOverview();
   streamStateEl.textContent = "正在连接模型";
 
   let assistantNode = null;
@@ -3397,6 +3551,7 @@ form.addEventListener("submit", async (event) => {
     autoResizeTextarea();
     const ok = await streamAssistant(sessionId, content, assistantNode);
     streamStateEl.textContent = state.turnCancelRequested ? "已停止" : (ok ? "回复完成" : "请求失败");
+    renderRuntimeOverviewFromDom(state.turnCancelRequested ? "cancelled" : (ok ? "completed" : "failed"));
     await Promise.all([
       loadSessions({ refreshMessages: false }),
       loadWorkspaceStatus(),
@@ -3410,6 +3565,7 @@ form.addEventListener("submit", async (event) => {
         assistantNode.classList.remove("streaming");
       }
       streamStateEl.textContent = "已停止";
+      renderRuntimeOverviewFromDom("cancelled");
       return;
     }
     const message = error instanceof Error ? error.message : "请求失败";
@@ -3425,12 +3581,14 @@ form.addEventListener("submit", async (event) => {
       });
     }
     streamStateEl.textContent = "请求失败";
+    renderRuntimeOverviewFromDom("failed");
   } finally {
     state.sending = false;
     state.sessionActive = false;
     state.streamAbortController = null;
     sendButtonEl.disabled = false;
     syncComposerRunState();
+    renderRuntimeOverviewFromDom(state.turnCancelRequested ? "cancelled" : "completed");
     messageEl.focus();
   }
 });
@@ -3459,10 +3617,12 @@ async function streamAssistant(sessionId, content, assistantNode) {
       streamStateEl.textContent = event.title || "Nova 正在处理";
       appendStatusEvent(event.title || "开始处理用户请求", { beforeNode: currentAssistantNode });
       updateTurnToolControl(currentAssistantNode);
+      renderRuntimeOverviewFromDom("running");
       return;
     }
     if (event.event_type === "turn.completed") {
       streamStateEl.textContent = event.title || "回复完成";
+      renderRuntimeOverviewFromDom("completed");
       return;
     }
     if (event.event_type === "turn.cancelled") {
@@ -3471,12 +3631,14 @@ async function streamAssistant(sessionId, content, assistantNode) {
       currentAssistantNode.classList.remove("streaming");
       appendStatusEvent(event.message || event.title || "已停止当前运行", { beforeNode: currentAssistantNode });
       updateTurnToolControl(currentAssistantNode);
+      renderRuntimeOverviewFromDom("cancelled");
       return;
     }
     if (event.event_type === "turn.failed") {
       streamStateEl.textContent = event.title || "请求失败";
       appendStatusEvent(event.message || event.title || "请求失败", { beforeNode: currentAssistantNode });
       updateTurnToolControl(currentAssistantNode);
+      renderRuntimeOverviewFromDom("failed");
       return;
     }
     if (event.event_type?.startsWith("hook.")) {
@@ -3508,6 +3670,7 @@ async function streamAssistant(sessionId, content, assistantNode) {
     assistantText = "";
     activeToolNodes.clear();
     streamStateEl.textContent = "正在处理排队消息";
+    renderRuntimeOverviewFromDom("running");
     return currentAssistantNode;
   };
 
