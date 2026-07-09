@@ -1671,6 +1671,39 @@ code {
   white-space: nowrap;
 }
 
+.tool-key-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tool-key-params span {
+  display: inline-grid;
+  max-width: min(260px, 100%);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.tool-key-params em {
+  color: var(--faint);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.tool-key-params strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .tool-schema summary,
 .tool-diff-preview summary {
   color: var(--blue);
@@ -2237,6 +2270,42 @@ body.inspector-collapsed .inspector-toggle {
   background: rgba(255, 255, 255, 0.045);
   color: var(--text);
   text-align: left;
+}
+
+.runtime-state-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  border: 1px solid rgba(115, 201, 244, 0.14);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.028);
+}
+
+.runtime-state-row {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 7px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.runtime-state-row span {
+  display: block;
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.runtime-state-row strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .worktree-box {
@@ -3260,6 +3329,15 @@ body.inspector-collapsed .inspector-toggle {
   .tool-event-head span,
   .permission-event-head span {
     width: fit-content;
+  }
+
+  .tool-meta-grid,
+  .runtime-state-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .tool-key-params span {
+    max-width: 100%;
   }
 
   .inspector {

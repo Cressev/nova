@@ -71,6 +71,7 @@ const stopButtonEl = document.querySelector("#stop-button");
 const streamStateEl = document.querySelector("#stream-state");
 const threadStateEl = document.querySelector("#thread-state");
 const runtimeOverviewEl = document.querySelector("#runtime-overview");
+const runtimeStatePanelEl = document.querySelector("#runtime-state-panel");
 const sessionListEl = document.querySelector("#session-list");
 const messagesEl = document.querySelector("#messages");
 const chatTitleEl = document.querySelector("#chat-title");
@@ -385,9 +386,19 @@ async function loadInspectorPanelDetails(panel) {
     return;
   }
   if (panel === "run") {
-    const worktrees = await api("/api/worktrees");
+    const [worktrees, runtimeState] = await Promise.all([
+      api("/api/worktrees"),
+      state.selectedSessionId
+        ? api(`/api/chat/sessions/${state.selectedSessionId}/runtime-state`)
+        : Promise.resolve(null),
+    ]);
     state.worktrees = worktrees;
     renderWorktrees(worktrees);
+    if (runtimeState) {
+      renderRuntimeOverview(runtimeState);
+    } else {
+      renderIdleRuntimeOverview();
+    }
     return;
   }
   if (panel === "processes") {
@@ -578,6 +589,7 @@ function renderRuntimeOverviewItems(items = []) {
 
 function renderRuntimeOverview(runtimeState = {}) {
   renderRuntimeOverviewItems(buildRuntimeOverviewItems(runtimeState));
+  renderRuntimeStatePanel(runtimeState);
 }
 
 function renderIdleRuntimeOverview() {
@@ -618,6 +630,48 @@ function renderRuntimeOverviewFromDom(turnStatus = "") {
     queued_messages: state.queuedMessages || [],
     active,
   });
+}
+
+function renderRuntimeStatePanel(runtimeState = {}) {
+  if (!runtimeStatePanelEl) {
+    return;
+  }
+  const runtime = runtimeState.runtime || runtimeState;
+  const tools = runtime.tool_calls || [];
+  const approvals = runtimeState.pending_approvals || [];
+  const processes = runtimeState.processes || [];
+  const queuedMessages = runtimeState.queued_messages || runtime.queued_messages || [];
+  const turnStatus = runtime.current_turn?.status || (runtime.active || runtimeState.active ? "running" : "");
+  const finalAnswer = runtime.final_answer?.content ? shortText(runtime.final_answer.content, 42) : "-";
+  const rows = [
+    ["Turn", turnStatusLabel(turnStatus, Boolean(runtime.active || runtimeState.active))],
+    ["工具调用", runtimeStateSummary(tools, "tool")],
+    ["待审批", approvals.length ? `${approvals.length} 个` : "0"],
+    ["后台任务", runtimeStateSummary(processes, "process")],
+    ["排队消息", queuedMessages.length ? `${queuedMessages.length} 条` : "0"],
+    ["最终回复", finalAnswer],
+  ];
+  runtimeStatePanelEl.innerHTML = rows.map(([label, value]) => `
+    <div class="runtime-state-row">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(String(value))}</strong>
+    </div>
+  `).join("");
+}
+
+function runtimeStateSummary(items = [], kind = "") {
+  if (!Array.isArray(items) || items.length === 0) {
+    return "0";
+  }
+  const running = countByStatus(items, ["running", "started", "background"]);
+  const failed = countByStatus(items, ["failed", "cancelled"]);
+  if (kind === "tool") {
+    return `${running} 运行 / ${failed} 异常 / ${items.length} 总数`;
+  }
+  if (kind === "process") {
+    return `${running} 运行 / ${items.length} 总数`;
+  }
+  return String(items.length);
 }
 
 function contextBudgetLabel(status) {
@@ -2335,10 +2389,33 @@ function toolPurposeText(event) {
   return String(purpose || "").trim() || "工具执行中";
 }
 
+function toolCallId(event = {}) {
+  return event.call_id || event.id || "";
+}
+
+function findRuntimeNodeByCallId(selector, callId) {
+  if (!callId || !messagesEl) {
+    return null;
+  }
+  return messagesEl.querySelector(`${selector}[data-call-id="${CSS.escape(callId)}"]`);
+}
+
+function findToolNodeByCallId(callId) {
+  return findRuntimeNodeByCallId(".tool-event", callId);
+}
+
+function findPermissionNodeByCallId(callId) {
+  return findRuntimeNodeByCallId(".permission-event", callId);
+}
+
 function appendToolEvent(event, beforeNode = null, options = {}) {
-  const node = document.createElement("article");
-  node.className = "tool-event running";
-  node.dataset.callId = event.call_id || "";
+  const callId = toolCallId(event);
+  const existingToolNode = findToolNodeByCallId(callId);
+  const existingPermissionNode = findPermissionNodeByCallId(callId);
+  const node = existingToolNode || existingPermissionNode || document.createElement("article");
+  const wasInserted = Boolean(node.parentElement);
+  node.className = `tool-event running${existingPermissionNode && !existingToolNode ? " approval-linked" : ""}`;
+  node.dataset.callId = callId;
   node.dataset.tool = event.tool || "";
   node.dataset.arguments = JSON.stringify(event.arguments || {}, null, 2);
   node.dataset.argumentsRaw = JSON.stringify(event.arguments || {});
@@ -2350,19 +2427,22 @@ function appendToolEvent(event, beforeNode = null, options = {}) {
       <em>${event.parallel ? "并行" : "运行中"}</em>
     </div>
     ${renderToolMetadata(event.data || {})}
+    ${renderToolKeyParams(event.arguments || {})}
     <div class="tool-actions">
       <button class="tool-cancel" type="button" data-action="cancel-tool">取消</button>
     </div>
-    <details open>
+    <details class="tool-args">
       <summary>调用参数</summary>
       <pre>${escapeHtml(node.dataset.arguments)}</pre>
     </details>
   `;
   node.querySelector('[data-action="cancel-tool"]').addEventListener("click", () => cancelToolCall(node));
-  if (beforeNode?.parentElement === messagesEl) {
-    messagesEl.insertBefore(node, beforeNode);
-  } else {
-    messagesEl.appendChild(node);
+  if (!wasInserted) {
+    if (beforeNode?.parentElement === messagesEl) {
+      messagesEl.insertBefore(node, beforeNode);
+    } else {
+      messagesEl.appendChild(node);
+    }
   }
   if (options.autoscroll !== false) {
     scrollMessagesToBottom();
@@ -2425,7 +2505,7 @@ function markRunningToolsAsCancelRequested() {
 
 function finishToolEvent(node, event, options = {}) {
   if (!node) {
-    node = appendToolEvent(event);
+    node = findToolNodeByCallId(toolCallId(event)) || findPermissionNodeByCallId(toolCallId(event)) || appendToolEvent(event);
   }
   node.className = `tool-event ${event.ok ? "ok" : "failed"}`;
   const args = node.dataset.arguments || "{}";
@@ -2442,20 +2522,14 @@ function finishToolEvent(node, event, options = {}) {
       <em>${statusLabel}</em>
     </div>
     ${renderToolMetadata(data)}
+    ${renderToolKeyParams(parseToolArguments(rawArgs))}
     ${renderHookContexts(data.hook_contexts)}
     ${data.failure_reason ? `<div class="tool-failure">${escapeHtml(data.failure_reason)}</div>` : ""}
     <div class="tool-actions">
       ${retryButton}
     </div>
-    <details class="tool-args" open>
-      <summary>调用参数</summary>
-      <pre>${escapeHtml(args)}</pre>
-    </details>
     ${renderDiffPreview(data.diff)}
-    <details class="tool-result">
-      <summary>工具结果</summary>
-      <pre>${escapeHtml(shortText(event.output || "", 4000))}</pre>
-    </details>
+    ${renderToolExecutionDetails(args, event.output || "", data)}
   `;
   node.dataset.argumentsRaw = rawArgs;
   node.dataset.toolData = JSON.stringify(data);
@@ -2491,6 +2565,54 @@ function renderToolMetadata(data = {}) {
     ? `<details class="tool-schema"><summary>输入 Schema</summary><pre>${escapeHtml(JSON.stringify(spec.schema, null, 2))}</pre></details>`
     : "";
   return `<div class="tool-meta-grid">${meta}</div>${schema}`;
+}
+
+function parseToolArguments(rawArgs) {
+  try {
+    return JSON.parse(rawArgs || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function renderToolKeyParams(args = {}) {
+  const entries = Object.entries(args)
+    .filter(([key, value]) => key !== "annotation" && value !== undefined && value !== null && value !== "")
+    .slice(0, 4);
+  if (entries.length === 0) {
+    return "";
+  }
+  return `
+    <div class="tool-key-params">
+      ${entries.map(([key, value]) => `
+        <span title="${escapeHtml(String(value))}">
+          <em>${escapeHtml(key)}</em>
+          <strong>${escapeHtml(shortText(String(value), 46))}</strong>
+        </span>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderToolExecutionDetails(args, output, data = {}) {
+  const stdout = data.stdout || data.output || output || "";
+  const stderr = data.stderr || "";
+  const resultJson = data.result_json || data.result || null;
+  return `
+    <details class="tool-args">
+      <summary>完整 args</summary>
+      <pre>${escapeHtml(args || "{}")}</pre>
+    </details>
+    <details class="tool-result">
+      <summary>stdout / stderr / result_json</summary>
+      <pre>${escapeHtml([
+        stdout ? `stdout:\n${shortText(String(stdout), 4000)}` : "",
+        stderr ? `stderr:\n${shortText(String(stderr), 4000)}` : "",
+        resultJson ? `result_json:\n${JSON.stringify(resultJson, null, 2)}` : "",
+        !stdout && !stderr && !resultJson ? "暂无结构化输出" : "",
+      ].filter(Boolean).join("\n\n"))}</pre>
+    </details>
+  `;
 }
 
 function syncBackgroundProcessFromToolDone(data = {}) {
@@ -2558,7 +2680,8 @@ async function retryToolCall(node) {
     const activeToolNodes = new Map();
     for (const event of response.events || []) {
       if (event.type === "tool_start") {
-        const toolNode = appendToolEvent(event, node.nextSibling);
+        const retryInsertBefore = node.nextSibling;
+        const toolNode = appendToolEvent(event, retryInsertBefore);
         activeToolNodes.set(event.call_id || event.tool || "tool", toolNode);
       }
       if (event.type === "tool_output") {
@@ -2580,6 +2703,9 @@ async function retryToolCall(node) {
 
 function appendToolOutput(node, event) {
   if (!node) {
+    node = findToolNodeByCallId(toolCallId(event));
+  }
+  if (!node) {
     return;
   }
   let output = node.querySelector(".tool-stream-output");
@@ -2594,11 +2720,16 @@ function appendToolOutput(node, event) {
 }
 
 function appendPermissionEvent(event, beforeNode = null, options = {}) {
+  const callId = toolCallId(event);
+  const existingNode = findPermissionNodeByCallId(callId) || findToolNodeByCallId(callId);
+  if (existingNode) {
+    return existingNode;
+  }
   const args = JSON.stringify(event.arguments || {}, null, 2);
   const hookContexts = event.data?.hook_contexts || [];
   const node = document.createElement("article");
   node.className = "permission-event pending";
-  node.dataset.callId = event.call_id || "";
+  node.dataset.callId = callId;
   node.dataset.tool = event.tool || "";
   node.innerHTML = `
     <div class="permission-event-head">
@@ -2652,7 +2783,7 @@ async function processApproval(node, approved) {
       const activeToolNodes = new Map();
       for (const event of response.events || []) {
         if (event.type === "tool_start") {
-          const toolNode = appendToolEvent(event, node.nextSibling);
+          const toolNode = appendToolEvent(event, node);
           activeToolNodes.set(event.call_id || event.tool || "tool", toolNode);
         }
         if (event.type === "tool_output") {
