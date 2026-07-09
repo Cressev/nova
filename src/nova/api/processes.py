@@ -27,9 +27,23 @@ async def get_process(job_id: str) -> dict:
 @router.delete("/api/processes/{job_id}")
 async def kill_process(job_id: str) -> dict:
     try:
-        return ctx.process_manager.kill(job_id)
+        job = ctx.process_manager.kill(job_id)
     except KeyError as exc:
         raise ctx.HTTPException(status_code=404, detail="Process not found") from exc
+    call_id = str(job.get("call_id") or "")
+    session_id = ctx.agent_sessions.session_id_for_call_id(call_id) if call_id else None
+    if session_id:
+        ctx._record_control_event(
+            session_id,
+            "process.killed",
+            category="status",
+            phase="completed",
+            title="用户终止后台任务",
+            message=f"后台任务 {job_id} 已被用户终止。",
+            call_id=call_id,
+            data={"job": job, "job_id": job_id},
+        )
+    return job
 
 
 @router.post("/api/tool-calls/retry")
@@ -57,5 +71,17 @@ async def cancel_tool_call(call_id: str) -> dict:
         job = ctx.process_manager.cancel_call(call_id)
     except KeyError as exc:
         raise ctx.HTTPException(status_code=404, detail="Tool call not found") from exc
-    ctx.agent_sessions.request_cancel_for_call(call_id)
+    session_id = ctx.agent_sessions.request_cancel_for_call(call_id)
+    if session_id:
+        ctx._record_control_event(
+            session_id,
+            "tool.cancel.requested",
+            category="status",
+            phase="requested",
+            status="pending",
+            title="用户请求取消工具调用",
+            message=f"工具调用 {call_id} 已收到取消请求。",
+            call_id=call_id,
+            data={"job": job, "job_id": job.get("id")},
+        )
     return {"ok": True, "status": job["status"], "job": job}

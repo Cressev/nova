@@ -734,6 +734,53 @@ def _event_builder_for_existing_turn(session_id: str, turn_id: str):
     return build_event
 
 
+def _record_control_event(
+    session_id: str,
+    event_type: str,
+    *,
+    category: str,
+    phase: str,
+    title: str,
+    message: str | None = None,
+    status: str = "ok",
+    tool: str | None = None,
+    call_id: str | None = None,
+    arguments: dict | None = None,
+    output: str | None = None,
+    data: dict | None = None,
+) -> dict:
+    runtime = agent_sessions.runtime_state(session_id)
+    current_turn = runtime.get("current_turn") if isinstance(runtime.get("current_turn"), dict) else {}
+    turn_id = str((current_turn or {}).get("turn_id") or (data or {}).get("turn_id") or "")
+    sequence = len(
+        [
+            event
+            for event in store.list_chat_events(session_id)
+            if not turn_id or event.turn_id == turn_id
+        ]
+    ) + 1
+    event = {
+        "id": new_id("evt"),
+        "session_id": session_id,
+        "turn_id": turn_id,
+        "sequence": sequence,
+        "event_type": event_type,
+        "category": category,
+        "phase": phase,
+        "status": status,
+        "title": title,
+        "message": message or title,
+        "tool": tool,
+        "call_id": call_id,
+        "arguments": arguments or {},
+        "output": output,
+        "data": data or {},
+    }
+    _persist_runtime_event(event)
+    agent_sessions.record_runtime_event(event)
+    return event
+
+
 def _persist_runtime_event(event: dict) -> None:
     category = str(event.get("category") or "status")
     status = str(event.get("status") or "ok")

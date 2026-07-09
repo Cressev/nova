@@ -230,6 +230,13 @@ class AgentSessionService:
                     return session_id
             return None
 
+    def session_id_for_call_id(self, call_id: str) -> str | None:
+        with self._lock:
+            for session_id, runtime in self._sessions.items():
+                if call_id in runtime.tool_calls:
+                    return session_id
+            return None
+
     def record_background_job(
         self,
         session_id: str,

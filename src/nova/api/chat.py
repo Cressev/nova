@@ -25,6 +25,16 @@ async def cancel_chat_session_turn(session_id: str) -> dict:
             cancelled_tools.append(call_id)
         except KeyError:
             continue
+    ctx._record_control_event(
+        session_id,
+        "turn.cancel.requested",
+        category="turn",
+        phase="requested",
+        status="pending",
+        title="用户请求停止当前运行",
+        message="前端停止按钮已请求中断当前 turn。",
+        data={"cancelled_tool_calls": cancelled_tools},
+    )
     return {
         "ok": True,
         "session_id": session_id,
@@ -39,6 +49,18 @@ async def clear_chat_session_queue(session_id: str) -> dict:
     if ctx.store.get_chat_session(session_id) is None:
         raise ctx.HTTPException(status_code=404, detail="Chat session not found")
     cleared = ctx.agent_sessions.clear_queued_messages(session_id)
+    ctx._record_control_event(
+        session_id,
+        "queue.cleared",
+        category="status",
+        phase="completed",
+        title="用户清空排队消息",
+        message=f"已清空 {len(cleared)} 条排队消息。",
+        data={
+            "cleared_message_ids": [message.id for message in cleared],
+            "cleared_count": len(cleared),
+        },
+    )
     return {
         "ok": True,
         "session_id": session_id,
@@ -217,6 +239,19 @@ async def stream_chat_message(
         )
         ctx.agent_sessions.enqueue_message(session_id, queued)
         queued_messages = ctx.agent_sessions.queued_messages(session_id)
+        ctx._record_control_event(
+            session_id,
+            "queue.enqueued",
+            category="status",
+            phase="queued",
+            status="pending",
+            title="用户消息已加入队列",
+            message="当前 turn 仍在运行，新消息会在本轮工具调用结束后继续处理。",
+            data={
+                "message_id": queued.id,
+                "queued_count": len(queued_messages),
+            },
+        )
         return ctx.JSONResponse(
             status_code=202,
             content={
@@ -263,3 +298,25 @@ async def get_chat_session_trace(session_id: str) -> dict:
     if ctx.store.get_chat_session(session_id) is None:
         raise ctx.HTTPException(status_code=404, detail="Chat session not found")
     return {"items": ctx.store.trace.read(session_id)}
+
+
+@router.get("/api/chat/sessions/{session_id}/trace/replay")
+async def get_chat_session_trace_replay(session_id: str) -> dict:
+    if ctx.store.get_chat_session(session_id) is None:
+        raise ctx.HTTPException(status_code=404, detail="Chat session not found")
+    return ctx.store.trace.replay(
+        session_id,
+        messages=[
+            message.model_dump(mode="json")
+            for message in ctx.store.list_chat_messages(session_id)
+        ],
+        events=[
+            event.model_dump(mode="json")
+            for event in ctx.store.list_chat_events(session_id)
+        ],
+        processes=ctx._process_jobs_for_session(session_id),
+        pending_approvals=[
+            item.as_dict()
+            for item in ctx.agent_sessions.list_pending_approvals(session_id=session_id)
+        ],
+    )

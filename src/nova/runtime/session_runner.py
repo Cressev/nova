@@ -66,7 +66,24 @@ class SessionRunner:
             item.session_id,
             item.turn_id,
         )
+        approved_event = build_event(
+            "permission.approved",
+            category="permission",
+            phase="approved",
+            title=f"已允许：{item.tool}",
+            message="用户已批准该工具调用，Nova 将从 pending checkpoint 继续执行。",
+            tool=item.tool,
+            call_id=item.call_id,
+            arguments=item.arguments,
+            data={
+                "permission": item.permission,
+                "risk": item.risk,
+                "checkpoint_event_id": item.checkpoint_event_id,
+            },
+        )
+        self._persist_existing_runtime_event(approved_event)
         runtime_events: list[dict[str, Any]] = []
+        runtime_events.append(approved_event)
         for event in events:
             runtime_event = self.deps.runtime_event_from_agent_event(event, build_event)
             if runtime_event is None:
@@ -228,7 +245,12 @@ class SessionRunner:
             )
             yield {"type": "runtime_event", "event": budgeted}
 
-            async for event in self.deps.runtime_factory().stream(budget.messages):
+            runtime = self.deps.runtime_factory()
+            try:
+                stream = runtime.stream(budget.messages, trace_turn_id=turn_id)
+            except TypeError:
+                stream = runtime.stream(budget.messages)
+            async for event in stream:
                 if orchestrator.is_cancel_requested():
                     yield {"type": "runtime_event", "event": orchestrator.cancel_turn()}
                     return

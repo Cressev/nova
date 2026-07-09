@@ -78,14 +78,20 @@ class CodexLikeAgentRuntime:
     async def stream(
         self,
         messages: list[ChatMessage],
+        *,
+        trace_turn_id: str | None = None,
     ) -> AsyncIterator[dict]:
         latest_user = self._latest_user_content(messages)
-        trace_turn_id = self._trace_start(messages, latest_user)
-        self._active_trace_turn_id = trace_turn_id
+        active_trace_turn_id = self._trace_start(
+            messages,
+            latest_user,
+            preferred_turn_id=trace_turn_id,
+        )
+        self._active_trace_turn_id = active_trace_turn_id
         trace_output_parts: list[str] = []
         trace_status = "ok"
         try:
-            async for event in self._stream_inner(messages, latest_user, trace_turn_id, trace_output_parts):
+            async for event in self._stream_inner(messages, latest_user, active_trace_turn_id, trace_output_parts):
                 if event.get("type") == "assistant_done_content" and event.get("content"):
                     trace_output_parts[:] = [str(event.get("content") or "")]
                 yield event
@@ -93,7 +99,7 @@ class CodexLikeAgentRuntime:
             trace_status = "failed"
             raise
         finally:
-            self._trace_end(trace_turn_id, output="".join(trace_output_parts), status=trace_status)
+            self._trace_end(active_trace_turn_id, output="".join(trace_output_parts), status=trace_status)
             self._active_trace_turn_id = None
 
     async def _stream_inner(
@@ -576,10 +582,16 @@ class CodexLikeAgentRuntime:
         ]
         return any(term in content for term in search_terms)
 
-    def _trace_start(self, messages: list[ChatMessage], latest_user: str) -> str:
+    def _trace_start(
+        self,
+        messages: list[ChatMessage],
+        latest_user: str,
+        *,
+        preferred_turn_id: str | None = None,
+    ) -> str:
         recorder = self.trace_recorder
         session_id = messages[-1].session_id if messages else "agent"
-        turn_id = f"turn_{uuid4().hex[:12]}"
+        turn_id = preferred_turn_id or f"turn_{uuid4().hex[:12]}"
         if recorder is None:
             return turn_id
         start_turn = getattr(recorder, "start_turn", None)

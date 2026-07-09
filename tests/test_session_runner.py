@@ -42,6 +42,19 @@ class SessionRunnerTest(unittest.TestCase):
         self.assertEqual(runtime["current_turn"]["status"], "completed")
         self.assertEqual(runtime["final_answer"]["content"], "完成")
 
+    def test_runner_passes_local_turn_id_to_runtime_trace(self) -> None:
+        runtime = _TracingRuntime([{"type": "assistant_delta", "delta": "完成"}])
+        runner = self._runner(runtime)
+
+        events = asyncio.run(_collect(runner.run_message(self.chat.id, "开始")))
+
+        started = next(
+            event["event"]
+            for event in events
+            if event["type"] == "runtime_event" and event["event"]["event_type"] == "turn.started"
+        )
+        self.assertEqual(runtime.trace_turn_ids, [started["turn_id"]])
+
     def test_provider_error_turn_persists_error_message(self) -> None:
         runner = self._runner(_FailingRuntime(ProviderError("模型失败")))
 
@@ -162,6 +175,7 @@ class SessionRunnerTest(unittest.TestCase):
         self.assertTrue(any(event["type"] == "tool_done" for event in result["events"]))
         self.assertEqual(self.sessions.list_pending_approvals(), [])
         stored = self.store.list_chat_events(self.chat.id)
+        self.assertTrue(any(item["event_type"] == "permission.approved" for item in self.store.trace.read(self.chat.id)))
         self.assertTrue(any(event.event_type == "tool.completed" for event in stored))
         runtime = self.sessions.runtime_state(self.chat.id)
         self.assertEqual(runtime["tool_calls"][0]["call_id"], "tool_shell")
@@ -215,6 +229,17 @@ class _FakeRuntime:
     async def stream(self, _messages: list[ChatMessage]):
         events = self.turns.pop(0) if self.turns else []
         for event in events:
+            yield event
+
+
+class _TracingRuntime(_FakeRuntime):
+    def __init__(self, *turns: list[dict]) -> None:
+        super().__init__(*turns)
+        self.trace_turn_ids: list[str | None] = []
+
+    async def stream(self, _messages: list[ChatMessage], *, trace_turn_id: str | None = None):
+        self.trace_turn_ids.append(trace_turn_id)
+        async for event in super().stream(_messages):
             yield event
 
 

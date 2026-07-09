@@ -252,7 +252,11 @@ class RuntimeControlTest(unittest.TestCase):
 
     def test_chat_session_cancel_endpoint_marks_running_turn_cancel_requested(self) -> None:
         session = self.client.post("/api/chat/sessions", json={"title": "停止接口"}).json()
-        app_module.agent_sessions.mark_active(session["id"])
+        app_module.agent_sessions.start_turn(
+            session["id"],
+            turn_id="turn_cancel_api",
+            user_message_id="msg_cancel_api",
+        )
         self.addCleanup(lambda: app_module.agent_sessions.mark_idle(session["id"]))
 
         cancelled = self.client.post(f"/api/chat/sessions/{session['id']}/cancel")
@@ -261,6 +265,9 @@ class RuntimeControlTest(unittest.TestCase):
         self.assertTrue(cancelled.json()["cancel_requested"])
         runtime = self.client.get(f"/api/chat/sessions/{session['id']}/runtime-state").json()["runtime"]
         self.assertTrue(runtime["cancel_requested"])
+        replay = self.client.get(f"/api/chat/sessions/{session['id']}/trace/replay").json()
+        turn = next(item for item in replay["turns"] if item["turn_id"] == "turn_cancel_api")
+        self.assertTrue(any(event["event_type"] == "turn.cancel.requested" for event in turn["cancel_events"]))
 
     def test_chat_stream_stops_when_cancel_is_requested(self) -> None:
         session = self.client.post("/api/chat/sessions", json={"title": "强制停止"}).json()
@@ -297,7 +304,11 @@ class RuntimeControlTest(unittest.TestCase):
 
     def test_chat_stream_queues_message_while_session_running(self) -> None:
         session = self.client.post("/api/chat/sessions", json={"title": "队列"}).json()
-        app_module.agent_sessions.mark_active(session["id"])
+        app_module.agent_sessions.start_turn(
+            session["id"],
+            turn_id="turn_queue_api",
+            user_message_id="msg_queue_api",
+        )
         self.addCleanup(lambda: app_module.agent_sessions.mark_idle(session["id"]))
         self.addCleanup(lambda: app_module.agent_sessions.clear_queued_messages(session["id"]))
 
@@ -315,6 +326,9 @@ class RuntimeControlTest(unittest.TestCase):
         self.assertFalse(any(message["content"] == "第二条" for message in messages))
         runtime = self.client.get(f"/api/chat/sessions/{session['id']}/runtime-state").json()
         self.assertEqual(runtime["queued_messages"][0]["content"], "第二条")
+        replay = self.client.get(f"/api/chat/sessions/{session['id']}/trace/replay").json()
+        turn = next(item for item in replay["turns"] if item["turn_id"] == "turn_queue_api")
+        self.assertTrue(any(event["event_type"] == "queue.enqueued" for event in turn["queue_events"]))
 
     def test_chat_session_queue_clear_endpoint_removes_pending_messages(self) -> None:
         session = self.client.post("/api/chat/sessions", json={"title": "清空队列"}).json()
