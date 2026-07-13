@@ -37,6 +37,7 @@ class PackageLayoutTest(unittest.TestCase):
             "nova.providers.bigmodel": "BigModelProvider",
             "nova.config.settings": "Settings",
             "nova.observability.trace": "TraceRecorder",
+            "nova.review.quality_gate": "QualityGateManager",
             "nova.subagents.manager": "SubAgentManager",
             "nova.skills.manager": "SkillManager",
             "nova.tui": "__doc__",

@@ -50,6 +50,22 @@ async def review_summary() -> dict:
     return ctx.ReviewManager(ctx.workspace_manager.current_root).summary()
 
 
+@router.get("/api/quality-gates/summary")
+async def quality_gates_summary() -> dict:
+    return ctx.QualityGateManager(ctx.workspace_manager.current_root).summary()
+
+
+@router.post("/api/quality-gates/run")
+async def quality_gates_run(payload: dict | None = None) -> dict:
+    keys = payload.get("keys") if isinstance(payload, dict) else None
+    try:
+        return ctx.QualityGateManager(ctx.workspace_manager.current_root).run(
+            command_keys=keys if isinstance(keys, list) else None,
+        )
+    except ValueError as exc:
+        raise ctx.HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/api/review/run-tests")
 async def review_run_tests(payload: dict | None = None) -> dict:
     command = payload.get("command") if isinstance(payload, dict) else None

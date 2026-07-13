@@ -36,7 +36,37 @@ class ReviewApiTest(unittest.TestCase):
             self.assertGreaterEqual(payload["diagnostics"]["summary"]["error"], 1)
             self.assertTrue(any(item["severity"] == "high" for item in payload["risks"]))
             self.assertTrue(any("unittest" in item["command"] for item in payload["suggested_tests"]))
+            self.assertIn("quality_gates", payload)
+            self.assertTrue(any("git diff --check" in item["command"] for item in payload["quality_gates"]["fixed_commands"]))
             self.assertIn("Review summary", payload["summary"])
+
+    def test_quality_gates_summary_reports_staged_files_and_secret_findings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._init_repo(root)
+            self._switch_test_workspace(root)
+            (root / "src").mkdir()
+            secret_name = "API" + "_KEY"
+            secret_value = "secret" + "-fixture-value"
+            (root / "src" / "settings.py").write_text(
+                f'{secret_name} = "{secret_value}"\n',
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "src/settings.py"], cwd=root, check=True)
+
+            response = self.client.get("/api/quality-gates/summary")
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertFalse(payload["commit_allowed"])
+            self.assertIn("src/settings.py", payload["staged_files"])
+            self.assertTrue(any(item["kind"] == "secret" for item in payload["sensitive_findings"]))
+            self.assertTrue(any("unittest discover" in item["command"] for item in payload["fixed_commands"]))
+
+    def test_quality_gates_run_rejects_unknown_command_key(self) -> None:
+        response = self.client.post("/api/quality-gates/run", json={"keys": ["rm_rf"]})
+
+        self.assertEqual(response.status_code, 400)
 
     def test_review_run_tests_executes_suggested_command_and_returns_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -58,7 +88,7 @@ class ReviewApiTest(unittest.TestCase):
             payload = response.json()
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["exit_code"], 0)
-            self.assertIn("python3 -m unittest discover -s tests", payload["command"])
+            self.assertIn("/Users/liam/.miniforge3/envs/claude/bin/python -m unittest discover -s tests", payload["command"])
             self.assertIn("Ran 1 test", payload["stderr"] + payload["stdout"])
 
     def test_review_summary_excludes_python_cache_artifacts(self) -> None:

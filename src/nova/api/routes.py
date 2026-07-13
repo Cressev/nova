@@ -35,7 +35,7 @@ from ..observability.langfuse import (
 )
 from ..providers.bigmodel import BigModelProvider, ProviderError
 from ..processes.manager import ProcessManager
-from ..review import ReviewManager
+from ..review import QualityGateManager, ReviewManager
 from ..runtime import (
     CodexLikeAgentRuntime,
     RunOrchestrator,

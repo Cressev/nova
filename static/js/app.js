@@ -83,6 +83,7 @@ const workspaceProjectEl = document.querySelector("#workspace-project");
 const workspaceDetailsEl = document.querySelector("#workspace-details");
 const reviewStateEl = document.querySelector("#review-state");
 const reviewSummaryEl = document.querySelector("#review-summary");
+const qualityGateSummaryEl = document.querySelector("#quality-gate-summary");
 const reviewRisksEl = document.querySelector("#review-risks");
 const reviewTestsEl = document.querySelector("#review-tests");
 const reviewRunTestsEl = document.querySelector("#review-run-tests");
@@ -1144,6 +1145,7 @@ function renderReviewPanel(review) {
   reviewStateEl.textContent = `${changedFiles.length} 文件 · ${risks.length} 风险 · ${errors} 错误`;
   reviewStateEl.className = errors > 0 || risks.some((item) => item.severity === "high") ? "review-state warning" : "review-state ready";
   reviewSummaryEl.textContent = review?.summary || "Review summary 暂无数据";
+  renderQualityGateSummary(review?.quality_gates);
   reviewRisksEl.innerHTML = risks.length === 0
     ? '<small class="review-empty">暂无风险</small>'
     : risks.map((item) => `
@@ -1163,6 +1165,22 @@ function renderReviewPanel(review) {
   reviewTestsEl.querySelectorAll("[data-review-test]").forEach((button) => {
     button.addEventListener("click", () => runReviewTests(button.dataset.reviewTest || "0"));
   });
+}
+
+function renderQualityGateSummary(qualityGates = {}) {
+  if (!qualityGateSummaryEl) {
+    return;
+  }
+  const warnings = Array.isArray(qualityGates.warnings) ? qualityGates.warnings : [];
+  const stateText = qualityGates.commit_allowed ? "允许提交" : "暂不允许提交";
+  qualityGateSummaryEl.className = `quality-gate-summary ${qualityGates.commit_allowed ? "ready" : "warning"}`;
+  qualityGateSummaryEl.innerHTML = `
+    <div>
+      <strong>质量门禁 · ${escapeHtml(stateText)}</strong>
+      <span>staged ${Number(qualityGates.staged_files?.length || 0)} · secrets ${Number(qualityGates.sensitive_findings?.length || 0)}</span>
+    </div>
+    <small>${escapeHtml(warnings.slice(0, 2).join("；") || "无阻断项")}</small>
+  `;
 }
 
 async function refreshReviewPanel() {

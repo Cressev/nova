@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from nova.lsp import LspManager
+from .quality_gate import PYTHON_BIN, QualityGateManager
 
 
 class ReviewManager:
@@ -22,6 +23,7 @@ class ReviewManager:
         diagnostics = self.lsp.diagnostics()
         risks = self._risks(changed_files, diff_text, diagnostics)
         suggested_tests = self._suggested_tests(changed_files, diagnostics)
+        quality_gates = QualityGateManager(self.project_root).summary()
         return {
             "ok": True,
             "project_root": str(self.project_root),
@@ -37,6 +39,7 @@ class ReviewManager:
             "diagnostics": diagnostics,
             "risks": risks,
             "suggested_tests": suggested_tests,
+            "quality_gates": quality_gates,
             "summary": self._summary_text(changed_files, risks, diagnostics, suggested_tests),
         }
 
@@ -149,13 +152,13 @@ class ReviewManager:
         if has_python:
             commands.append({
                 "label": "Python 单元测试",
-                "command": "PYTHONPATH=src python3 -m unittest discover -s tests",
+                "command": f"PYTHONPATH=src {PYTHON_BIN} -m unittest discover -s tests",
                 "reason": "覆盖后端 API、工具和 LSP/Review 逻辑。",
             })
         if has_frontend:
             commands.append({
                 "label": "前端静态测试",
-                "command": "for f in tests/frontend*.test.js; do node \"$f\"; done",
+                "command": 'for f in tests/frontend_*.test.js; do node "$f" || exit 1; done',
                 "reason": "覆盖右侧面板、命令菜单和工具展示的静态契约。",
             })
         if diagnostics.get("diagnostics"):
@@ -216,6 +219,7 @@ class ReviewManager:
 
     def _is_allowed_test_command(self, command: str) -> bool:
         allowed_prefixes = (
+            f"PYTHONPATH=src {PYTHON_BIN} -m unittest",
             "PYTHONPATH=src python3 -m unittest",
             "python3 -m unittest",
             "python3 -m compileall",
