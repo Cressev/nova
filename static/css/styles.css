@@ -261,6 +261,7 @@ button:disabled {
 
 body.sidebar-collapsed .sidebar {
   width: 56px;
+  padding: 14px 8px 12px;
 }
 
 body.sidebar-collapsed .sidebar-title,
@@ -271,6 +272,35 @@ body.sidebar-collapsed .workspace-entry #project-name,
 body.sidebar-collapsed .sidebar-sessions,
 body.sidebar-collapsed .foot-label {
   display: none;
+}
+
+/* 折叠态头部纵向堆叠成图标栏：logo / 主题 / 展开按钮从左到右变为从上到下，
+   避免横向排列溢出 56px 被 overflow:hidden 裁剪导致展开按钮不可点 */
+body.sidebar-collapsed .sidebar-head {
+  flex-direction: column;
+  gap: 8px;
+}
+
+body.sidebar-collapsed .theme-toggle {
+  margin-left: 0;
+}
+
+body.sidebar-collapsed .new-session {
+  padding: 0;
+}
+
+body.sidebar-collapsed .workspace-entry {
+  justify-content: center;
+  padding: 0;
+}
+
+body.sidebar-collapsed .group-label {
+  justify-content: center;
+}
+
+body.sidebar-collapsed .sidebar-foot-button {
+  justify-content: center;
+  padding: 0;
 }
 
 .sidebar-head {
