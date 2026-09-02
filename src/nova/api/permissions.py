@@ -57,5 +57,6 @@ def _session_runner() -> ctx.SessionRunner:
             tool_orchestrator_factory=ctx._tool_orchestrator,
             event_builder_for_existing_turn=ctx._event_builder_for_existing_turn,
             denied_tool_message_builder=ctx._denied_tool_alternative_message,
+            compaction_engine_factory=ctx._compaction_engine,
         )
     )

@@ -2444,6 +2444,26 @@ function appendMessage(message, options = {}) {
   const targetId = options.showDivider && message.role === "user"
     ? appendTurnDivider(message)
     : `message-${message.id || Date.now()}`;
+  // dsh compaction：checkpoint 消息渲染为单行折叠行，不占对话气泡位
+  const content = message.content || "";
+  const isCheckpoint = (message.id || "").startsWith("comp_") || content.includes("<compacted-summary>");
+  if (isCheckpoint) {
+    const node = document.createElement("article");
+    node.className = "message checkpoint";
+    node.id = targetId;
+    node.dataset.messageId = message.id || "";
+    const summaryMatch = content.match(/<compacted-summary>([\s\S]*?)<\/compacted-summary>/);
+    const summaryText = summaryMatch ? summaryMatch[1].trim() : content;
+    node.innerHTML = `
+      <details class="checkpoint-details">
+        <summary>◷ 上下文检查点 · 更早的对话已压缩为摘要</summary>
+        <pre class="checkpoint-body">${escapeHtml(summaryText)}</pre>
+      </details>
+    `;
+    messagesEl.appendChild(node);
+    scrollMessagesToBottom();
+    return node;
+  }
   const node = document.createElement("article");
   node.className = `message ${message.role}${options.queued ? " queued" : ""}`;
   node.id = targetId;

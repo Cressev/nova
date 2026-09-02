@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from ..memory import ProjectMemory
+from ..compaction.pruner import prune_tool_results
 from ..models import ChatMessage, ChatRole
 from ..processes.manager import ProcessManager
 from ..providers.bigmodel import BigModelProvider, ProviderError
@@ -206,7 +207,7 @@ class CodexLikeAgentRuntime:
             content=(
                 "请基于下面的真实工具结果回答用户。要求：中文、直接、不要编造；"
                 "如果工具结果已经足够，就用自然语言解释结果；不要输出 <tool_call>。\n\n"
-                "工具结果 JSON：\n" + "\n".join(result_json_items)
+                "工具结果 JSON：\n" + "\n".join(prune_tool_results(result_json_items))
             ),
         )
         messages = [

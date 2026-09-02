@@ -304,6 +304,20 @@ class ApiTest(unittest.TestCase):
         self.assertIn("current_project_path", payload)
 
     def test_context_budget_compacts_and_trims_messages_before_agent_stream(self) -> None:
+        """pressure 触发压缩：旧历史被 checkpoint 遮蔽并从模型请求消失（dsh 语义）。"""
+
+        from nova.compaction import CompactionEngine
+
+        class FakeSummaryProvider:
+            provider_name = "bigmodel"
+            model = "glm-4.7"
+
+            async def complete(self, messages):
+                return (
+                    "## Primary Request and Intent\n- 对标 dsh compaction 的压力压缩语义\n"
+                    "## Files and Code\n- (none)"
+                )
+
         captured_messages: list[list[app_module.ChatMessage]] = []
 
         async def fake_agent_stream(messages):
@@ -311,9 +325,18 @@ class ApiTest(unittest.TestCase):
             yield {"type": "assistant_delta", "delta": "预算后继续"}
             yield {"type": "assistant_done_content", "content": "预算后继续"}
 
+        # 676：足够触发压力压缩（18 条历史 ≈ 540 tokens ≥ 0.8×676），
+        # 又容得下 checkpoint + 保留尾部不被二级预算守卫裁掉。
         old_context = app_module.settings.context_window_tokens
-        object.__setattr__(app_module.settings, "context_window_tokens", 180)
+        object.__setattr__(app_module.settings, "context_window_tokens", 676)
         self.addCleanup(lambda: object.__setattr__(app_module.settings, "context_window_tokens", old_context))
+
+        engine = CompactionEngine(
+            store=app_module.store,
+            provider=FakeSummaryProvider(),
+            system_prompt_provider=lambda: "SYS",
+            context_window_tokens=676,
+        )
 
         session_response = self.client.post(
             "/api/chat/sessions",
@@ -346,20 +369,24 @@ class ApiTest(unittest.TestCase):
             stream = staticmethod(fake_agent_stream)
 
         with patch.object(app_module, "_agent_runtime", lambda: FakeRuntime()):
-            with self.client.stream(
-                "POST",
-                f"/api/chat/sessions/{session['id']}/stream",
-                json={"content": "继续处理预算后的问题"},
-            ) as response:
-                self.assertEqual(response.status_code, 200)
-                lines = [line for line in response.iter_lines() if line.strip()]
+            with patch.object(app_module, "_compaction_engine", lambda: engine):
+                with self.client.stream(
+                    "POST",
+                    f"/api/chat/sessions/{session['id']}/stream",
+                    json={"content": "继续处理预算后的问题"},
+                ) as response:
+                    self.assertEqual(response.status_code, 200)
+                    lines = [line for line in response.iter_lines() if line.strip()]
 
         self.assertEqual(len(captured_messages), 1)
         sent_contents = "\n".join(message.content for message in captured_messages[0])
         self.assertIn("继续处理预算后的问题", sent_contents)
         self.assertIn("关键工具结果摘要", sent_contents)
         self.assertIn("README 里说明 Nova", sent_contents)
+        # 旧历史被遮蔽：不再进入模型请求，由 checkpoint 承接。
         self.assertNotIn("old-0", sent_contents)
+        self.assertIn("automatically generated checkpoint", sent_contents)
+        self.assertIn("<compacted-summary>", sent_contents)
         self.assertLess(len(captured_messages[0]), 21)
 
         runtime_events = [
@@ -367,16 +394,25 @@ class ApiTest(unittest.TestCase):
             for line in lines
             if app_module.json.loads(line).get("type") == "runtime_event"
         ]
-        budget_events = [event for event in runtime_events if event["event_type"] == "context.budgeted"]
-        self.assertEqual(len(budget_events), 1)
-        self.assertGreater(budget_events[0]["data"]["dropped_message_count"], 0)
-        compact_events = [event for event in runtime_events if event["event_type"] == "memory.compacted"]
-        self.assertEqual(len(compact_events), 1)
-        self.assertEqual(compact_events[0]["data"]["trigger"], "auto_context_budget")
+        start_events = [e for e in runtime_events if e["event_type"] == "compaction.start"]
+        summary_events = [e for e in runtime_events if e["event_type"] == "compaction.summary"]
+        end_events = [
+            e
+            for e in runtime_events
+            if e["event_type"] == "compaction.end" and e["status"] == "ok"
+        ]
+        self.assertEqual(len(start_events), 1)
+        self.assertEqual(len(summary_events), 1)
+        self.assertEqual(len(end_events), 1)
+        self.assertEqual(summary_events[0]["data"]["trigger"], "pressure")
+        self.assertTrue(summary_events[0]["data"]["shadowed_message_ids"])
+        self.assertTrue(summary_events[0]["data"]["checkpoint_message_id"])
+        # 压缩后 surface 已瘦身：压力回到正常区（statusline 按 surface 计量）。
+        statusline = self.client.get(
+            "/api/runtime/statusline", params={"session_id": session["id"]}
+        ).json()
+        self.assertIn(statusline["context_budget_status"], {"normal", "warning"})
 
-        statusline = self.client.get("/api/runtime/statusline", params={"session_id": session["id"]}).json()
-        self.assertIn(statusline["context_budget_status"], {"warning", "critical"})
-        self.assertTrue(statusline["compact_recommended"])
 
     def test_workspace_list_and_select(self) -> None:
         workspaces = self.client.get("/api/workspaces")
@@ -814,28 +850,38 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(stored[0]["type"], "permission")
 
     def test_stream_maps_compact_runtime_event(self) -> None:
-        async def fake_agent_stream(messages):
-            yield {
-                "type": "compact_done",
-                "title": "Conversation compacted",
-                "message": "会话已压缩，摘要已写入 .nova/memory/session.md。",
-                "summary": "# 会话压缩摘要\n- 对标 Codex",
-                "path": "/tmp/project/.nova/memory/session.md",
-                "covered_messages": 3,
-            }
-            yield {"type": "assistant_delta", "delta": "会话已压缩"}
-            yield {"type": "assistant_done_content", "content": "会话已压缩"}
+        """/compact 由压缩引擎接管：start/summary/end 事件 + checkpoint 消息。"""
 
+        from nova.compaction import CompactionEngine
+
+        class FakeSummaryProvider:
+            provider_name = "bigmodel"
+            model = "glm-4.7"
+
+            async def complete(self, messages):
+                return "## Primary Request and Intent\n- 对标 dsh /compact 语义"
+
+        engine = CompactionEngine(
+            store=app_module.store,
+            provider=FakeSummaryProvider(),
+            system_prompt_provider=lambda: "SYS",
+            context_window_tokens=676,
+        )
         session_response = self.client.post(
             "/api/chat/sessions",
             json={"title": "压缩事件测试"},
         )
         session = session_response.json()
+        for index in range(8):
+            app_module.store.add_chat_message(
+                app_module.ChatMessage(
+                    session_id=session["id"],
+                    role=app_module.ChatRole.USER if index % 2 == 0 else app_module.ChatRole.ASSISTANT,
+                    content=f"历史消息 {index} " + "上下文压缩测试 " * 8,
+                )
+            )
 
-        class FakeRuntime:
-            stream = staticmethod(fake_agent_stream)
-
-        with patch.object(app_module, "_agent_runtime", lambda: FakeRuntime()):
+        with patch.object(app_module, "_compaction_engine", lambda: engine):
             with self.client.stream(
                 "POST",
                 f"/api/chat/sessions/{session['id']}/stream",
@@ -849,20 +895,27 @@ class ApiTest(unittest.TestCase):
             for line in lines
             if app_module.json.loads(line).get("type") == "runtime_event"
         ]
-        compact_events = [event for event in runtime_events if event["event_type"] == "memory.compacted"]
-        self.assertEqual(len(compact_events), 1)
-        self.assertEqual(compact_events[0]["category"], "status")
-        self.assertEqual(compact_events[0]["data"]["covered_messages"], 3)
-        self.assertIn("对标 Codex", compact_events[0]["data"]["summary"])
+        types = [event["event_type"] for event in runtime_events]
+        self.assertEqual(types.count("compaction.start"), 1)
+        self.assertEqual(types.count("compaction.summary"), 1)
+        self.assertEqual(types.count("compaction.end"), 1)
+        summary_events = [e for e in runtime_events if e["event_type"] == "compaction.summary"]
+        self.assertEqual(summary_events[0]["category"], "compaction")
+        self.assertEqual(summary_events[0]["data"]["trigger"], "manual")
+        self.assertIn("对标 dsh /compact 语义", summary_events[0]["data"]["summary"])
+        checkpoint_id = summary_events[0]["data"]["checkpoint_message_id"]
+        self.assertTrue(checkpoint_id.startswith("comp_"))
 
-        timeline = self.client.get(f"/api/chat/sessions/{session['id']}/timeline")
-        stored = [
+        # checkpoint 消息落库且在 timeline 可见。
+        timeline = self.client.get(f"/api/chat/sessions/{session['id']}/timeline").json()
+        checkpoint_items = [
             item["item"]
-            for item in timeline.json()["items"]
-            if item["kind"] == "event" and item["item"].get("event_type") == "memory.compacted"
+            for item in timeline["items"]
+            if item["kind"] == "message" and item["item"]["id"] == checkpoint_id
         ]
-        self.assertEqual(len(stored), 1)
-        self.assertEqual(stored[0]["type"], "status")
+        self.assertEqual(len(checkpoint_items), 1)
+        self.assertIn("<compacted-summary>", checkpoint_items[0]["content"])
+
 
     def test_stream_processes_queued_messages_after_current_turn(self) -> None:
         seen_prompts: list[str] = []

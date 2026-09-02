@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Iterable
 
+from .compaction.pruner import prune_tool_result_text
 from .models import ChatEvent, ChatMessage, ChatRole, new_id
 
 
@@ -125,11 +126,20 @@ def _auto_compact_threshold(effective_window_tokens: int) -> int:
 
 
 def _message_input_tokens(messages: Iterable[ChatMessage]) -> int:
-    return sum(estimate_tokens(message.content) for message in messages if message.role in {ChatRole.USER, ChatRole.SYSTEM})
+    # dsh token-meter：每条消息计入角色字段框架开销（ROLE_OVERHEAD=4）。
+    return sum(
+        estimate_tokens(message.content) + 4
+        for message in messages
+        if message.role in {ChatRole.USER, ChatRole.SYSTEM}
+    )
 
 
 def _message_output_tokens(messages: Iterable[ChatMessage]) -> int:
-    return sum(estimate_tokens(message.content) for message in messages if message.role in {ChatRole.ASSISTANT, ChatRole.ERROR})
+    return sum(
+        estimate_tokens(message.content) + 4
+        for message in messages
+        if message.role in {ChatRole.ASSISTANT, ChatRole.ERROR}
+    )
 
 
 def _event_input_tokens(events: Iterable[ChatEvent]) -> int:
@@ -181,7 +191,8 @@ def _key_tool_result_summary(session_id: str, events: list[ChatEvent], *, max_to
     used = estimate_tokens("\n".join(lines))
     count = 0
     for event in reversed(selected):
-        preview = _compact_text(event.output or "", 520)
+        # dsh pruner：预览前先做头尾剪枝，超大输出的中段不进入摘要。
+        preview = _compact_text(prune_tool_result_text(event.output or ""), 520)
         line = f"- {event.tool or 'tool'} / {event.title}: {preview}"
         cost = estimate_tokens(line)
         if count > 0 and used + cost > max_tokens:

@@ -4,8 +4,8 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Any
 
+from ..compaction import CompactionEngine, is_context_overflow_error
 from ..context_budget import ContextBudgetPlan
-from ..memory import ProjectMemory
 from ..models import ChatMessage, ChatRole
 from ..providers.bigmodel import ProviderError
 from ..sessions import AgentSessionService, SessionStore
@@ -34,6 +34,8 @@ class SessionRunDependencies:
     tool_orchestrator_factory: Callable[[], Any]
     event_builder_for_existing_turn: Callable[[str, str], Callable[..., dict[str, Any]]]
     denied_tool_message_builder: Callable[..., str]
+    # 压缩引擎工厂（dsh compaction 能力注入点；测试可替换为 stub）。
+    compaction_engine_factory: Callable[[], Any] | None = None
 
 
 class SessionRunner:
@@ -207,8 +209,29 @@ class SessionRunner:
         yield {"type": "runtime_event", "event": started}
 
         answer_parts: list[str] = []
+        engine = self._compaction_engine()
         try:
+            # /compact 手动路径：与运行中的轮次天然串行（作为用户消息排队进入），
+            # 对应 dsh command-compact 的排队语义；空闲会话立即执行。
+            stripped = user_message.content.strip()
+            if stripped == "/compact" or stripped.startswith("/compact "):
+                extra = stripped[len("/compact"):].strip()
+                async for event in self._run_manual_compaction(
+                    orchestrator, engine, session_id, extra
+                ):
+                    yield event
+                return
+
+            # pre-step 压力压缩（dsh agent/pre-step 瀑布位）：先压缩再推导请求。
+            async for event in self._pre_step_compaction(orchestrator, engine, session_id):
+                yield event
+
+            # surface 投影：被 checkpoint 遮蔽的历史不再进入模型请求。
             history = [
+                message
+                for message in engine.surface_messages(session_id)
+                if message.id != user_message.id
+            ] if engine is not None else [
                 message
                 for message in self.deps.store.list_chat_messages(session_id)
                 if message.id != user_message.id
@@ -220,13 +243,6 @@ class SessionRunner:
                 events=self.deps.store.list_chat_events(session_id),
                 context_window_tokens=self.deps.context_window_tokens,
             )
-            async for event in self._maybe_auto_compact(
-                orchestrator,
-                all_turn_messages=all_turn_messages,
-                user_message=user_message,
-                budget=budget,
-            ):
-                yield event
 
             budgeted = orchestrator.event(
                 "context.budgeted",
@@ -245,38 +261,74 @@ class SessionRunner:
             )
             yield {"type": "runtime_event", "event": budgeted}
 
-            runtime = self.deps.runtime_factory()
-            try:
-                stream = runtime.stream(budget.messages, trace_turn_id=turn_id)
-            except TypeError:
-                stream = runtime.stream(budget.messages)
-            async for event in stream:
-                if orchestrator.is_cancel_requested():
-                    yield {"type": "runtime_event", "event": orchestrator.cancel_turn()}
-                    return
-                runtime_event = self.deps.runtime_event_from_agent_event(
-                    event,
-                    orchestrator.event,
-                )
-                if runtime_event is not None:
-                    yield {"type": "runtime_event", "event": runtime_event}
-                if event["type"] == "permission_request":
-                    orchestrator.register_permission_request(
-                        event,
-                        runtime_event=runtime_event,
-                    )
-                if event["type"] == "assistant_delta":
-                    answer_parts.append(event["delta"])
-                    yield event
-                    if orchestrator.is_cancel_requested():
-                        yield {"type": "runtime_event", "event": orchestrator.cancel_turn()}
-                        return
-                    continue
-                if event["type"] == "assistant_done_content":
-                    if not answer_parts and event.get("content"):
-                        answer_parts.append(str(event["content"]))
-                    continue
-                yield event
+            # 溢出恢复（dsh request-error 位）：请求超长失败 → 压缩 → 重试一次。
+            overflow_retry_used = False
+            while True:
+                runtime = self.deps.runtime_factory()
+                try:
+                    stream = runtime.stream(budget.messages, trace_turn_id=turn_id)
+                except TypeError:
+                    stream = runtime.stream(budget.messages)
+                try:
+                    async for event in stream:
+                        if orchestrator.is_cancel_requested():
+                            yield {"type": "runtime_event", "event": orchestrator.cancel_turn()}
+                            return
+                        runtime_event = self.deps.runtime_event_from_agent_event(
+                            event,
+                            orchestrator.event,
+                        )
+                        if runtime_event is not None:
+                            yield {"type": "runtime_event", "event": runtime_event}
+                        if event["type"] == "permission_request":
+                            orchestrator.register_permission_request(
+                                event,
+                                runtime_event=runtime_event,
+                            )
+                        if event["type"] == "assistant_delta":
+                            answer_parts.append(event["delta"])
+                            yield event
+                            if orchestrator.is_cancel_requested():
+                                yield {"type": "runtime_event", "event": orchestrator.cancel_turn()}
+                                return
+                            continue
+                        if event["type"] == "assistant_done_content":
+                            if not answer_parts and event.get("content"):
+                                answer_parts.append(str(event.get("content")))
+                            continue
+                        yield event
+                    break
+                except ProviderError as stream_exc:
+                    if (
+                        not overflow_retry_used
+                        and not answer_parts
+                        and engine is not None
+                        and is_context_overflow_error(stream_exc)
+                    ):
+                        overflow_retry_used = True
+                        retry_events: list[dict[str, Any]] = []
+                        result = await engine.compact_if_needed(
+                            session_id,
+                            trigger="context-overflow",
+                            recorder=orchestrator.event,
+                            events_out=retry_events,
+                        )
+                        for retry_event in retry_events:
+                            yield {"type": "runtime_event", "event": retry_event}
+                        if result is not None:
+                            history = [
+                                message
+                                for message in engine.surface_messages(session_id)
+                                if message.id != user_message.id
+                            ]
+                            budget = self.deps.build_context_budget_plan(
+                                session_id=session_id,
+                                messages=[*history, user_message],
+                                events=self.deps.store.list_chat_events(session_id),
+                                context_window_tokens=self.deps.context_window_tokens,
+                            )
+                            continue
+                    raise
 
             assistant_message = ChatMessage(
                 session_id=session_id,
@@ -318,40 +370,83 @@ class SessionRunner:
             yield {"type": "runtime_event", "event": failed}
             yield {"type": "error", "message": error_message.model_dump(mode="json")}
 
-    async def _maybe_auto_compact(
+    def _compaction_engine(self) -> CompactionEngine | None:
+        """压缩引擎（dsh ctx.compaction 注入点）；未注入时退化为纯预算裁剪。"""
+        factory = getattr(self.deps, "compaction_engine_factory", None)
+        if factory is None:
+            return None
+        return factory()
+
+    async def _pre_step_compaction(
         self,
         orchestrator: RunOrchestrator,
-        *,
-        all_turn_messages: list[ChatMessage],
-        user_message: ChatMessage,
-        budget: ContextBudgetPlan,
+        engine: CompactionEngine | None,
+        session_id: str,
     ) -> AsyncIterator[dict]:
-        if not budget.should_auto_compact:
+        """dsh agent/pre-step 压力位：达到阈值先压缩，再推导本轮请求。"""
+        if engine is None:
             return
-        if user_message.content.lstrip().startswith("/compact"):
+        used = engine.measure_surface_tokens(session_id)
+        if used < engine.threshold_tokens():
             return
-        memory = ProjectMemory(
-            self.deps.project_root_provider(),
-            global_agent_file=self.deps.global_agent_file_provider(),
+        events: list[dict[str, Any]] = []
+        await engine.compact_if_needed(
+            session_id,
+            trigger="pressure",
+            recorder=orchestrator.event,
+            events_out=events,
         )
-        result = memory.compact_session(
-            all_turn_messages,
-            instruction="自动上下文预算触发：保留关键事实、当前目标、最近决策和未完成事项。",
+        for event in events:
+            yield {"type": "runtime_event", "event": event}
+
+    async def _run_manual_compaction(
+        self,
+        orchestrator: RunOrchestrator,
+        engine: CompactionEngine | None,
+        session_id: str,
+        extra_instruction: str,
+    ) -> AsyncIterator[dict]:
+        """dsh command-compact 语义：显式把历史压缩为 checkpoint 并回流上下文。"""
+        if engine is None:
+            fallback = orchestrator.event(
+                "compaction.unavailable",
+                category="compaction",
+                phase="failed",
+                status="failed",
+                title="压缩引擎不可用",
+                message="当前部署未注入压缩引擎。",
+            )
+            yield {"type": "runtime_event", "event": fallback}
+            return
+        events: list[dict[str, Any]] = []
+        result = await engine.compact_now(
+            session_id,
+            recorder=orchestrator.event,
+            events_out=events,
+            instruction=extra_instruction,
         )
-        compacted = orchestrator.event(
-            "memory.compacted",
-            category="status",
-            phase="completed",
-            title="自动上下文压缩",
-            message="上下文预算接近上限，已自动执行 /compact 并写入会话摘要。",
-            data={
-                "summary": str(result.get("summary") or ""),
-                "path": str(result.get("path") or ""),
-                "covered_messages": int(result.get("covered_messages") or 0),
-                "trigger": "auto_context_budget",
-            },
+        for event in events:
+            yield {"type": "runtime_event", "event": event}
+        if result is None:
+            content = "压缩未能产生新的检查点（可能没有可压缩区域，或摘要生成失败）；上下文保持不变。"
+        else:
+            preview = result.summary.strip().splitlines()[0][:200] if result.summary.strip() else ""
+            content = (
+                f"已压缩 {len(result.shadowed_message_ids)} 条较早历史"
+                f"（约 {result.shadowed_token_count} tokens）为检查点。{preview}"
+            )
+        assistant_message = ChatMessage(
+            session_id=session_id,
+            role=ChatRole.ASSISTANT,
+            content=content,
         )
-        yield {"type": "runtime_event", "event": compacted}
+        self.deps.store.add_chat_message(assistant_message)
+        completed = orchestrator.complete_turn(
+            message_id=assistant_message.id,
+            content=assistant_message.content,
+        )
+        yield {"type": "runtime_event", "event": completed}
+        yield {"type": "assistant_done", "message": assistant_message.model_dump(mode="json")}
 
     def _persist_existing_runtime_event(self, event: dict[str, Any]) -> None:
         self.deps.persist_event(event)

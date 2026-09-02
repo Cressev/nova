@@ -344,6 +344,48 @@ body.sidebar-collapsed
   text-decoration: underline;
 }
 
+
+/* ---- compaction checkpoint 折叠行（dsh 检查点消息形态） ---- */
+.message.checkpoint {
+  justify-self: start;
+  width: min(720px, 92%);
+}
+
+.checkpoint-details {
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  padding: 0 0 6px;
+}
+
+.checkpoint-details summary {
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 24px;
+  list-style: none;
+  user-select: none;
+}
+
+.checkpoint-details summary::marker {
+  content: "";
+}
+
+.checkpoint-details[open] summary {
+  color: var(--dsw-alias-label-primary);
+}
+
+.checkpoint-body {
+  overflow-x: auto;
+  margin: 6px 0 0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--ds-font-family-code, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  font-size: 12px;
+  line-height: 19px;
+  white-space: pre-wrap;
+}
+
 .theme-toggle {
   margin-left: 0;
 }

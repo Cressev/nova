@@ -127,6 +127,28 @@ def _workspace_tools() -> WorkspaceTools:
     )
 
 
+def _compaction_engine():
+    """压缩引擎工厂（dsh ctx.compaction 的注入位）。
+
+    system prompt 通过 runtime 取，保证摘要请求的前缀与真实请求逐字一致，
+    provider 侧 KV 前缀缓存可复用（dsh summarizer 的关键设计）。
+    """
+    from ..compaction import CompactionEngine
+
+    return CompactionEngine(
+        store=store,
+        provider=provider,
+        # runtime 可能被测试替换为 FakeRuntime：system prompt 缺失时按空串计价，
+        # 不能让压缩测量打断正常 turn。
+        system_prompt_provider=lambda: (
+            _agent_runtime()._system_prompt()
+            if callable(getattr(_agent_runtime(), "_system_prompt", None))
+            else ""
+        ),
+        context_window_tokens=settings.context_window_tokens,
+    )
+
+
 def _agent_runtime() -> CodexLikeAgentRuntime:
     if _runtime_override is not None:
         return _runtime_override
@@ -489,9 +511,15 @@ def _estimate_session_tokens(session_id: str) -> dict:
 
 
 def _context_budget_status(session_id: str):
+    # dsh 语义：压力按 surface（模型可见表层）计量，被 checkpoint 遮蔽的
+    # 历史不再计入——压缩完成后 UI 压力应立即回落，而不是永远 critical。
+    try:
+        surface = _compaction_engine().surface_messages(session_id)
+    except Exception:
+        surface = store.list_chat_messages(session_id)
     return build_context_budget_plan(
         session_id=session_id,
-        messages=store.list_chat_messages(session_id),
+        messages=surface,
         events=store.list_chat_events(session_id),
         context_window_tokens=settings.context_window_tokens,
     )

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any
 
+from ..compaction.pruner import prune_tool_results
 from ..models import ChatMessage, ChatRole
 
 
@@ -105,7 +106,8 @@ class AgentLoop:
                     ChatMessage(
                         session_id="agent",
                         role=ChatRole.USER,
-                        content="工具结果：\n" + "\n".join(tool_results),
+                        # dsh tool-result-pruner：超大输出先做确定性头尾剪枝再进入上下文。
+                        content="工具结果：\n" + "\n".join(prune_tool_results(tool_results)),
                     ),
                 ]
             )
