@@ -3109,6 +3109,29 @@ sidebarToggleEl.addEventListener("click", () => {
   applyShellChromeState();
 });
 
+// 明暗主题切换：沿用 dsh 的 data-ds-dark-theme 属性约定，localStorage 持久化
+const themeToggleEl = document.querySelector("#theme-toggle");
+
+function applyThemePreference() {
+  const saved = window.localStorage.getItem("nova.theme");
+  const dark = saved ? saved === "dark" : false;
+  document.body.classList.toggle("booting-theme", false);
+  if (dark) {
+    document.body.setAttribute("data-ds-dark-theme", "");
+  } else {
+    document.body.removeAttribute("data-ds-dark-theme");
+  }
+}
+
+if (themeToggleEl) {
+  themeToggleEl.addEventListener("click", () => {
+    const dark = document.body.hasAttribute("data-ds-dark-theme");
+    window.localStorage.setItem("nova.theme", dark ? "light" : "dark");
+    applyThemePreference();
+  });
+  applyThemePreference();
+}
+
 inspectorToggleEl.addEventListener("click", () => {
   state.inspectorCollapsed = !state.inspectorCollapsed;
   writeStorageBool("nova.inspectorCollapsed", state.inspectorCollapsed);
