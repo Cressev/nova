@@ -1485,14 +1485,23 @@ api 就不能再拆了吗？拆。
 - [x] 1. 定位发送/排队按钮样式和现有交互测试。
 - [x] 2. 调整 composer 操作区视觉，让发送/排队按钮更轻、更小、更协调。
 - [x] 3. 运行前端相关测试和语法检查。
-- [] 4. 启动 Nova 本地服务，用浏览器截图验证空闲发送态。
-- [] 5. 通过浏览器模拟运行态或真实交互，截图验证排队态。
-- [] 6. 检查控制台错误，更新日志、Done 记录并交付 URL。
+- [x] 4. 启动 Nova 本地服务，用浏览器截图验证空闲发送态。
+- [x] 5. 通过浏览器模拟运行态或真实交互，截图验证排队态。
+- [x] 6. 检查控制台错误，更新日志、Done 记录并交付 URL。
 
 执行问题记录：
-- 暂无
+- 系统 `python3` 环境缺少 `uvicorn`，已改用项目此前验证过的 conda `claude` 环境启动 Nova 服务。
+- 本机 Playwright 缺当前 Chromium，下载过程较大且被用户中断；后续改用系统 Google Chrome 的 headless/CDP 能力完成截图和 console 验证。
+- Chrome headless 普通截图在 stderr 输出过 GPU/shared image 相关日志，但 CDP 页面 console 检查为 0 个 error/warning。
 
------- todo-list end at 进行中 -----
+交付记录：
+- 调整 `static/css/styles.css` 中 composer 操作区：发送/排队/停止按钮不再拉满高度，宽度和图标尺寸收窄，排队态改为轻量淡蓝描边样式。
+- 新增 `tests/frontend_composer_buttons.test.js` 锁定按钮不再恢复旧的大列宽、大按钮宽度。
+- 验证：`node tests/frontend_composer_buttons.test.js`、`node tests/frontend_turn_cancel.test.js`、`node --check static/js/app.js`、全部 `tests/frontend*.test.js`、`git diff --check` 通过。
+- 本地服务验证：`http://127.0.0.1:8768/api/health` 返回 ok。
+- 视觉验证截图：`output/playwright/nova-composer-buttons-idle-cdp.png`、`output/playwright/nova-composer-buttons-queue-cdp.png`。
+
+------ todo-list end at 2026/07/04/15:52:06 -----
 
 ------ todo-list begin at 2026/07/04/15:29:47 -----
 
@@ -1553,3 +1562,136 @@ api 就不能再拆了吗？拆。
 - 本地提交：已完成，提交信息为 `Link background jobs to tool calls`。
 
 ------ todo-list end at 2026/07/04/15:43:58 -----
+
+------ todo-list begin at 2026/07/04/15:59:23 -----
+
+用户请求：
+重新查看文档，收敛开发路线；确认当前下一步是否必要，并继续开发。
+
+制定清单：
+- [x] 1. 重新读取飞书计划文档目录和关键章节。
+- [x] 2. 对照本地 Codex 主线调研报告和需求文档，确认路线偏差。
+- [x] 3. 将下一步从“继续补底层能力”收敛为“当前 session 的运行态统一展示”。
+- [x] 4. 后端 `runtime-state`、`statusline`、`/api/processes` 支持 session-scoped processes。
+- [x] 5. 前端 Processes 面板按当前会话读取后台任务。
+- [x] 6. 补充后端和前端测试，防止不同会话后台任务混在一起。
+- [x] 7. 跑全量 Python、前端、编译和 diff 检查。
+- [x] 8. 重启本地服务并做真实接口验证。
+- [x] 9. 本地 git commit。
+
+执行问题记录：
+- 飞书计划明确步骤五是“前端运行态统一展示”，验收口径也强调“前端少猜测后端发生了什么，而是消费统一事件”。继续做全局 Processes 会让 UI 越来越像杂项面板，而不是当前会话的运行状态。
+- 上一轮后台 job 绑定 call_id 是必要底座，但下一步必须收敛到 session，否则多会话/多项目时用户会看到互相污染的后台任务。
+- 本轮不继续扩大 ProcessManager 能力，而是先让现有后台任务进入 session 视角。
+
+交付记录：
+- 新增 `ctx._process_jobs_for_session(session_id)`，从 `background_job_ids`、tool call `job_id` 和 `call_id` 过滤进程。
+- `runtime-state`、`statusline` 和 `/api/processes?session_id=` 均可返回当前会话相关后台任务。
+- 前端 Processes 面板通过 `processesEndpoint()` 自动携带当前 `session_id`。
+- 验证：目标测试 81 tests OK；Python 全量 185 tests OK；全部前端 Node 测试 OK；`compileall` OK；`git diff --check` OK。
+
+------ todo-list end at 2026/07/04/15:59:23 -----
+
+------ todo-list begin at 2026/07/13/11:06:56 -----
+
+用户请求：
+继续步骤。
+
+制定清单：
+- [x] 1. 继续飞书计划文档步骤七：质量门禁和交付规则。
+- [x] 2. 新增后端质量门禁管理器，固定测试、编译和 diff 检查命令。
+- [x] 3. 增加 staged 文件清单、临时目录提示和敏感信息扫描。
+- [x] 4. 将质量门禁摘要接入 Review API 和 Review 弹窗。
+- [x] 5. 补充后端、API、包结构和前端静态测试。
+- [x] 6. 跑目标测试、全量测试、前端测试、compileall 和 git diff 检查。
+- [x] 7. 用真实 Chrome CDP 打开页面并验证 Review 弹窗质量门禁摘要。
+- [x] 8. 本地提交代码并重启服务。
+- [x] 9. 更新飞书计划文档步骤七完成状态。
+
+执行问题记录：
+- 测试里曾使用形似真实密钥的假值，质量门禁正确拦截；已改成运行时拼接，保留测试语义但避免 staged diff 出现疑似密钥。
+- `TODOList.md` 和 `user-queries.md` 在本轮开始前已有旧脏改，本轮只追加记录，不纳入 `Add quality gate checks` 代码提交。
+
+交付记录：
+- 本地提交：`c7bb785 Add quality gate checks`。
+- 服务地址：`http://127.0.0.1:8767/`。
+- 验证：Python 全量 195 tests OK；前端静态测试、`compileall`、`git diff --check` OK；Chrome CDP 页面 console 事件为 0。
+
+------ todo-list end at 2026/07/13/11:06:56 -----
+
+------ todo-list begin at 2026/09/02/17:33:24 -----
+用户请求原文：这是我自己开发的agent 项目。你先看看现在的开发进展
+
+[x] 读取 durable 文件（CURRENT/PROGRESS/log/user-queries）并登记请求
+[x] 检查代码结构、包分层、测试与 git 状态
+[x] 梳理最近提交与未完成事项
+[x] 汇总当前开发进展并给出评估与下一步建议
+
+交付记录：
+- 本任务为只读复查，无代码改动；验证：Python 195 tests OK，前端 Node 测试全绿，node --check 全过。
+- 结论与建议见本轮聊天汇总；复查结果已追加到 log.md。
+
+------ todo-list end at 2026/09/02/17:34:30 -----
+------ todo-list end at 2026/09/02/17:33:24 -----
+
+------ todo-list begin at 2026/09/02/17:40:20 -----
+用户请求原文：/Users/liam/Code/codex/personal-dev-agent/ref 中下载dsh（deepseek harness）以及git pull最新的codex代码
+
+[x] 登记 user-queries 和 TODOList
+[x] 在 ref/ 下克隆 deepseek-harness（dsh）
+[x] 在 ref/codex 执行 git pull 更新到最新
+[x] 验证两个仓库状态并汇报
+------ todo-list end at 2026/09/02/17:40:20 -----
+
+------ todo-list begin at 2026/09/02/17:47:55 -----
+用户请求原文：你启动一下我的项目我看看
+
+[x] 登记 user-queries 和 TODOList
+[x] 启动 Nova 本地服务（8765）
+[x] 验证 health/首页/provider 状态
+[x] 交付可验证 URL
+
+交付记录：
+- 服务地址：`http://127.0.0.1:8765/`（后台任务运行中，conda claude 环境）。
+- 验证：`/api/health` 返回 ok；首页 200；`/api/provider` configured=true（key 来源 runtime）；`/api/runtime/statusline` 正常返回工作区与权限状态。
+------ todo-list end at 2026/09/02/17:47:55 -----
+
+------ todo-list begin at 2026/09/02/17:51:52 -----
+用户请求原文：页面好丑啊 我的nova现在之后一个web 应用吗，他能像dsh一样有sdk吗，后面我可能还考虑开发cli或者acp协议的代码编辑器用我自己的agent 内。
+
+[x] 登记 user-queries 和 TODOList
+[x] 调研 DSH（deepseek-harness）的 SDK 组织方式
+[x] 评估 Nova 当前架构离 SDK 化/CLI/ACP 有多远
+[x] 给出架构建议和回答
+
+交付记录：
+- 本任务为架构咨询，无代码改动。调研结论：DSH = packages/*（内核 + sdk/protocol+server+client + acp）+ apps/（cli/web 薄壳）；Nova 内核（core/runtime）已无 FastAPI 依赖，SessionRunner 即无头 API，距 in-process SDK 只差公开门面；距 out-of-process SDK/ACP 差一层 stdio JSON-RPC server。详见聊天回复与 log.md。
+------ todo-list end at 2026/09/02/17:51:52 -----
+
+------ todo-list begin at 2026/09/02/17:59:28 -----
+用户请求原文：你先给自己装上视觉检测mcp可以吗，以及web access技能，到时候你可以直接操作我的浏览器。视觉mcp参考网站 https://docs.bigmodel.cn/cn/coding-plan/mcp/vision-mcp-server （API key 已脱敏）
+
+[x] 登记 user-queries 和 TODOList（key 脱敏）
+[x] 调研视觉 MCP 安装方式与 DSH MCP 配置格式
+[x] 把 zai 视觉 MCP 写入 web profile 的 cordis.patch.yml
+[x] 安装 web-access 技能（用户指名的 eze-is/web-access@web-access v2.5.4，另装 agent-browser 作为补充）
+[x] 验证安装结果并告知生效条件
+
+交付记录：
+- 视觉 MCP：`~/.dsh/profiles/web/cordis.patch.yml` 新增 `mcp-zai-vision`（@z_ai/mcp-server@latest，stdio，serverName=zai-vision，key 在 env 中）；真实 stdio 握手验证通过，8 个工具（ui_to_artifact/extract_text/analyze_image/ui_diff_check/analyze_video 等）。生效需用户重启 dsh web（宿主进程，按约定由用户执行）。
+- web-access 技能：`~/.agents/skills/web-access`（v2.5.4），Node 22.22.2 满足；CDP 直连用户日常浏览器，带登录态。剩余用户动作：在 Chrome/Edge 打开 chrome://inspect/#remote-debugging 勾选 Allow remote debugging。
+- agent-browser 技能 + CLI 0.27.0 全局安装作为无头浏览器补充；其自带浏览器下载超时未完成，后续需要时重跑 `agent-browser install`。
+- 首次修正记录：先误装了 agent-browser，用户纠正要的是 eze-is/web-access，已补装正确技能。
+------ todo-list end at 2026/09/02/17:59:28 -----
+
+------ todo-list begin at 2026/09/02/21:33:37 -----
+用户请求原文：新建一个新的git 分支，直接抄dsh的设计，后面我们在这个基础上改
+
+[] 登记 user-queries 和 TODOList
+[] 调研 DSH Web GUI 设计（截图走查 + 源码设计令牌）
+[] 提交 main 上待提交的 durable 改动
+[] 新建 dsh-design 分支
+[] 按照需求实现：Nova 前端视觉与布局对齐 DSH 设计语言
+[] 测试 + 视觉验证（截图对比）
+[] 交付并给出验证 URL
+------ todo-list end at 2026/09/02/21:33:37 -----

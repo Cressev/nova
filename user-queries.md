@@ -690,6 +690,8 @@ api 就不能再拆了吗？拆。
 
 [Recieve:26/07/04-15:08:12 CST]
 
+[Done:26/07/04-15:52:06 CST | 未提交]
+
 ---
 
 开始开发吧（继续 pending approval checkpoint/resume）
@@ -705,3 +707,73 @@ api 就不能再拆了吗？拆。
 [Recieve:26/07/04-15:43:58 CST]
 
 [Done:26/07/04-15:43:58 CST | 本地提交已完成]
+
+---
+
+你重新查看文档，收敛一下你的开发路线，我跟么感觉跑偏了，或者说你说的下一步计划也非常必要，那还是要继续开发的
+
+[Recieve:26/07/04-15:59:23 CST]
+
+[Done:26/07/04-15:59:23 CST | 待本地提交]
+
+---
+
+继续步骤
+
+[Recieve:26/07/13-11:06:56 CST]
+
+[Done:26/07/13-11:06:56 CST | 本地提交 c7bb785，服务已重启]
+
+---
+
+这是我自己开发的agent 项目。你先看看现在的开发进展
+
+[Recieve:26/09/02-17:33:24 CST]
+[Done:26/09/02-17:35:00 CST | 未提交（只读复查）]
+
+---
+
+/Users/liam/Code/codex/personal-dev-agent/ref 中下载dsh（deepseek harness）以及git pull最新的codex代码
+
+[Recieve:26/09/02-17:40:20 CST]
+[Done:26/09/02-17:43:49 CST | 未提交]
+
+---
+
+你启动一下我的项目我看看
+
+[Recieve:26/09/02-17:47:55 CST]
+[Done:26/09/02-17:48:12 CST | 未提交]
+
+---
+
+页面好丑啊 我的nova现在之后一个web 应用吗，他能像dsh一样有sdk吗，后面我可能还考虑开发cli或者acp协议的代码编辑器用我自己的agent 内。
+
+[Recieve:26/09/02-17:51:52 CST]
+[Done:26/09/02-17:52:57 CST | 未提交（架构咨询）]
+
+---
+
+你先给自己装上视觉检测mcp可以吗，以及web access技能，到时候你可以直接操作我的浏览器。视觉mcp参考网站https://docs.bigmodel.cn/cn/coding-plan/mcp/vision-mcp-server api是[已脱敏：Z.ai 视觉 MCP key，避免写入 durable 文件]。
+
+[Recieve:26/09/02-17:59:28 CST]
+[Done:26/09/02-18:09:23 CST | 未提交（DSH 配置与技能安装，不涉及 Nova 仓库）]
+
+---
+
+重启了 也勾选设置了
+
+[Recieve:26/09/02-18:17:55 CST]
+
+---
+
+重启了
+
+[Recieve:26/09/02-19:18:26 CST]
+[Done:26/09/02-19:20:30 CST | 未提交（DSH 环境验证，走查结论见 log.md）]
+
+---
+
+新建一个新的git 分支，直接抄dsh的设计，后面我们在这个基础上改
+
+[Recieve:26/09/02-21:33:37 CST]

@@ -6,6 +6,7 @@ __pycache__/
 .playwright-cli/
 output/
 references/upstream/
+ref/
 dist/
 build/
 *.egg-info/
