@@ -1888,14 +1888,24 @@ async function loadSessions({ refreshMessages = true } = {}) {
     return;
   }
 
-  // dsh 形态：默认不自动恢复历史会话，直接进入新会话空态；
-  // 用户从侧栏点击历史会话时才加载（selectSession 内设置 selectedSessionId）。
   if (state.selectedSessionId && !sessions.some((session) => session.id === state.selectedSessionId)) {
     state.selectedSessionId = null;
     state.selectedSessionTitle = "新会话";
     state.sessionActive = false;
   }
-  if (!state.selectedSessionId) {
+  // dsh 形态：页面加载后自动恢复最近活跃会话（后端按 updated_at 倒序，sessions[0] 即最新），
+  // 避免刷新后首条消息落入新会话导致上下文断裂（"问了上句忘记下句"）。
+  // 用户点了"新会话"则保持空态（state.startNewChat），直到发出第一条消息。
+  if (!state.selectedSessionId && !state.startNewChat && sessions.length > 0 && !state.autoRestored) {
+    const recent = sessions[0];
+    state.autoRestored = true;
+    state.selectedSessionId = recent.id;
+    state.selectedSessionTitle = recent.title || "Nova Chat";
+    chatTitleEl.textContent = state.selectedSessionTitle;
+    if (refreshMessages) {
+      await loadMessages();
+    }
+  } else if (!state.selectedSessionId) {
     syncComposerRunState();
     if (refreshMessages) {
       renderEmptyState();
@@ -3054,6 +3064,7 @@ async function ensureSession() {
 }
 
 newChatEl.addEventListener("click", async () => {
+  state.startNewChat = true;
   const session = await api("/api/chat/sessions", {
     method: "POST",
     body: JSON.stringify({ title: "新线程" }),
@@ -3945,6 +3956,30 @@ form.addEventListener("submit", async (event) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
       });
+      if (queued.status === 200) {
+        // 竞态兜底：前端认为上一轮还在跑，但后端已结束——这次 POST 实际完整执行了一轮。
+        // 不能重发（会重复消息），解析已返回的 SSE 提取回复渲染。
+        const sseText = await queued.text();
+        appendMessage({ id: `local_user_${Date.now()}`, role: "user", content, created_at: new Date().toISOString() });
+        let rescued = "";
+        for (const line of sseText.split("\n")) {
+          try {
+            const evt = JSON.parse(line.trim());
+            if (evt.type === "assistant_done" && evt.message?.content) {
+              rescued = evt.message.content;
+            }
+          } catch {}
+        }
+        if (rescued) {
+          appendMessage({ id: `local_asst_${Date.now()}`, role: "assistant", content: rescued, created_at: new Date().toISOString() });
+        }
+        messageEl.value = "";
+        autoResizeTextarea();
+        messageEl.focus();
+        await loadSessions({ refreshMessages: false });
+        streamStateEl.textContent = rescued ? "回复完成" : "回复已完成，刷新消息以同步";
+        return;
+      }
       if (queued.status !== 202) {
         throw new Error(await queued.text());
       }
@@ -3962,6 +3997,7 @@ form.addEventListener("submit", async (event) => {
   }
   state.sending = true;
   state.sessionActive = true;
+  state.startNewChat = false;
   state.turnCancelRequested = false;
   state.streamAbortController = new AbortController();
   sendButtonEl.disabled = false;
@@ -3995,6 +4031,11 @@ form.addEventListener("submit", async (event) => {
     messageEl.focus();
     followStreamScroll();
     const ok = await streamAssistant(sessionId, content, assistantNode);
+    // 立即复位运行态：后端 turn 已结束，前端若继续标记"运行中"，
+    // 下一条消息会误入排队分支并触发 200 竞态。
+    state.sending = false;
+    state.sessionActive = false;
+    syncComposerRunState();
     streamStateEl.textContent = state.turnCancelRequested ? "已停止" : (ok ? "回复完成" : "请求失败");
     renderRuntimeOverviewFromDom(state.turnCancelRequested ? "cancelled" : (ok ? "completed" : "failed"));
     await Promise.all([
