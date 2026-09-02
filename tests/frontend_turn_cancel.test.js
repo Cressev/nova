@@ -20,6 +20,6 @@ assert(app.includes('querySelectorAll(".tool-event.running")'), "停止兜底必
 const abortIndex = app.indexOf("state.streamAbortController?.abort()");
 const cancelApiIndex = app.indexOf("void api(`/api/chat/sessions/${encodeURIComponent(sessionId)}/cancel`");
 assert(abortIndex !== -1 && cancelApiIndex !== -1 && abortIndex < cancelApiIndex, "点击停止必须先本地 abort stream，再异步通知后端 cancel");
-assert(css.includes("#stop-button"), "独立停止按钮需要样式，用户能立即识别");
-assert(css.includes("#stop-button:disabled"), "停止按钮空闲态需要明确置灰样式");
-assert(css.includes("#send-button.queue"), "排队模式按钮需要独立样式");
+assert(css.includes(".round-button.stop"), "独立停止按钮需要样式，用户能立即识别");
+assert(css.includes(".round-button.stop:disabled"), "停止按钮空闲态隐藏（dsh 形态：空闲只露发送键）");
+assert(css.includes(".round-button.send.queue"), "排队模式按钮需要独立样式");

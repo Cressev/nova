@@ -61,6 +61,90 @@ const state = {
   skills: null,
 };
 
+
+// ---- dsh 形态重构兼容层 ----
+// 新 UI 砍掉了 Inspector、模式卡、技能卡、状态卡、状态线、消息导航轨等面板。
+// 旧代码大量渲染/绑定仍引用这些节点；对已删除的 id 返回幽灵节点使旧逻辑无操作化，
+// 避免逐行清理 4000 行引入回归。后续迭代再逐步删除这些死代码。
+const REMOVED_ELEMENT_IDS = new Set([
+  "health", "provider", "chat-title", "thread-state", "runtime-overview", "runtime-state-panel",
+  "project-root", "workspace-path", "workspace-state", "workspace-project", "workspace-details",
+  "review-state", "review-summary", "quality-gate-summary", "review-risks", "review-tests",
+  "review-run-tests", "review-refresh", "review-test-output",
+  "subagent-spawn", "subagent-prompt", "subagent-list",
+  "mode-list", "mode-pill", "skill-count", "skill-list",
+  "permissions-list", "test-command", "serve-command",
+  "worktree-name", "worktree-create", "worktree-diff", "worktree-cleanup", "worktree-list", "worktree-diff-output",
+  "process-state", "process-list", "tool-count", "tool-list", "mcp-state", "mcp-list",
+  "memory-state", "memory-list", "config-state", "config-list",
+  "workspace-form", "workspace-input", "workspace-candidates", "workspace-suggestions",
+  "composer-statusline", "message-rail", "statusline-toggle", "thread-search",
+  "inspector-dialog", "inspector-dialog-title", "inspector-dialog-close", "inspector-toggle",
+  "memory-dialog", "memory-dialog-title", "memory-dialog-name", "memory-dialog-content",
+  "memory-dialog-state", "memory-dialog-close", "memory-dialog-cancel", "memory-dialog-save",
+]);
+
+const ghostClassList = { add() {}, remove() {}, toggle() {}, contains() { return false; } };
+const ghostStyle = new Proxy({}, { get: () => () => undefined, set: () => true });
+
+function makeGhostElement(id) {
+  const tag = `ghost:${id}`;
+  const proxy = new Proxy(function noop() {}, {
+    get(_t, prop) {
+      switch (prop) {
+        case "isConnected": return false;
+        case "classList": return ghostClassList;
+        case "style": return ghostStyle;
+        case "dataset": return {};
+        case "children":
+        case "childNodes": return [];
+        case "textContent":
+        case "innerText":
+        case "innerHTML":
+        case "value": return "";
+        case "hidden":
+        case "disabled":
+        case "checked":
+        case "open": return false;
+        case "getAttribute": return () => null;
+        case "querySelector": return () => null;
+        case "querySelectorAll": return () => [];
+        case "closest": return () => null;
+        case "appendChild":
+        case "removeChild":
+        case "insertBefore":
+        case "replaceChildren":
+        case "remove":
+        case "removeAttribute":
+        case "setAttribute":
+        case "scrollTo":
+        case "scrollIntoView":
+        case "focus":
+        case "blur":
+        case "click":
+        case "addEventListener":
+        case "removeEventListener":
+        case "showModal":
+        case "close": return () => undefined;
+        default: return undefined;
+      }
+    },
+    set() { return true; },
+    apply() { return undefined; },
+  });
+  return proxy;
+}
+
+const originalQuerySelector = Document.prototype.querySelector;
+Document.prototype.querySelector = function patchedQuerySelector(selector) {
+  if (typeof selector === "string" && selector.startsWith("#")) {
+    const id = selector.slice(1);
+    if (REMOVED_ELEMENT_IDS.has(id)) return makeGhostElement(id);
+  }
+  return originalQuerySelector.call(this, selector);
+};
+// 幽灵节点实现：所有 DOM 读写都是无操作；isConnected=false 供旧 guard 短路。
+
 const healthEl = queryRequired("#health");
 const providerEl = queryRequired("#provider");
 const newChatEl = document.querySelector("#new-chat");
@@ -150,7 +234,7 @@ const memoryDialogCloseEl = document.querySelector("#memory-dialog-close");
 const memoryDialogCancelEl = document.querySelector("#memory-dialog-cancel");
 const memoryDialogSaveEl = document.querySelector("#memory-dialog-save");
 
-if (threadStateEl && streamStateEl) {
+if (threadStateEl && threadStateEl.isConnected !== false && streamStateEl) {
   const syncThreadState = () => {
     threadStateEl.textContent = streamStateEl.textContent || "等待输入";
   };
@@ -1804,9 +1888,18 @@ async function loadSessions({ refreshMessages = true } = {}) {
     return;
   }
 
-  if (!state.selectedSessionId || !sessions.some((session) => session.id === state.selectedSessionId)) {
-    const currentWorkspace = projectRootEl.textContent.trim();
-    state.selectedSessionId = (sessions.find((session) => session.workspace === currentWorkspace) || sessions[0]).id;
+  // dsh 形态：默认不自动恢复历史会话，直接进入新会话空态；
+  // 用户从侧栏点击历史会话时才加载（selectSession 内设置 selectedSessionId）。
+  if (state.selectedSessionId && !sessions.some((session) => session.id === state.selectedSessionId)) {
+    state.selectedSessionId = null;
+    state.selectedSessionTitle = "新会话";
+    state.sessionActive = false;
+  }
+  if (!state.selectedSessionId) {
+    syncComposerRunState();
+    if (refreshMessages) {
+      renderEmptyState();
+    }
   }
 
   const groups = groupSessionsByProject(sessions);
@@ -2015,26 +2108,9 @@ async function selectSession(session) {
 }
 
 function renderEmptyState() {
-  messagesEl.innerHTML = `
-    <div class="empty-state">
-      <h3>启动一个开发线程</h3>
-      <p>像使用 Codex 一样，把目标、上下文、约束和验收标准写进同一个 thread。右侧会持续显示项目、权限和验证状态。</p>
-      <div class="quick-actions">
-        <button type="button" data-prompt="/plan 帮我把下一个开发任务拆成可执行步骤">/plan</button>
-        <button type="button" data-prompt="/review 检查当前未提交变更">/review</button>
-        <button type="button" data-prompt="/status 总结当前线程、模型和工作区状态">/status</button>
-      </div>
-    </div>
-  `;
-  for (const button of messagesEl.querySelectorAll("[data-prompt]")) {
-    button.addEventListener("click", () => {
-      messageEl.value = button.dataset.prompt;
-      messageEl.focus();
-      autoResizeTextarea();
-      updateCommandPalette();
-    });
-  }
-  renderMessageRail();
+  // dsh 形态：空状态由 hero 展示，消息区保持干净；
+  // MutationObserver 会根据 messages 子元素数量自动显隐 hero。
+  messagesEl.innerHTML = "";
 }
 
 function renderMessageLoadError(error) {
@@ -2864,7 +2940,10 @@ newChatEl.addEventListener("click", async () => {
   state.selectedSessionId = session.id;
   state.selectedSessionTitle = session.title;
   chatTitleEl.textContent = session.title;
-  await Promise.all([loadSessions(), refreshStatusline()]);
+  // dsh 形态：新会话回到干净的 hero 空态，清掉上一轮的状态残留
+  messagesEl.innerHTML = "";
+  streamStateEl.textContent = "";
+  await Promise.all([loadSessions({ refreshMessages: false }), refreshStatusline()]);
 });
 
 workspaceFormEl.addEventListener("submit", async (event) => {
@@ -3137,6 +3216,76 @@ inspectorToggleEl.addEventListener("click", () => {
   writeStorageBool("nova.inspectorCollapsed", state.inspectorCollapsed);
   applyShellChromeState();
 });
+
+// ---- dsh 形态新元素接线：composer 工具栏选择器 / 版本徽章 / 空状态 hero ----
+const permissionSelectEl = document.querySelector("#permission-select");
+const modelSelectEl = document.querySelector("#model-select");
+const novaVersionEl = document.querySelector("#nova-version");
+const emptyHeroEl = document.querySelector("#empty-hero");
+const workspaceEntryEl = document.querySelector("[data-workspace-open]");
+
+// 权限预设切换：复用设置页的 derivePermissionConfig，保存后立即生效
+if (permissionSelectEl) {
+  permissionSelectEl.addEventListener("change", async () => {
+    const preset = permissionSelectEl.value;
+    streamStateEl.textContent = "正在切换权限模式";
+    try {
+      state.runtimeConfig = await api("/api/runtime/config", {
+        method: "PATCH",
+        body: JSON.stringify(derivePermissionConfig(preset === "bypass" ? "bypass_permissions" : preset)),
+      });
+      streamStateEl.textContent = state.runtimeConfig.restart_required
+        ? `权限已设为 ${permissionSelectEl.selectedOptions[0]?.textContent || preset}，重启后完全生效`
+        : `权限已设为 ${permissionSelectEl.selectedOptions[0]?.textContent || preset}`;
+    } catch (error) {
+      streamStateEl.textContent = `权限切换失败：${error instanceof Error ? error.message : "未知错误"}`;
+    }
+  });
+}
+
+// 模型切换：写入运行配置的 provider_model
+if (modelSelectEl) {
+  modelSelectEl.addEventListener("change", async () => {
+    const model = modelSelectEl.value;
+    streamStateEl.textContent = "正在切换模型";
+    try {
+      state.runtimeConfig = await api("/api/runtime/config", {
+        method: "PATCH",
+        body: JSON.stringify({ provider_model: model }),
+      });
+      streamStateEl.textContent = `模型已切换为 ${model}`;
+    } catch (error) {
+      streamStateEl.textContent = `模型切换失败：${error instanceof Error ? error.message : "未知错误"}`;
+    }
+  });
+}
+
+// 版本徽章：从 /api/health 读版本号（dsh 的 mono 版本徽章签名细节）
+if (novaVersionEl) {
+  api("/api/health")
+    .then((health) => {
+      novaVersionEl.textContent = health && health.version ? `v${health.version}` : "nova";
+    })
+    .catch(() => {});
+}
+
+// 工作区入口按钮：复用侧栏 ⇄ 按钮的弹窗打开逻辑
+if (workspaceEntryEl && workspaceOpenEl) {
+  workspaceEntryEl.addEventListener("click", () => workspaceOpenEl.click());
+}
+
+// 空状态 hero：会话有消息时隐藏，清空时回归（dsh 空态引导页行为）
+function syncEmptyHero() {
+  if (!emptyHeroEl || !messagesEl) return;
+  const hasContent = messagesEl.childElementCount > 0;
+  emptyHeroEl.hidden = hasContent;
+  emptyHeroEl.style.display = hasContent ? "none" : "";
+}
+
+if (emptyHeroEl && messagesEl) {
+  new MutationObserver(syncEmptyHero).observe(messagesEl, { childList: true });
+  syncEmptyHero();
+}
 
 statuslineToggleEl.addEventListener("click", () => {
   state.statuslineCollapsed = !state.statuslineCollapsed;
@@ -3545,29 +3694,30 @@ function syncComposerRunState() {
   setSendButtonMode(isTurnActive() ? "queue" : "send");
 }
 
+// dsh 形态：圆形图标按钮，无文字 label；queue 态换图标并加 title 提示
 function setSendButtonMode(mode) {
   if (mode === "queue") {
     sendButtonEl.dataset.mode = "queue";
     sendButtonEl.classList.add("queue");
-    sendButtonEl.querySelector(".send-label").textContent = "排队";
-    sendButtonEl.querySelector(".send-icon").textContent = "+";
+    sendButtonEl.textContent = "+";
+    sendButtonEl.title = "排队";
+    sendButtonEl.setAttribute("aria-label", "排队");
     if (stopButtonEl) {
       stopButtonEl.disabled = false;
       stopButtonEl.setAttribute("aria-disabled", "false");
-      stopButtonEl.querySelector(".stop-label").textContent = "停止";
-      stopButtonEl.querySelector(".stop-icon").textContent = "■";
+      stopButtonEl.title = "停止";
     }
     return;
   }
   sendButtonEl.dataset.mode = "send";
   sendButtonEl.classList.remove("queue");
-  sendButtonEl.querySelector(".send-label").textContent = "发送";
-  sendButtonEl.querySelector(".send-icon").textContent = "→";
+  sendButtonEl.textContent = "↑";
+  sendButtonEl.title = "发送";
+  sendButtonEl.setAttribute("aria-label", "发送");
   if (stopButtonEl) {
     stopButtonEl.disabled = true;
     stopButtonEl.setAttribute("aria-disabled", "true");
-    stopButtonEl.querySelector(".stop-label").textContent = "停止";
-    stopButtonEl.querySelector(".stop-icon").textContent = "■";
+    stopButtonEl.title = "停止";
   }
 }
 
@@ -3584,8 +3734,7 @@ async function cancelActiveTurn() {
   if (stopButtonEl) {
     stopButtonEl.disabled = true;
     stopButtonEl.setAttribute("aria-disabled", "true");
-    stopButtonEl.querySelector(".stop-label").textContent = "停止中";
-    stopButtonEl.querySelector(".stop-icon").textContent = "…";
+    stopButtonEl.title = "停止中";
   }
   markRunningToolsAsCancelRequested();
   state.streamAbortController?.abort();

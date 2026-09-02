@@ -8,360 +8,139 @@
     <link rel="stylesheet" href="/static/css/styles.css" />
   </head>
   <body>
-    <main class="app-shell">
-      <aside class="sidebar">
-        <div class="brand">
-          <div class="brand-mark" aria-label="Nova">
-            <span class="brand-orbit"></span>
-            <span class="brand-core">N</span>
-          </div>
-          <div>
+    <!-- dsh 形态：单侧栏 + 对话主区；砍掉右栏 Inspector / 模式卡 / 技能卡 / 状态卡 / 状态线 -->
+    <div class="app">
+      <aside class="sidebar" id="sidebar">
+        <header class="sidebar-head">
+          <div class="brand-mark" aria-label="Nova"><span class="brand-core">N</span></div>
+          <div class="sidebar-title">
             <h1>Nova</h1>
-            <p>个人开发 Agent</p>
           </div>
-          <button id="theme-toggle" class="ghost-button theme-toggle" type="button" aria-label="切换明暗主题" title="切换明暗主题">◐</button>
-          <button id="sidebar-toggle" class="side-toggle" type="button" aria-label="收起左侧栏">‹</button>
-        </div>
-
-        <section class="project-card">
-          <span class="section-label">当前项目</span>
-          <strong id="project-name">personal-dev-agent</strong>
-          <small id="project-root">读取工作区中...</small>
-          <form id="workspace-form" class="workspace-switcher">
-            <input
-              id="workspace-input"
-              list="workspace-candidates"
-              placeholder="输入或选择项目目录"
-              autocomplete="off"
-            />
-            <datalist id="workspace-candidates"></datalist>
-            <div id="workspace-suggestions" class="workspace-suggestions" hidden></div>
-            <button type="submit">切换</button>
-          </form>
-          <button id="workspace-open" class="side-action" type="button">切换项目</button>
-        </section>
-
-        <section class="mode-card side-compact-card">
-          <span class="section-label">运行模式</span>
-          <div id="mode-list" class="mode-list"></div>
-          <button class="side-action" type="button" data-inspector-target="run">查看运行配置</button>
-        </section>
-
-        <button id="new-chat" class="new-chat" type="button">
-          <span>+</span>
-          新线程
-        </button>
-
-        <div class="sidebar-row">
-          <span class="section-label">最近线程</span>
-          <button id="thread-search" class="ghost-button" type="button">搜索</button>
-        </div>
-        <nav id="session-list" class="session-list"></nav>
-
-        <section class="skills-card side-compact-card">
-          <div class="sidebar-row">
-            <span class="section-label">Skills</span>
-            <strong id="skill-count">0</strong>
-          </div>
-          <p>输入 <strong>$</strong> 可在对话中调用技能。</p>
-          <div id="skill-list" class="skill-list">技能加载中</div>
-          <button class="side-action" type="button" data-inspector-target="tools">查看技能和工具</button>
-        </section>
-      </aside>
-
-      <section class="main-panel">
-        <header class="chat-header">
-          <div>
-            <div class="eyebrow">GLM-4.7 / LOCAL GATEWAY</div>
-            <h2 id="chat-title">Nova Chat</h2>
-          </div>
-          <div class="header-actions">
-            <span id="mode-pill" class="pill">本地模式</span>
-            <span id="provider" class="pill">模型检查中</span>
-            <span id="health" class="pill">网关检查中</span>
-            <button id="settings-open" class="icon-button" type="button" aria-label="打开设置">⚙</button>
-          </div>
+          <span class="version-badge" id="nova-version">nova</span>
+          <button id="theme-toggle" class="icon-ghost theme-toggle" type="button" aria-label="切换明暗主题" title="切换明暗主题">◐</button>
+          <button id="sidebar-toggle" class="icon-ghost collapse-toggle" type="button" aria-label="收起侧栏">‹</button>
         </header>
 
-        <section class="thread-plan workbench-strip">
-          <div class="thread-strip-main">
-            <strong>当前线程</strong>
-            <span id="thread-state">等待输入</span>
-          </div>
-          <div id="runtime-overview" class="runtime-overview" aria-live="polite"></div>
-          <div class="thread-actions">
-            <button class="ghost-button" type="button" data-prompt="/status">状态</button>
-            <button class="ghost-button" type="button" data-inspector-target="review">审查</button>
-          </div>
-        </section>
+        <button id="new-chat" class="new-session" type="button">
+          <span class="new-session-icon">⊕</span>
+          <span class="new-session-label">新会话</span>
+        </button>
 
-        <div class="messages-wrap">
-          <section id="messages" class="messages"></section>
-          <nav id="message-rail" class="message-rail" aria-label="历史提问导航"></nav>
+        <div class="sidebar-group">
+          <div class="group-label">
+            <span>工作区</span>
+            <button id="workspace-open" class="icon-ghost" type="button" aria-label="切换工作区" title="切换工作区">⇄</button>
+          </div>
+          <button class="workspace-entry" type="button" data-workspace-open title="切换工作区">
+            <span class="workspace-icon" aria-hidden="true">▭</span>
+            <span id="project-name">读取中</span>
+          </button>
         </div>
 
-        <form id="chat-form" class="composer">
-          <div class="composer-status">
-            <span id="stream-state">准备就绪</span>
-            <span class="composer-hints">/plan /review /status $skill</span>
-            <button id="statusline-toggle" class="statusline-toggle" type="button">收起状态线</button>
-          </div>
-          <textarea
-            id="message"
-            name="message"
-            rows="1"
-            placeholder="和 Nova 对话，让它帮你读代码、拆任务、解释实现..."
-            required
-          ></textarea>
-          <div id="composer-statusline" class="statusline" aria-live="polite"></div>
-          <div id="command-palette" class="command-palette" hidden></div>
-          <div class="composer-actions">
-            <button id="stop-button" class="stop-button" type="button" disabled aria-disabled="true">
-              <span class="stop-label">停止</span>
-              <span class="stop-icon">■</span>
-            </button>
-            <button id="send-button" type="submit">
-              <span class="send-label">发送</span>
-              <span class="send-icon">→</span>
-            </button>
-          </div>
-        </form>
-      </section>
+        <div class="sidebar-group sidebar-sessions">
+          <div class="group-label"><span>会话</span></div>
+          <nav id="session-list" class="session-list"></nav>
+        </div>
 
-      <aside class="inspector">
-        <button id="inspector-toggle" class="side-toggle inspector-toggle" type="button" aria-label="收起右侧栏">›</button>
-        <section class="inspector-card inspector-summary">
-          <div class="card-title">
-            <span>概览</span>
-            <strong id="workspace-state">local</strong>
-          </div>
-          <dl class="metric-list">
-            <div>
-              <dt>工作区</dt>
-              <dd id="workspace-path">读取中</dd>
-            </div>
-            <div>
-              <dt>当前项目</dt>
-              <dd id="workspace-project">读取中</dd>
-            </div>
-          </dl>
-        </section>
-
-        <section class="inspector-card inspector-hub" aria-label="功能入口">
-          <div class="card-title">
-            <span>操作</span>
-            <strong id="process-state">0</strong>
-          </div>
-          <div class="hub-grid">
-            <button type="button" data-inspector-target="review" aria-label="打开审查面板">审查</button>
-            <button type="button" data-inspector-target="run" aria-label="打开运行与工作树">运行</button>
-            <button type="button" data-inspector-target="tools" aria-label="打开工具和 MCP">工具 <strong id="tool-count">0</strong></button>
-            <button type="button" data-inspector-target="processes" aria-label="打开后台任务">任务</button>
-            <button type="button" data-inspector-target="config" aria-label="打开更多配置和能力">更多</button>
-          </div>
-        </section>
-
-        <section class="inspector-card inspector-command">
-          <div class="card-title">
-            <span>快捷指令</span>
-            <strong>按需</strong>
-          </div>
-          <div class="compact-actions">
-            <button class="ghost-button" type="button" data-prompt="/review 检查当前未提交变更">/review</button>
-            <button class="ghost-button" type="button" data-prompt="/status 总结当前线程、模型和工作区状态">/status</button>
-          </div>
-        </section>
+        <footer class="sidebar-foot">
+          <button id="settings-open" class="sidebar-foot-button" type="button">
+            <span class="foot-icon" aria-hidden="true">⚙</span>
+            <span class="foot-label">设置</span>
+          </button>
+        </footer>
       </aside>
-    </main>
-    <dialog id="inspector-dialog" class="inspector-dialog">
-      <form method="dialog" class="inspector-dialog-panel">
-        <div class="dialog-title">
-          <strong id="inspector-dialog-title">Inspector</strong>
-          <button id="inspector-dialog-close" type="button" aria-label="关闭">×</button>
-        </div>
-        <nav class="inspector-tabs" aria-label="Inspector panels">
-          <button type="button" data-inspector-tab="workspace">Workspace</button>
-          <button type="button" data-inspector-tab="review">Review</button>
-          <button type="button" data-inspector-tab="run">Run</button>
-          <button type="button" data-inspector-tab="processes">Processes</button>
-          <button type="button" data-inspector-tab="permissions">Permissions</button>
-          <button type="button" data-inspector-tab="tools">Tools</button>
-          <button type="button" data-inspector-tab="subagents">Sub Agents</button>
-          <button type="button" data-inspector-tab="memory">Memory</button>
-          <button type="button" data-inspector-tab="config">Config</button>
-        </nav>
-        <div class="inspector-dialog-body">
-          <section class="inspector-card inspector-panel" data-inspector-panel="workspace">
-            <div class="card-title">
-              <span>Workspace</span>
-              <strong>项目</strong>
-            </div>
-            <div id="workspace-details" class="workspace-details"></div>
+
+      <main class="main">
+        <div class="main-inner">
+          <!-- 空状态 Hero：新会话时展示 -->
+          <section id="empty-hero" class="empty-hero">
+            <div class="hero-mark" aria-hidden="true"><span>N</span></div>
+            <h2 class="hero-title">探索未至之境</h2>
+            <p class="hero-sub">Nova 个人开发 Agent · 本地网关</p>
           </section>
 
-          <section class="inspector-card inspector-panel" data-inspector-panel="review">
-            <div class="card-title">
-              <span>Review</span>
-              <button id="review-refresh" class="ghost-button" type="button">刷新</button>
-            </div>
-            <div class="review-panel">
-              <div class="review-head">
-                <strong id="review-state">加载中</strong>
-                <button id="review-run-tests" type="button">运行测试</button>
+          <section id="messages" class="messages"></section>
+
+          <form id="chat-form" class="composer-card">
+            <textarea
+              id="message"
+              name="message"
+              rows="1"
+              placeholder="给 Nova 发送消息，输入 / 查看指令"
+            ></textarea>
+            <div class="composer-toolbar">
+              <div class="toolbar-left">
+                <span id="stream-state" class="stream-state" aria-live="polite"></span>
               </div>
-              <pre id="review-summary" class="review-summary">Review summary 加载中</pre>
-              <div id="quality-gate-summary" class="quality-gate-summary">质量门禁加载中</div>
-              <div id="review-risks" class="review-risks"></div>
-              <div id="review-tests" class="review-tests"></div>
-              <pre id="review-test-output" class="review-test-output"></pre>
-            </div>
-          </section>
-
-          <section class="inspector-card inspector-panel" data-inspector-panel="run">
-            <div class="card-title">
-              <span>Run</span>
-              <strong>本地</strong>
-            </div>
-            <div id="runtime-state-panel" class="runtime-state-panel">运行态加载中</div>
-            <button id="test-command" class="command-chip" type="button">测试命令加载中</button>
-            <button id="serve-command" class="command-chip" type="button">启动命令加载中</button>
-            <div class="worktree-box">
-              <label>
-                <span>工作树名称</span>
-                <input id="worktree-name" value="nova-demo" autocomplete="off" />
-              </label>
-              <div class="worktree-actions">
-                <button id="worktree-create" type="button">创建并切换</button>
-                <button id="worktree-diff" type="button">查看 diff</button>
-                <button id="worktree-cleanup" type="button">清理</button>
+              <div class="toolbar-right">
+                <label class="toolbar-select permission-select" title="权限模式">
+                  <span class="select-icon" aria-hidden="true">◇</span>
+                  <select id="permission-select">
+                    <option value="read_only">只读</option>
+                    <option value="ask">询问</option>
+                    <option value="workspace_write" selected>工作区写入</option>
+                    <option value="plan">计划</option>
+                    <option value="bypass">跳过权限</option>
+                  </select>
+                </label>
+                <label class="toolbar-select model-select" title="模型">
+                  <span class="select-icon" aria-hidden="true">◈</span>
+                  <select id="model-select">
+                    <option value="glm-4.7" selected>glm-4.7</option>
+                  </select>
+                </label>
+                <button id="stop-button" class="round-button stop" type="button" disabled aria-disabled="true" aria-label="停止">■</button>
+                <button id="send-button" class="round-button send" type="submit" aria-label="发送">↑</button>
               </div>
-              <div id="worktree-list" class="worktree-list">工作树加载中</div>
-              <pre id="worktree-diff-output" class="worktree-diff-output"></pre>
             </div>
-          </section>
-
-          <section class="inspector-card inspector-panel" data-inspector-panel="processes">
-            <div class="card-title">
-              <span>Processes</span>
-              <strong>后台</strong>
-            </div>
-            <div class="process-panel">
-              <div id="process-list" class="process-list">后台任务加载中</div>
-            </div>
-          </section>
-
-          <section class="inspector-card inspector-panel" data-inspector-panel="permissions">
-            <div class="card-title">
-              <span>Permissions</span>
-              <strong>按需</strong>
-            </div>
-            <div id="permissions-list" class="permissions-list"></div>
-          </section>
-
-          <section class="inspector-card inspector-panel" data-inspector-panel="tools">
-            <div class="card-title">
-              <span>Tools</span>
-              <strong>运行时</strong>
-            </div>
-            <div id="tool-list" class="tool-list"></div>
-            <div class="mcp-panel">
-              <div class="mcp-panel-head">
-                <span>MCP</span>
-                <strong id="mcp-state">读取中</strong>
-              </div>
-              <div id="mcp-list" class="mcp-list"></div>
-            </div>
-          </section>
-
-          <section class="inspector-card inspector-panel" data-inspector-panel="subagents">
-            <div class="card-title">
-              <span>Sub Agents</span>
-              <button id="subagent-spawn" class="ghost-button" type="button">Spawn</button>
-            </div>
-            <div class="subagent-panel">
-              <textarea id="subagent-prompt" rows="3" placeholder="委派一个只读子任务"></textarea>
-              <div id="subagent-list" class="subagent-list">子 Agent 加载中</div>
-            </div>
-          </section>
-
-          <section class="inspector-card inspector-panel" data-inspector-panel="memory">
-            <div class="card-title">
-              <span>Agent Context / Memory</span>
-              <strong id="memory-state">读取中</strong>
-            </div>
-            <div id="memory-list" class="memory-list"></div>
-          </section>
-
-          <section class="inspector-card inspector-panel" data-inspector-panel="config">
-            <div class="card-title">
-              <span>Config</span>
-              <strong id="config-state">本地</strong>
-            </div>
-            <div id="config-list" class="permissions-list"></div>
-          </section>
+            <div id="command-palette" class="command-palette" hidden></div>
+          </form>
         </div>
-      </form>
-    </dialog>
-    <dialog id="workspace-dialog" class="workspace-dialog">
-      <form method="dialog" class="workspace-dialog-panel">
-        <div class="dialog-title">
-          <strong>切换项目目录</strong>
-          <button id="workspace-dialog-close" type="button" aria-label="关闭">×</button>
-        </div>
-        <input id="workspace-dialog-input" placeholder="输入本地项目绝对路径" autocomplete="off" />
-        <div id="workspace-dialog-state" class="workspace-dialog-state">请输入或选择项目目录</div>
-        <div id="workspace-dialog-list" class="workspace-dialog-list"></div>
-        <div class="workspace-dialog-actions">
-          <button id="workspace-dialog-create" type="button">新建并切换</button>
-          <button id="workspace-dialog-submit" type="button">切换到此目录</button>
-        </div>
-      </form>
-    </dialog>
-    <dialog id="memory-dialog" class="memory-dialog">
-      <form method="dialog" class="memory-dialog-panel">
-        <div class="dialog-title">
-          <strong id="memory-dialog-title">记忆文件</strong>
-          <button id="memory-dialog-close" type="button" aria-label="关闭">×</button>
-        </div>
-        <label class="memory-dialog-field">
-          <span>Markdown 文件名</span>
-          <input id="memory-dialog-name" placeholder="user.md / project.md / soul.md" autocomplete="off" />
-        </label>
-        <label class="memory-dialog-field">
-          <span>内容</span>
-          <textarea id="memory-dialog-content" spellcheck="false"></textarea>
-        </label>
-        <div id="memory-dialog-state" class="workspace-dialog-state">仅支持 .md 记忆文件</div>
-        <div class="workspace-dialog-actions">
-          <button id="memory-dialog-cancel" type="button">取消</button>
-          <button id="memory-dialog-save" type="button">保存</button>
-        </div>
-      </form>
-    </dialog>
-    <dialog id="settings-dialog" class="settings-dialog">
-      <form method="dialog" class="settings-panel">
+      </main>
+    </div>
+
+    <!-- 设置弹窗（保留：运行配置 + statusline 偏好） -->
+    <dialog id="settings-dialog" class="modal">
+      <form method="dialog" class="modal-card">
         <div class="dialog-title">
           <strong>设置</strong>
           <button id="settings-close" type="button" aria-label="关闭">×</button>
         </div>
-        <section class="settings-section">
+        <div class="settings-section">
           <button class="settings-section-head" type="button" data-settings-section="runtime">
             <span>运行配置</span>
             <em>模型、上下文、权限</em>
           </button>
           <div id="settings-runtime" class="settings-list"></div>
-        </section>
-        <section class="settings-section">
+        </div>
+        <div class="settings-section">
           <button class="settings-section-head" type="button" data-settings-section="statusline">
             <span>Statusline</span>
-            <em>输入区下方显示项</em>
+            <em>会话状态显示项</em>
           </button>
           <div id="settings-statusline" class="statusline-options"></div>
-        </section>
+        </div>
         <div class="settings-actions">
           <p id="settings-note">配置修改后需要重启 Nova 网关才会生效。</p>
           <button id="settings-save" type="button">保存配置</button>
           <button id="settings-restart" type="button">重启网关</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- 工作区切换弹窗（保留：IDE 体感路径选择） -->
+    <dialog id="workspace-dialog" class="modal">
+      <form method="dialog" class="modal-card">
+        <div class="dialog-title">
+          <strong>切换项目目录</strong>
+          <button id="workspace-dialog-close" type="button" aria-label="关闭">×</button>
+        </div>
+        <input id="workspace-dialog-input" class="workspace-dialog-input" placeholder="输入本地项目绝对路径" autocomplete="off" />
+        <div id="workspace-dialog-state" class="workspace-dialog-state">请输入或选择项目目录</div>
+        <div id="workspace-dialog-list" class="workspace-dialog-list"></div>
+        <div class="workspace-dialog-actions">
+          <button id="workspace-dialog-create" type="button">新建并切换</button>
+          <button id="workspace-dialog-submit" type="button">切换到此目录</button>
         </div>
       </form>
     </dialog>
