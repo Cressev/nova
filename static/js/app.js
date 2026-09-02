@@ -3832,6 +3832,7 @@ form.addEventListener("submit", async (event) => {
       setQueuedMessages(payload.queued_messages || [payload.message]);
       messageEl.value = "";
       autoResizeTextarea();
+      messageEl.focus();
       streamStateEl.textContent = "消息已排队，当前工具轮结束后进入上下文";
     } catch (error) {
       streamStateEl.textContent = `排队失败：${error instanceof Error ? error.message : "未知错误"}`;
@@ -3870,6 +3871,8 @@ form.addEventListener("submit", async (event) => {
     assistantNode.classList.add("streaming");
     messageEl.value = "";
     autoResizeTextarea();
+    messageEl.focus();
+    followStreamScroll();
     const ok = await streamAssistant(sessionId, content, assistantNode);
     streamStateEl.textContent = state.turnCancelRequested ? "已停止" : (ok ? "回复完成" : "请求失败");
     renderRuntimeOverviewFromDom(state.turnCancelRequested ? "cancelled" : (ok ? "completed" : "failed"));
@@ -3913,6 +3916,26 @@ form.addEventListener("submit", async (event) => {
     messageEl.focus();
   }
 });
+
+
+// ---- 流式滚动跟随（对照 dsh ChatView：FOLLOW_THRESHOLD + atBottom 状态）----
+// 用户贴在底部时新内容自动跟滚；一旦上滚离开底部就停止跟随，直到手动回底。
+const SCROLL_FOLLOW_THRESHOLD = 80;
+let messagesAtBottom = true;
+
+if (messagesEl) {
+  const syncAtBottom = () => {
+    messagesAtBottom =
+      messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <=
+      SCROLL_FOLLOW_THRESHOLD + 1;
+  };
+  messagesEl.addEventListener("scroll", syncAtBottom, { passive: true });
+}
+
+function followStreamScroll() {
+  if (!messagesEl || !messagesAtBottom) return;
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
 
 async function streamAssistant(sessionId, content, assistantNode) {
   const response = await fetch(`/api/chat/sessions/${sessionId}/stream`, {
@@ -4005,11 +4028,13 @@ async function streamAssistant(sessionId, content, assistantNode) {
       onDelta: (delta) => {
         assistantText += delta;
         updateMessage(currentAssistantNode, assistantText);
+        followStreamScroll();
         streamStateEl.textContent = "Nova 正在输出";
       },
       onToolStart: (event) => {
         streamStateEl.textContent = `工具执行：${event.tool}`;
         const node = appendToolEvent(event, currentAssistantNode);
+        followStreamScroll();
         activeToolNodes.set(event.call_id || event.tool || "tool", node);
         updateTurnToolControl(currentAssistantNode);
       },
@@ -4045,6 +4070,7 @@ async function streamAssistant(sessionId, content, assistantNode) {
       onDelta: (delta) => {
         assistantText += delta;
         updateMessage(currentAssistantNode, assistantText);
+        followStreamScroll();
       },
       onToolStart: (event) => {
         const node = appendToolEvent(event, currentAssistantNode);
@@ -4105,7 +4131,9 @@ messageEl.addEventListener("keydown", (event) => {
     fillCommand(selected);
     return;
   }
-  if (event.key === "Enter" && !event.shiftKey) {
+  // isComposing：中文输入法组字中的 Enter 是"确认候选词"，不是发送。
+  // 不检查会在打字过程中把半截消息提前发出（dsh 同样在 composer 层拦截）。
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
     hideCommandPalette();
     form.requestSubmit();

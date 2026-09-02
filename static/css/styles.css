@@ -764,6 +764,20 @@ body.sidebar-collapsed .sidebar-foot-button {
  * 从上一版保留，色值已全部走 dsw 令牌
  * ============================================================ */
 
+/* 消息流：占满主区剩余高度、独立滚动（丢失此块会导致布局撑爆、composer 被顶出视口） */
+.messages {
+  display: grid;
+  flex: 1;
+  align-content: start;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 6px 8px;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
 .message {
   display: grid;
   gap: 6px;
