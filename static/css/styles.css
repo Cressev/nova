@@ -281,7 +281,70 @@ body.sidebar-collapsed .sidebar-head {
   gap: 8px;
 }
 
-body.sidebar-collapsed .theme-toggle {
+body.sidebar-collapsed 
+/* ---- Markdown 渲染样式（对照 dsh AssistantMarkdown / ToolDetails code） ---- */
+.message .md-p {
+  margin: 0 0 6px;
+}
+
+.message .md-p:last-child {
+  margin-bottom: 0;
+}
+
+.message .md-h {
+  margin: 12px 0 6px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.message .md-h:first-child {
+  margin-top: 0;
+}
+
+.message .md-list {
+  margin: 0 0 6px;
+  padding-left: 20px;
+}
+
+.message .md-list li {
+  margin: 2px 0;
+}
+
+.message .md-code {
+  border-radius: 5px;
+  padding: 1.5px 5px;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  font-size: 0.92em;
+}
+
+.message .md-pre {
+  overflow-x: auto;
+  margin: 0 0 8px;
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--dsw-alias-markdown-code-block, var(--dsw-alias-interactive-bg-active));
+}
+
+.message .md-pre code {
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  font-size: 13px;
+  line-height: 21px;
+  white-space: pre;
+}
+
+.message a {
+  color: var(--dsw-alias-state-business-primary);
+  text-decoration: none;
+}
+
+.message a:hover {
+  text-decoration: underline;
+}
+
+.theme-toggle {
   margin-left: 0;
 }
 
@@ -778,16 +841,52 @@ body.sidebar-collapsed .sidebar-foot-button {
   -webkit-overflow-scrolling: touch;
 }
 
+/* 消息形态照搬 dsh：
+   user = 右对齐淡色圆角气泡（无头无尾）；
+   assistant = 全宽裸文本（无边框无底色无角色头无时间戳）。 */
 .message {
   display: grid;
-  gap: 6px;
-  max-width: min(780px, 86%);
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 12px;
-  padding: 10px 13px;
-  /* dsh 气泡色：浅色主题为 deepseek-50 淡薰衣草，深色主题为中性深面 */
-  background: var(--dsw-specific-bubble);
+  gap: 4px;
   animation: message-in 180ms ease both;
+}
+
+.message.user {
+  justify-self: end;
+  max-width: min(560px, 86%);
+  border-radius: 16px;
+  padding: 10px 14px;
+  background: var(--dsw-specific-bubble);
+}
+
+.message.assistant {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+/* 裸形态：角色头/时间戳全部隐藏（队列徽章除外） */
+.message .message-head,
+.message .message-time {
+  display: none;
+}
+
+.message.user .message-head {
+  display: flex;
+}
+
+.message.user .message-role {
+  display: none;
+}
+
+.message.assistant .message-content {
+  font-size: 15px;
+  line-height: 1.62;
+}
+
+.message.user .message-content {
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .theme-toggle {
@@ -872,15 +971,8 @@ body.sidebar-collapsed .sidebar-foot-button {
   font-weight: 850;
 }
 
-.message.user {
-  justify-self: end;
-  border-color: var(--dsw-static-deepseek-200);
-  background: var(--dsw-specific-bubble-highlight);
-}
-
 .message.user.queued {
-  border-style: dashed;
-  border-color: var(--dsw-static-amber-400);
+  border: 1px dashed var(--dsw-static-amber-400);
   background: var(--dsw-alias-state-warn-tertiary);
 }
 
@@ -951,23 +1043,24 @@ body.sidebar-collapsed .sidebar-foot-button {
   color: var(--text);
 }
 
+/* 对照 dsh TurnProcessNodeView：33px 纯文字行 + 底部发丝线，无底色无边框 */
 .turn-process-control {
   justify-self: start;
   width: min(720px, 92%);
-  min-height: 30px;
-  border: 1px dashed var(--dsw-static-deepseek-300);
-  border-radius: 8px;
-  padding: 6px 10px;
-  background: var(--dsw-alias-state-business-tertiary);
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 850;
+  min-height: 33px;
+  border: 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 0;
+  padding: 0 0 8px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  font-weight: 400;
   text-align: left;
 }
 
 .turn-process-control:hover {
-  border-color: var(--dsw-static-deepseek-400);
-  color: var(--text);
+  color: var(--dsw-alias-label-primary);
 }
 
 .message.user .message-role {
@@ -985,9 +1078,9 @@ body.sidebar-collapsed .sidebar-foot-button {
   font-size: 12px;
 }
 
-/* ---- 工具行：对照 dsh ToolRow（figma 122:9479）----
-   默认 24px 单行：[状态点] 工具名 · 摘要截断…… ▾
-   点击头部展开完整详情（元数据/参数/输出）。 */
+/* ---- 工具行：逐值照搬 dsh 本尊实测（B92XqW_root，2026-09-02 抓取）----
+   [16px 图标位 mr6] [工具名 14px #61666B] [2px 点 m0 8] [摘要 14px #81858C 截断] [14px chevron]
+   无状态点、无状态文字；状态由图标色 + 扫光 + 展开详情表达。 */
 .tool-event,
 .permission-event {
   position: relative;
@@ -1023,6 +1116,81 @@ body.sidebar-collapsed .sidebar-foot-button {
 @keyframes nova-tool-row-sweep {
   0% { left: -240px; }
   90%, 100% { left: 100%; }
+}
+
+.tool-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 24px;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+
+.tool-row:focus-visible {
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px var(--dsw-alias-state-business-tertiary);
+}
+
+.tool-leading {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tool-title {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 24px;
+}
+
+.tool-sep {
+  flex: none;
+  width: 2px;
+  height: 2px;
+  margin: 0 8px;
+  border-radius: 1px;
+  background: var(--dsw-alias-label-caption);
+}
+
+.tool-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-chevron {
+  flex: none;
+  margin-left: 8px;
+  color: var(--dsw-alias-label-tertiary);
+  transform: rotate(-90deg);
+  transition: transform 100ms ease;
+}
+
+.tool-event.expanded .tool-chevron {
+  transform: rotate(0deg);
+}
+
+/* 失败态：前导图标转错误色（dsh 语义），摘要可读出失败首行 */
+.tool-event.failed .tool-leading {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.tool-event.running .tool-leading {
+  color: var(--dsw-alias-state-business-primary);
 }
 
 /* 详情内容：默认收起，.expanded 时展开 */
@@ -1083,95 +1251,16 @@ body.sidebar-collapsed .sidebar-foot-button {
   background: var(--dsw-alias-state-error-tertiary);
 }
 
-.tool-event-head,
-.permission-event-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 24px;
-  line-height: 24px;
-  cursor: pointer;
-  user-select: none;
-}
 
-/* 状态点：dsh StateDot 语义 */
-.tool-event-head::before,
-.permission-event-head::before {
-  content: "";
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--dsw-alias-label-caption);
-}
 
-.tool-event.running .tool-event-head::before,
-.permission-event.pending .permission-event-head::before {
-  background: var(--dsw-alias-state-business-primary);
-}
 
-.tool-event.ok .tool-event-head::before {
-  background: var(--dsw-alias-state-success-primary);
-}
 
-.tool-event.failed .tool-event-head::before {
-  background: var(--dsw-alias-state-error-primary);
-}
 
-.tool-event-head > span:first-of-type,
-.permission-event-head > span:first-of-type {
-  flex: none;
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 500;
-}
 
-/* dsh 分隔点 */
-.tool-event-head::after,
-.permission-event-head::after {
-  content: "";
-  flex: none;
-  order: 2;
-  width: 2px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--dsw-alias-label-caption);
-}
 
-.tool-event-purpose {
-  order: 3;
-  flex: 1 1 auto;
-  overflow: hidden;
-  color: var(--faint);
-  font-size: 13px;
-  font-weight: 400;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
-.tool-event-head em,
-.permission-event-head em {
-  order: 4;
-  flex: none;
-  color: var(--faint);
-  font-size: 12px;
-  font-style: normal;
-}
 
-/* 展开指示 chevron（order 5 兜底在最右） */
-.tool-event-head .tool-chevron,
-.permission-event-head .tool-chevron {
-  order: 5;
-  flex: none;
-  margin-left: 2px;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 10px;
-  transition: transform 100ms ease;
-}
 
-.tool-event.expanded .tool-chevron {
-  transform: rotate(180deg);
-}
 
 .tool-actions {
   display: flex;
@@ -1304,23 +1393,11 @@ body.sidebar-collapsed .sidebar-foot-button {
   line-height: 1.5;
 }
 
-.tool-event-head span,
-.permission-event-head span {
-  min-width: 64px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 7px;
-  color: var(--blue);
-  font-size: 11px;
-  font-weight: 900;
-  text-align: center;
-}
 
 .permission-event-head span {
   color: var(--amber);
 }
 
-.tool-event-head strong,
 .permission-event-head strong {
   overflow: hidden;
   color: var(--text);
@@ -1329,30 +1406,10 @@ body.sidebar-collapsed .sidebar-foot-button {
   white-space: nowrap;
 }
 
-.tool-event-purpose {
-  letter-spacing: 0;
-}
 
-/* dsh 行规格：状态文字用常规字重，不做胶囊感 */
-.tool-event-head em,
-.permission-event-head em {
-  color: var(--muted);
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 400;
-}
 
-.tool-event.ok .tool-event-head em {
-  color: var(--dsw-alias-state-success-secondary);
-}
 
-.tool-event.failed .tool-event-head em {
-  color: var(--dsw-alias-state-error-secondary);
-}
 
-.permission-event.pending .permission-event-head em {
-  color: var(--dsw-static-amber-400);
-}
 
 .permission-event p {
   margin: 0;
@@ -2122,13 +2179,11 @@ body.inspector-collapsed .inspector-toggle {
     width: 100%;
   }
 
-  .tool-event-head,
   .permission-event-head {
     grid-template-columns: 1fr;
     align-items: start;
   }
 
-  .tool-event-head span,
   .permission-event-head span {
     width: fit-content;
   }

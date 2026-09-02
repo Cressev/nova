@@ -2328,18 +2328,10 @@ function collectProcessIds(value, target) {
 }
 
 function appendStatusEvent(text, options = {}) {
+  // dsh 形态：运行状态不插入消息流（只在 composer 状态位显示），返回游离节点保持调用方兼容
   const node = document.createElement("div");
   node.className = "agent-status";
   node.textContent = text;
-  if (options.beforeNode?.parentElement === messagesEl) {
-    messagesEl.insertBefore(node, options.beforeNode);
-  } else {
-    messagesEl.appendChild(node);
-  }
-  if (options.autoscroll !== false) {
-    scrollMessagesToBottom();
-  }
-  renderRuntimeOverviewFromDom("running");
   return node;
 }
 
@@ -2452,7 +2444,7 @@ function appendMessage(message, options = {}) {
       ${message.role === "user" ? `<span class="message-queue-badge" ${options.queued ? "" : "hidden"}>queue</span>` : ""}
       ${message.role === "assistant" ? '<button class="turn-tools-toggle" type="button" hidden>收起过程</button>' : ""}
     </div>
-    <div class="message-content">${escapeHtml(message.content || "")}</div>
+    <div class="message-content">${renderMarkdown(message.content || "")}</div>
     <div class="message-time">${message.created_at ? formatTime(message.created_at) : "生成中"}</div>
   `;
   if (message.role === "assistant") {
@@ -2467,7 +2459,8 @@ function appendMessage(message, options = {}) {
 }
 
 function updateMessage(node, content) {
-  node.querySelector(".message-content").innerHTML = escapeHtml(content);
+  // 流式期间用 markdown 渲染（dsh AssistantMarkdown 等价）
+  node.querySelector(".message-content").innerHTML = renderMarkdown(content);
   scrollMessagesToBottom();
 }
 
@@ -2505,12 +2498,131 @@ function findPermissionNodeByCallId(callId) {
 
 // dsh ToolRow 模式：点击头部行展开/收起工具详情
 function bindToolRowToggle(node) {
-  const head = node.querySelector(".tool-event-head, .permission-event-head");
+  const head = node.querySelector(".tool-row");
   if (!head) return;
+  const toggle = () => {
+    const open = node.classList.toggle("expanded");
+    head.setAttribute("aria-expanded", String(open));
+  };
   head.addEventListener("click", (event) => {
     if (event.target.closest("button, a, select, input")) return;
-    node.classList.toggle("expanded");
+    toggle();
   });
+  head.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggle();
+    }
+  });
+}
+
+
+// ---- DSH ToolRow 图标库（从 dsh 本尊 GUI 实测提取的 SVG 路径）----
+const DSH_TOOL_ICONS = {
+  terminal: `<path transform="translate(0.6689 1.073)" d="M11.4818 5.57813C11.4818 4.45301 11.4807 3.66237 11.4075 3.05908C11.3359 2.46953 11.2024 2.13852 10.9939 1.89441C10.9247 1.81341 10.8493 1.73801 10.7683 1.66882C10.5242 1.46033 10.1932 1.32686 9.60364 1.25525C9.00034 1.18198 8.20974 1.18091 7.0846 1.18091L5.57813 1.18091C4.45301 1.18091 3.66238 1.18198 3.05908 1.25525C2.46953 1.32686 2.13852 1.46033 1.89441 1.66882C1.81341 1.73801 1.73801 1.81341 1.66882 1.89441C1.46033 2.13852 1.32686 2.46953 1.25525 3.05908C1.18198 3.66238 1.18091 4.45301 1.18091 5.57813L1.18091 6.2771C1.18091 7.40218 1.18197 8.19288 1.25525 8.79614C1.32687 9.38553 1.46036 9.71674 1.66882 9.96082C1.73797 10.0417 1.81347 10.1173 1.89441 10.1864C2.13851 10.3948 2.46965 10.5275 3.05908 10.5991C3.66238 10.6724 4.45298 10.6735 5.57813 10.6735L7.0846 10.6735C8.20977 10.6735 9.00033 10.6724 9.60364 10.5991C10.1931 10.5275 10.5242 10.3948 10.7683 10.1864C10.8493 10.1173 10.9247 10.0417 10.9939 9.96082C11.2024 9.71674 11.3358 9.38553 11.4075 8.79614C11.4808 8.19288 11.4818 7.40218 11.4818 6.2771L11.4818 5.57813ZM12.6627 6.2771C12.6627 7.37222 12.6637 8.247 12.5798 8.93799C12.4942 9.64284 12.3133 10.2359 11.8928 10.7282C11.7834 10.8562 11.6637 10.9751 11.5356 11.0845C11.0434 11.5049 10.4511 11.6867 9.74634 11.7723C9.05525 11.8563 8.17999 11.8552 7.0846 11.8552L5.57813 11.8552C4.48273 11.8552 3.60747 11.8563 2.91638 11.7723C2.21157 11.6867 1.61933 11.5049 1.12708 11.0845C0.99901 10.9751 0.879281 10.8562 0.769898 10.7282C0.349454 10.2359 0.168506 9.64284 0.0828864 8.93799C-0.00101964 8.247 4.88512e-07 7.37222 6.47206e-07 6.2771L6.47206e-07 5.57813C6.47206e-07 4.48273 -0.00106163 3.60747 0.0828864 2.91638C0.168502 2.21168 0.349594 1.61928 0.769898 1.12708C0.879302 0.998981 0.998981 0.879302 1.12708 0.769898C1.61928 0.349594 2.21168 0.168502 2.91638 0.0828864C3.60747 -0.00106163 4.48273 6.47206e-07 5.57813 6.47206e-07L7.0846 6.47206e-07C8.17999 6.47206e-07 9.05525 -0.00106163 9.74634 0.0828864C10.451 0.168505 11.0434 0.349587 11.5356 0.769898C11.6637 0.879302 11.7834 0.998981 11.8928 1.12708C12.3131 1.61928 12.4942 2.21169 12.5798 2.91638C12.6638 3.60747 12.6627 4.48273 12.6627 5.57813L12.6627 6.2771Z" fill="currentColor"/>`,
+  chevron: `<path d="M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382 5.55843 8.90706 5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732 6.59876 8.24849 6.74023 8.3623C6.87291 8.46904 6.92272 8.47813 6.9375 8.48047C6.97895 8.48703 7.02105 8.48703 7.0625 8.48047C7.07728 8.47813 7.12709 8.46904 7.25977 8.3623C7.40124 8.24849 7.57405 8.07732 7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z" fill="currentColor"/>`,
+};
+
+// 工具名 → 前导图标（dsh 按变体分图标：bash 终端、read/browse 文档夹、其余通用）
+function toolLeadingIcon(tool) {
+  const name = String(tool || "").toLowerCase();
+  const isDoc = /read|write|list|glob|file|edit|search|grep/.test(name);
+  const icon = isDoc
+    ? '<rect x="2.2" y="1.2" width="9.6" height="11.6" rx="2" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M4.8 5.2h4.4M4.8 7.4h4.4M4.8 9.6h2.8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/>'
+    : DSH_TOOL_ICONS.terminal;
+  return `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${icon}</svg>`;
+}
+
+
+// ---- 轻量 Markdown 渲染（dsh AssistantMarkdown 的最小等价物）----
+// 先整体转义再生成标签，代码块内容二次保护，避免注入。
+function renderMarkdown(raw) {
+  const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const inline = (t) => esc(t)
+    .replace(/`([^`\n]+)`/g, '<code class="md-code">$1</code>')
+    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+  const lines = String(raw || "").split("\n");
+  const out = [];
+  let inCode = false;
+  let codeBuf = [];
+  let listBuf = [];
+
+  const flushList = () => {
+    if (listBuf.length) {
+      out.push('<ul class="md-list">' + listBuf.map((i) => `<li>${inline(i)}</li>`).join("") + "</ul>");
+      listBuf = [];
+    }
+  };
+
+  for (const line of lines) {
+    const fence = line.match(/^```(\w*)/);
+    if (fence) {
+      if (inCode) {
+        out.push(`<pre class="md-pre"><code>${esc(codeBuf.join("\n"))}</code></pre>`);
+        codeBuf = [];
+        inCode = false;
+      } else {
+        flushList();
+        inCode = true;
+      }
+      continue;
+    }
+    if (inCode) {
+      codeBuf.push(line);
+      continue;
+    }
+    const heading = line.match(/^(#{1,4})\s+(.*)/);
+    if (heading) {
+      flushList();
+      const level = heading[1].length;
+      out.push(`<h${level + 2} class="md-h">${inline(heading[2])}</h${level + 2}>`); // h3-h6，避免抢页面标题层级
+      continue;
+    }
+    const li = line.match(/^\s*(?:[-*]|\d+\.)\s+(.*)/);
+    if (li) {
+      listBuf.push(li[1]);
+      continue;
+    }
+    if (!line.trim()) {
+      flushList();
+      continue;
+    }
+    flushList();
+    out.push(`<p class="md-p">${inline(line)}</p>`);
+  }
+  if (inCode && codeBuf.length) {
+    out.push(`<pre class="md-pre"><code>${esc(codeBuf.join("\n"))}</code></pre>`);
+  }
+  flushList();
+  return out.join("");
+}
+
+// 工具显示名映射（dsh 按变体给语义标签，如 Bash/Read；Nova 工具名转中文短标签）
+const TOOL_DISPLAY_NAMES = {
+  list_files: "列出文件",
+  read_file: "读取文件",
+  write_file: "写入文件",
+  edit_file: "编辑文件",
+  search: "搜索",
+  grep: "搜索内容",
+  glob: "匹配文件",
+  bash: "Bash",
+  shell: "Shell",
+};
+
+// dsh ToolRow 五件套行：[16px 图标位] [工具名] [2px 分隔点] [摘要 flex 截断] [14px chevron]
+function renderToolRowHead(tool, summary, extra = "") {
+  const name = String(tool || "tool");
+  const label = TOOL_DISPLAY_NAMES[name] || name.replaceAll("_", " ");
+  return `<div class="tool-row" role="button" tabindex="0" aria-expanded="false">
+    <span class="tool-leading">${toolLeadingIcon(tool)}</span>
+    <span class="tool-title">${escapeHtml(label)}</span>
+    <span class="tool-sep" aria-hidden="true"></span>
+    <span class="tool-summary">${escapeHtml(summary || "")}${extra}</span>
+    <svg class="tool-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${DSH_TOOL_ICONS.chevron}</svg>
+  </div>`;
 }
 
 function appendToolEvent(event, beforeNode = null, options = {}) {
@@ -2526,12 +2638,8 @@ function appendToolEvent(event, beforeNode = null, options = {}) {
   node.dataset.argumentsRaw = JSON.stringify(event.arguments || {});
   node.dataset.toolData = JSON.stringify(event.data || {});
   node.innerHTML = `
-    <div class="tool-event-head">
-      <span>${escapeHtml(event.tool || "tool")}</span>
-      <strong class="tool-event-purpose">${escapeHtml(toolPurposeText(event))}</strong>
-      <em>${event.parallel ? "并行" : "运行中"}</em>
-      <span class="tool-chevron" aria-hidden="true">▾</span>
-    </div>
+    ${renderToolRowHead(event.tool, toolPurposeText(event))}
+    <div class="tool-event-head" hidden>${''}</div>
     ${renderToolMetadata(event.data || {})}
     ${renderToolKeyParams(event.arguments || {})}
     <div class="tool-actions">
@@ -2622,13 +2730,11 @@ function finishToolEvent(node, event, options = {}) {
     ? '<button class="tool-retry" type="button" data-action="retry-tool">重试</button>'
     : "";
   const statusLabel = event.data?.status === "cancelled" ? "已取消" : (event.ok ? "完成" : "失败");
+  const failSummary = !event.ok && data.failure_reason ? String(data.failure_reason).split("\n")[0].slice(0, 120) : "";
+  const doneSummary = failSummary || toolPurposeText(event) || "";
   node.innerHTML = `
-    <div class="tool-event-head">
-      <span>${escapeHtml(event.tool || "tool")}</span>
-      <strong class="tool-event-purpose">${escapeHtml(toolPurposeText(event) || "工具完成")}</strong>
-      <em>${statusLabel}</em>
-      <span class="tool-chevron" aria-hidden="true">▾</span>
-    </div>
+    ${renderToolRowHead(event.tool, doneSummary)}
+    <div class="tool-event-head" hidden>${''}</div>
     ${renderToolMetadata(data)}
     ${renderToolKeyParams(parseToolArguments(rawArgs))}
     ${renderHookContexts(data.hook_contexts)}
