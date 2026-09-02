@@ -2502,6 +2502,17 @@ function findPermissionNodeByCallId(callId) {
   return findRuntimeNodeByCallId(".permission-event", callId);
 }
 
+
+// dsh ToolRow 模式：点击头部行展开/收起工具详情
+function bindToolRowToggle(node) {
+  const head = node.querySelector(".tool-event-head, .permission-event-head");
+  if (!head) return;
+  head.addEventListener("click", (event) => {
+    if (event.target.closest("button, a, select, input")) return;
+    node.classList.toggle("expanded");
+  });
+}
+
 function appendToolEvent(event, beforeNode = null, options = {}) {
   const callId = toolCallId(event);
   const existingToolNode = findToolNodeByCallId(callId);
@@ -2519,6 +2530,7 @@ function appendToolEvent(event, beforeNode = null, options = {}) {
       <span>${escapeHtml(event.tool || "tool")}</span>
       <strong class="tool-event-purpose">${escapeHtml(toolPurposeText(event))}</strong>
       <em>${event.parallel ? "并行" : "运行中"}</em>
+      <span class="tool-chevron" aria-hidden="true">▾</span>
     </div>
     ${renderToolMetadata(event.data || {})}
     ${renderToolKeyParams(event.arguments || {})}
@@ -2531,6 +2543,7 @@ function appendToolEvent(event, beforeNode = null, options = {}) {
     </details>
   `;
   node.querySelector('[data-action="cancel-tool"]').addEventListener("click", () => cancelToolCall(node));
+  bindToolRowToggle(node);
   if (!wasInserted) {
     if (beforeNode?.parentElement === messagesEl) {
       messagesEl.insertBefore(node, beforeNode);
@@ -2614,6 +2627,7 @@ function finishToolEvent(node, event, options = {}) {
       <span>${escapeHtml(event.tool || "tool")}</span>
       <strong class="tool-event-purpose">${escapeHtml(toolPurposeText(event) || "工具完成")}</strong>
       <em>${statusLabel}</em>
+      <span class="tool-chevron" aria-hidden="true">▾</span>
     </div>
     ${renderToolMetadata(data)}
     ${renderToolKeyParams(parseToolArguments(rawArgs))}
@@ -2628,6 +2642,7 @@ function finishToolEvent(node, event, options = {}) {
   node.dataset.argumentsRaw = rawArgs;
   node.dataset.toolData = JSON.stringify(data);
   node.querySelector('[data-action="retry-tool"]')?.addEventListener("click", () => retryToolCall(node));
+  bindToolRowToggle(node);
   syncBackgroundProcessFromToolDone(data);
   if (options.autoscroll !== false) {
     scrollMessagesToBottom();

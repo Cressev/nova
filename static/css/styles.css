@@ -985,31 +985,88 @@ body.sidebar-collapsed .sidebar-foot-button {
   font-size: 12px;
 }
 
+/* ---- 工具行：对照 dsh ToolRow（figma 122:9479）----
+   默认 24px 单行：[状态点] 工具名 · 摘要截断…… ▾
+   点击头部展开完整详情（元数据/参数/输出）。 */
 .tool-event,
 .permission-event {
-  display: grid;
-  gap: 8px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
   width: min(720px, 92%);
   justify-self: start;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: 8px;
-  padding: 10px 12px;
-  background: var(--dsw-alias-interactive-bg-active);
+  padding: 0;
+  background: transparent;
   animation: message-in 180ms ease both;
 }
 
-.tool-event.running {
-  border-color: var(--dsw-static-deepseek-300);
-  box-shadow: 0 0 0 1px var(--dsw-alias-state-business-tertiary);
+/* 运行中扫光：dsh 同款 glare band 从左滑过 */
+.tool-event.running::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 240px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--dsw-alias-interactive-bg-hover) 55%,
+    transparent 100%
+  );
+  animation: nova-tool-row-sweep 2.6s ease-out infinite;
+  pointer-events: none;
 }
 
-.tool-event.ok {
-  border-color: var(--dsw-static-green-400);
+@keyframes nova-tool-row-sweep {
+  0% { left: -240px; }
+  90%, 100% { left: 100%; }
 }
 
-.tool-event.failed {
-  border-color: var(--dsw-static-red-400);
-  background: var(--dsw-alias-state-error-tertiary);
+/* 详情内容：默认收起，.expanded 时展开 */
+.tool-event .tool-meta-grid,
+.tool-event .tool-key-params,
+.tool-event .tool-args,
+.tool-event .tool-result,
+.tool-event .tool-schema,
+.tool-event .tool-actions,
+.tool-event .tool-failure,
+.tool-event .tool-execution-details,
+.tool-event .hook-contexts,
+.tool-event .tool-diff-preview {
+  display: none;
+}
+
+.tool-event.expanded {
+  margin-top: 2px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  padding: 8px 10px 10px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.tool-event.expanded .tool-meta-grid,
+.tool-event.expanded .tool-key-params,
+.tool-event.expanded .tool-args,
+.tool-event.expanded .tool-result,
+.tool-event.expanded .tool-schema,
+.tool-event.expanded .tool-actions,
+.tool-event.expanded .tool-failure,
+.tool-event.expanded .tool-execution-details,
+.tool-event.expanded .hook-contexts,
+.tool-event.expanded .tool-diff-preview {
+  display: revert;
+}
+
+.tool-event.expanded .tool-meta-grid {
+  display: grid;
+}
+
+.tool-event.expanded .tool-key-params,
+.tool-event.expanded .tool-actions {
+  display: flex;
 }
 
 .permission-event.pending {
@@ -1028,10 +1085,92 @@ body.sidebar-collapsed .sidebar-foot-button {
 
 .tool-event-head,
 .permission-event-head {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
   gap: 8px;
+  height: 24px;
+  line-height: 24px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 状态点：dsh StateDot 语义 */
+.tool-event-head::before,
+.permission-event-head::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-label-caption);
+}
+
+.tool-event.running .tool-event-head::before,
+.permission-event.pending .permission-event-head::before {
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.tool-event.ok .tool-event-head::before {
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.tool-event.failed .tool-event-head::before {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.tool-event-head > span:first-of-type,
+.permission-event-head > span:first-of-type {
+  flex: none;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* dsh 分隔点 */
+.tool-event-head::after,
+.permission-event-head::after {
+  content: "";
+  flex: none;
+  order: 2;
+  width: 2px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--dsw-alias-label-caption);
+}
+
+.tool-event-purpose {
+  order: 3;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 13px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-event-head em,
+.permission-event-head em {
+  order: 4;
+  flex: none;
+  color: var(--faint);
+  font-size: 12px;
+  font-style: normal;
+}
+
+/* 展开指示 chevron（order 5 兜底在最右） */
+.tool-event-head .tool-chevron,
+.permission-event-head .tool-chevron {
+  order: 5;
+  flex: none;
+  margin-left: 2px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  transition: transform 100ms ease;
+}
+
+.tool-event.expanded .tool-chevron {
+  transform: rotate(180deg);
 }
 
 .tool-actions {
@@ -1194,12 +1333,13 @@ body.sidebar-collapsed .sidebar-foot-button {
   letter-spacing: 0;
 }
 
+/* dsh 行规格：状态文字用常规字重，不做胶囊感 */
 .tool-event-head em,
 .permission-event-head em {
   color: var(--muted);
   font-size: 11px;
   font-style: normal;
-  font-weight: 850;
+  font-weight: 400;
 }
 
 .tool-event.ok .tool-event-head em {
