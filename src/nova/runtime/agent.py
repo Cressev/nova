@@ -60,7 +60,15 @@ class CodexLikeAgentRuntime:
         )
         self.hooks = ToolHookRunner.from_file(tool_hooks_file, cwd=project_root)
         self.process_manager = process_manager or ProcessManager()
-        self.executor = ToolExecutor(self.tools, hooks=self.hooks, process_manager=self.process_manager)
+        # dsh 语义：取消权威在会话层（AgentSessionRegistry 在 runtime 上置
+        # cancel_requested 标志），执行器每个工具派发前只读检查；body 已
+        # 启动后的 shell 取消走 process_manager.cancel_call。
+        self.executor = ToolExecutor(
+            self.tools,
+            hooks=self.hooks,
+            process_manager=self.process_manager,
+            cancel_requested=lambda: bool(getattr(self, "cancel_requested", False)),
+        )
         self.memory = ProjectMemory(project_root, global_agent_file=global_agent_file)
         self.max_tool_rounds = max_tool_rounds
         self.permission_mode = permission_mode

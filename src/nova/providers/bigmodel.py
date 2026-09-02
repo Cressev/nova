@@ -123,7 +123,7 @@ class BigModelProvider:
                     "description": (
                         f"{spec.description} 调用时必须填写 annotation，用一句简短中文说明本次工具调用目的。"
                     ),
-                    "parameters": self._tool_parameters_schema(spec.schema),
+                    "parameters": self._tool_parameters_schema(spec),
                 },
             }
             for spec in specs.values()
@@ -166,15 +166,30 @@ class BigModelProvider:
             },
         }
 
-    def _tool_parameters_schema(self, example_schema: dict[str, Any]) -> dict[str, Any]:
-        properties = {
-            key: self._json_schema_from_example(value)
-            for key, value in example_schema.items()
-        }
-        properties["annotation"] = {
+    def _tool_parameters_schema(self, spec: ToolSpec) -> dict[str, Any]:
+        """模型可见参数 schema（dsh schemas() 白名单语义：所见即所验）。
+
+        有真实契约的工具直接发契约本体 + annotation 属性——模型看到的
+        required/enum/additionalProperties 与执行器验证的完全一致，而不是
+        从示例 dict 猜出来的宽松 schema。动态 MCP 工具无契约时退回示例
+        推断。annotation 在执行器验证前就被弹出，不影响契约闭合性。
+        """
+        annotation_schema = {
             "type": "string",
             "description": "简短说明这次工具调用要做什么，8 到 20 个中文字符为宜。",
         }
+        if spec.json_schema:
+            return {
+                "type": "object",
+                "properties": {**(spec.json_schema.get("properties") or {}), "annotation": annotation_schema},
+                "required": [*(spec.json_schema.get("required") or []), "annotation"],
+                "additionalProperties": False,
+            }
+        properties = {
+            key: self._json_schema_from_example(value)
+            for key, value in spec.schema.items()
+        }
+        properties["annotation"] = annotation_schema
         return {
             "type": "object",
             "properties": properties,

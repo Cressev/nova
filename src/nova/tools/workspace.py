@@ -19,7 +19,15 @@ from .web_search import ZaiWebSearchError, run_zai_web_search
 
 
 class ToolExecutionError(RuntimeError):
-    """工具执行失败时抛出，外层会把错误作为模型可读的工具结果。"""
+    """工具执行失败时抛出，外层会把错误作为模型可读的工具结果。
+
+    code 对照 dsh 的结构化错误词汇（errors.py 常量）：未知工具、权限拒绝
+    等可路由失败需要机器可读的码，而不是让下游解析中文 message。
+    """
+
+    def __init__(self, message: str, *, code: str = "TOOL_ERROR") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -44,6 +52,11 @@ class ToolSpec:
     interrupt_behavior: str = "block"
     hooks_enabled: bool = True
     model_visible: bool = True
+    # 受支持 JSON Schema 子集声明的参数契约（dsh defineTool.parameters 的镜像）。
+    # 执行器在 hook/权限之后、body 之前按它验证，违反即 INVALID_ARGS 且 body 不执行。
+    json_schema: dict[str, Any] | None = None
+    # 协作式超时预算（毫秒）。dsh 语义：registry 层强制、绝不发给模型。
+    timeout_ms: int = 30000
 
 
 TOOL_SPECS: dict[str, ToolSpec] = {
@@ -292,6 +305,266 @@ TOOL_SPECS: dict[str, ToolSpec] = {
     ),
 }
 
+# ---------------------------------------------------------------------------
+# 参数契约与超时预算（对照 dsh defineTool 的 parameters/timeoutMs）。
+#
+# 每个工具的受支持 JSON Schema 子集声明：执行器在 hook/权限之后、body
+# 之前按它验证模型参数，违反即 INVALID_ARGS 且 body 不执行（dsh 的
+# ToolArgsError 语义）。timeout_ms 是 registry 层的协作式预算，绝不发给
+# 模型（shell 的 timeout_ms 参数只是模型的自助请求，仍被这里的上限钳制）。
+# ---------------------------------------------------------------------------
+
+_TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
+    "read_file": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "工作区内相对路径"},
+            "max_bytes": {"type": "integer", "description": "读取上限"},
+        },
+        "required": ["path"],
+        "additionalProperties": False,
+    },
+    "read_many_files": {
+        "type": "object",
+        "properties": {
+            "paths": {"type": "array", "items": {"type": "string"}, "description": "相对路径列表"},
+            "max_bytes_each": {"type": "integer"},
+        },
+        "required": ["paths"],
+        "additionalProperties": False,
+    },
+    "list_files": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "limit": {"type": "integer"},
+        },
+        "additionalProperties": False,
+    },
+    "glob_files": {
+        "type": "object",
+        "properties": {
+            "pattern": {"type": "string"},
+            "path": {"type": "string"},
+            "limit": {"type": "integer"},
+        },
+        "required": ["pattern"],
+        "additionalProperties": False,
+    },
+    "search_text": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "path": {"type": "string"},
+            "max_results": {"type": "integer"},
+        },
+        "required": ["query"],
+        "additionalProperties": False,
+    },
+    # shell 的 command/cmd 是历史双写别名：schema 只认规范名 command，
+    # 执行器在验证前做别名归一（cmd → command），避免模型踩旧别名被拒。
+    "shell_command": {
+        "type": "object",
+        "properties": {
+            "command": {"type": "string"},
+            "workdir": {"type": "string"},
+            "timeout_ms": {"type": "integer"},
+            "background": {"type": "boolean"},
+        },
+        "required": ["command"],
+        "additionalProperties": False,
+    },
+    "replace_in_file": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "old": {"type": "string"},
+            "new": {"type": "string"},
+        },
+        "required": ["path", "old", "new"],
+        "additionalProperties": False,
+    },
+    "edit_file": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "old": {"type": "string"},
+            "new": {"type": "string"},
+        },
+        "required": ["path", "old", "new"],
+        "additionalProperties": False,
+    },
+    "multi_edit": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "edits": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "old": {"type": "string"},
+                        "new": {"type": "string"},
+                    },
+                    "required": ["old", "new"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["path", "edits"],
+        "additionalProperties": False,
+    },
+    "create_file": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "content": {"type": "string"},
+        },
+        "required": ["path", "content"],
+        "additionalProperties": False,
+    },
+    "write_file": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "content": {"type": "string"},
+        },
+        "required": ["path", "content"],
+        "additionalProperties": False,
+    },
+    "apply_patch": {
+        "type": "object",
+        "properties": {
+            "patch": {"type": "string"},
+        },
+        "required": ["patch"],
+        "additionalProperties": False,
+    },
+    "todo_read": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+    "todo_write": {
+        "type": "object",
+        "properties": {
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "content": {"type": "string"},
+                        "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]},
+                    },
+                    "required": ["content", "status"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["items"],
+        "additionalProperties": False,
+    },
+    "web_fetch": {
+        "type": "object",
+        "properties": {
+            "url": {"type": "string"},
+            "max_bytes": {"type": "integer"},
+        },
+        "required": ["url"],
+        "additionalProperties": False,
+    },
+    "web_search": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+        },
+        "required": ["query"],
+        "additionalProperties": False,
+    },
+    "memory_read": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+        },
+        "required": ["name"],
+        "additionalProperties": False,
+    },
+    "memory_write": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "content": {"type": "string"},
+        },
+        "required": ["name", "content"],
+        "additionalProperties": False,
+    },
+    "memory_search": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+        },
+        "required": ["query"],
+        "additionalProperties": False,
+    },
+    "memory_summarize": {
+        "type": "object",
+        "properties": {
+            "max_chars_per_file": {"type": "integer"},
+        },
+        "additionalProperties": False,
+    },
+    "memory_compact": {
+        "type": "object",
+        "properties": {
+            "max_chars": {"type": "integer"},
+        },
+        "additionalProperties": False,
+    },
+}
+
+# 每工具超时预算（毫秒）：读类 30s；批量读 60s；shell 钳到 120s；
+# 网络类 60s；todo 这类纯内存操作 10s。
+_TOOL_TIMEOUTS: dict[str, int] = {
+    "read_file": 30000,
+    "read_many_files": 60000,
+    "list_files": 30000,
+    "glob_files": 30000,
+    "search_text": 30000,
+    "shell_command": 120000,
+    "replace_in_file": 30000,
+    "edit_file": 30000,
+    "multi_edit": 30000,
+    "create_file": 30000,
+    "write_file": 30000,
+    "apply_patch": 30000,
+    "todo_read": 10000,
+    "todo_write": 10000,
+    "web_fetch": 60000,
+    "web_search": 60000,
+    "memory_read": 30000,
+    "memory_write": 30000,
+    "memory_search": 30000,
+    "memory_summarize": 60000,
+    "memory_compact": 60000,
+}
+
+# 注册期静态校验 + 合约挂载：schema 非法立即爆炸（不留到第一次调用）。
+from dataclasses import replace as _dc_replace  # noqa: E402
+
+from .validation import assert_supported_schema as _assert_schema  # noqa: E402
+
+for _name, _schema in _TOOL_CONTRACTS.items():
+    _assert_schema(_schema, f"TOOL_CONTRACTS.{_name}")
+
+TOOL_SPECS = {
+    _name: _dc_replace(
+        spec,
+        json_schema=_TOOL_CONTRACTS.get(_name),
+        timeout_ms=_TOOL_TIMEOUTS.get(_name, 30000),
+    )
+    for _name, spec in TOOL_SPECS.items()
+}
+
 
 class WorkspaceTools:
     def __init__(
@@ -340,7 +613,7 @@ class WorkspaceTools:
         }
         handler = handlers.get(name)
         if handler is None:
-            raise ToolExecutionError(f"未知工具：{name}")
+            raise ToolExecutionError(f"未知工具：{name}", code="UNKNOWN_TOOL")
         self._check_permission(name)
         return handler(arguments)
 
@@ -1215,13 +1488,13 @@ class WorkspaceTools:
         if spec is None or spec.permission == "read":
             return
         if spec.permission == "network" and not self.network_access:
-            raise ToolExecutionError(f"当前网络访问关闭，禁止执行 {name}")
+            raise ToolExecutionError(f"当前网络访问关闭，禁止执行 {name}", code="PERMISSION_DENIED")
         if self.sandbox_mode == "read_only" and spec.permission in {"write", "shell"}:
-            raise ToolExecutionError(f"当前沙箱模式为 read_only，禁止执行 {name}")
+            raise ToolExecutionError(f"当前沙箱模式为 read_only，禁止执行 {name}", code="PERMISSION_DENIED")
         if self.permission_mode == "bypass_permissions":
             return
         if self.permission_mode == "plan" and spec.permission != "read":
-            raise ToolExecutionError(f"当前权限模式为 plan，只规划不执行 {name}")
+            raise ToolExecutionError(f"当前权限模式为 plan，只规划不执行 {name}", code="PERMISSION_DENIED")
         if self.permission_mode == "accept_edits" and spec.permission in {"shell", "network"}:
             raise ToolExecutionError(f"当前权限模式为 accept_edits，禁止自动执行 {name}")
         if self.permission_mode == "dont_ask" and spec.permission != "read":

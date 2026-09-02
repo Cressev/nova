@@ -75,6 +75,19 @@ class ToolOrchestrator:
             return
 
         for call_id, name, arguments in normalized:
+            # dsh 语义：串行批次在每个工具派发前重查取消——被取消的剩余
+            # 调用以 ABORTED_BEFORE_DISPATCH 落账，body 不再执行。
+            if self.is_cancel_requested():
+                yield {"type": "tool_result_json", "result_json": json.dumps(
+                    {
+                        "tool": name,
+                        "ok": False,
+                        "error": "回合已取消，工具未启动。",
+                        "data": {"error_code": "ABORTED_BEFORE_DISPATCH"},
+                    },
+                    ensure_ascii=False,
+                )}
+                continue
             async for event in self.iter_executor_events(
                 call_id,
                 name,
@@ -134,6 +147,10 @@ class ToolOrchestrator:
             self._trace(event)
             events.append(event)
         return events, result_json
+
+    def is_cancel_requested(self) -> bool:
+        cancel = getattr(self.executor, "cancel_requested", None)
+        return bool(cancel and cancel())
 
     def requires_permission_request(self, tool_name: str) -> bool:
         spec = TOOL_SPECS.get(tool_name)

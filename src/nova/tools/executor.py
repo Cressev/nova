@@ -1,13 +1,31 @@
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import subprocess
 import time
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 from ..processes.manager import ProcessManager
+from .errors import (
+    INVALID_ARGS,
+    INVALID_TOOL_OUTPUT,
+    TOOL_ABORTED_BEFORE_DISPATCH,
+    TOOL_PERMISSION_DENIED,
+    TOOL_TIMEOUT,
+    UNKNOWN_TOOL,
+)
 from .hooks import HookOutcome, ToolHookRunner
+from .validation import snapshot_arguments, validate_arguments
 from .workspace import TOOL_SPECS, ToolExecutionError, WorkspaceTools, tool_result_as_json
+
+# 同步 body 的超时线程池：daemon 线程，超时后结果照常返回 TIMEOUT，
+# 慢线程在后台自然结束（Python 无法强杀线程；dsh 同样是协作式契约——
+# "cannot hard-kill same-process code"）。
+_BODY_POOL = concurrent.futures.ThreadPoolExecutor(
+    max_workers=8,
+    thread_name_prefix="nova-tool-body",
+)
 
 
 class ToolExecutor:
@@ -23,10 +41,15 @@ class ToolExecutor:
         *,
         hooks: ToolHookRunner | None = None,
         process_manager: ProcessManager | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> None:
         self.tools = tools
         self.hooks = hooks or ToolHookRunner(cwd=tools.project_root)
         self.process_manager = process_manager or ProcessManager()
+        # dsh 语义：每个工具派发前重查取消——body 未启动的取消是
+        # ABORTED_BEFORE_DISPATCH，body 已启动的是 ABORTED。取消权威在
+        # 会话层（agent_sessions.cancel_requested），这里只读。
+        self.cancel_requested = cancel_requested or (lambda: False)
 
     def run_one(
         self,
@@ -73,7 +96,7 @@ class ToolExecutor:
                     tool_name,
                     current_arguments,
                     reason,
-                    {"hook": outcome.name},
+                    {"hook": outcome.name, "error_code": TOOL_PERMISSION_DENIED},
                     hook_contexts=hook_contexts,
                 )
             if outcome.permission_decision == "ask":
@@ -126,9 +149,48 @@ class ToolExecutor:
                     tool_name,
                     current_arguments,
                     reason,
-                    {"hook_decision": "deny"},
+                    {"hook_decision": "deny", "error_code": TOOL_PERMISSION_DENIED},
                     hook_contexts=hook_contexts,
                 )
+
+        # ---- dsh 管线顺序：快照 → pre-hook/权限 → 验证 → 取消重查 → body ----
+        # 参数在 hook 改写后过无损 JSON 快照边界（隔离 + 非序列化提前爆炸）。
+        try:
+            current_arguments = snapshot_arguments(current_arguments)
+        except ValueError as exc:
+            return self._failed_tool(
+                events,
+                call_id,
+                tool_name,
+                current_arguments,
+                str(exc),
+                {"error_code": INVALID_ARGS},
+                hook_contexts=hook_contexts,
+            )
+        current_arguments = self._normalize_argument_aliases(tool_name, current_arguments)
+        violations = self._validate_tool_arguments(tool_name, current_arguments)
+        if violations:
+            # INVALID_ARGS：body 永不执行（dsh ToolArgsError 语义），并把
+            # path 限定的违规清单交给模型以便自我纠正。
+            return self._failed_tool(
+                events,
+                call_id,
+                tool_name,
+                current_arguments,
+                f"参数违反 {tool_name} 契约：" + "；".join(violations),
+                {"error_code": INVALID_ARGS, "violations": violations},
+                hook_contexts=hook_contexts,
+            )
+        if self.cancel_requested():
+            return self._failed_tool(
+                events,
+                call_id,
+                tool_name,
+                current_arguments,
+                "回合已取消，工具未启动。",
+                {"error_code": TOOL_ABORTED_BEFORE_DISPATCH},
+                hook_contexts=hook_contexts,
+            )
 
         started_at = time.perf_counter()
         events.append(
@@ -143,9 +205,34 @@ class ToolExecutor:
             }
         )
         try:
-            result = self._run_tool_with_optional_approval(tool_name, current_arguments, require_permission or permission_preapproved)
+            result = self._run_body_with_timeout(
+                tool_name,
+                current_arguments,
+                require_permission or permission_preapproved,
+            )
+        except concurrent.futures.TimeoutError as exc:
+            message = f"工具 {tool_name} 超过执行预算（{self._tool_timeout_ms(tool_name)}ms）被中止。"
+            self._run_hooks(
+                events,
+                "PostToolUseFailure",
+                call_id,
+                tool_name,
+                current_arguments,
+                error=message,
+            )
+            return self._failed_tool(
+                events,
+                call_id,
+                tool_name,
+                current_arguments,
+                message,
+                {"error_code": TOOL_TIMEOUT, "timeout_ms": self._tool_timeout_ms(tool_name)},
+                started_at=started_at,
+                hook_contexts=hook_contexts,
+            )
         except (ToolExecutionError, OSError, ValueError, subprocess.SubprocessError) as exc:
             message = str(exc)
+            error_code = getattr(exc, "code", "TOOL_ERROR")
             failure_outcomes = self._run_hooks(
                 events,
                 "PostToolUseFailure",
@@ -161,7 +248,7 @@ class ToolExecutor:
                 tool_name,
                 current_arguments,
                 message,
-                {},
+                {"error_code": error_code},
                 started_at=started_at,
                 hook_contexts=hook_contexts,
             )
@@ -264,7 +351,7 @@ class ToolExecutor:
                     tool_name,
                     current_arguments,
                     reason,
-                    {"hook": outcome.name},
+                    {"hook": outcome.name, "error_code": TOOL_PERMISSION_DENIED},
                     hook_contexts=hook_contexts,
                 )
                 yield from failed_events
@@ -324,10 +411,51 @@ class ToolExecutor:
                 yield {"type": "tool_result_json", "result_json": result_json}
                 return
 
+        # ---- dsh 管线（流式 shell 路径同样）：快照 → 验证 → 取消重查 ----
+        try:
+            current_arguments = snapshot_arguments(current_arguments)
+        except ValueError as exc:
+            failed_events, result_json = self._failed_tool(
+                events, call_id, tool_name, current_arguments, str(exc), {"error_code": INVALID_ARGS}, hook_contexts=hook_contexts
+            )
+            yield from failed_events
+            yield {"type": "tool_result_json", "result_json": result_json}
+            return
+        current_arguments = self._normalize_argument_aliases(tool_name, current_arguments)
+        violations = self._validate_tool_arguments(tool_name, current_arguments)
+        if violations:
+            failed_events, result_json = self._failed_tool(
+                events,
+                call_id,
+                tool_name,
+                current_arguments,
+                f"参数违反 {tool_name} 契约：" + "；".join(violations),
+                {"error_code": INVALID_ARGS, "violations": violations},
+                hook_contexts=hook_contexts,
+            )
+            yield from failed_events
+            yield {"type": "tool_result_json", "result_json": result_json}
+            return
+        if self.cancel_requested():
+            failed_events, result_json = self._failed_tool(
+                events,
+                call_id,
+                tool_name,
+                current_arguments,
+                "回合已取消，工具未启动。",
+                {"error_code": TOOL_ABORTED_BEFORE_DISPATCH},
+                hook_contexts=hook_contexts,
+            )
+            yield from failed_events
+            yield {"type": "tool_result_json", "result_json": result_json}
+            return
+
         try:
             command, workdir, timeout_ms = self._prepare_shell(current_arguments, approved=require_permission or permission_preapproved)
         except (ToolExecutionError, OSError, ValueError) as exc:
-            failed_events, result_json = self._failed_tool(events, call_id, tool_name, current_arguments, str(exc), {}, hook_contexts=hook_contexts)
+            failed_events, result_json = self._failed_tool(
+                events, call_id, tool_name, current_arguments, str(exc), {"error_code": getattr(exc, "code", "TOOL_ERROR")}, hook_contexts=hook_contexts
+            )
             yield from failed_events
             yield {"type": "tool_result_json", "result_json": result_json}
             return
@@ -507,7 +635,7 @@ class ToolExecutor:
             hook_contexts=hook_contexts,
         )
         result_json = json.dumps(
-            {"tool": tool_name, "ok": False, "error": message, "data": enriched_data},
+            {"tool": tool_name, "ok": False, "error": message, "data": self._sanitize_data(enriched_data)},
             ensure_ascii=False,
         )
         events.append(
@@ -586,6 +714,29 @@ class ToolExecutor:
             ensure_ascii=False,
         )
 
+    def _sanitize_data(self, data: dict[str, Any]) -> dict[str, Any]:
+        """输出契约（dsh INVALID_TOOL_OUTPUT 语义）：结果 data 必须无损 JSON。
+
+        非序列化值转字符串并在 error_code 标记，绝不让 json.dumps 在
+        事件流中途炸掉整个 turn。
+        """
+        try:
+            json.dumps(data, allow_nan=False)
+            return data
+        except (TypeError, ValueError):
+            sanitized: dict[str, Any] = {}
+            degraded = False
+            for key, value in data.items():
+                try:
+                    json.dumps({key: value}, allow_nan=False)
+                    sanitized[key] = value
+                except (TypeError, ValueError):
+                    sanitized[key] = repr(value)
+                    degraded = True
+            if degraded:
+                sanitized["error_code"] = INVALID_TOOL_OUTPUT
+            return sanitized
+
     def _tool_result_json(self, result: Any, data: dict[str, Any]) -> str:
         return json.dumps(
             {
@@ -593,7 +744,7 @@ class ToolExecutor:
                 "title": result.title,
                 "ok": result.ok,
                 "output": result.output,
-                "data": data,
+                "data": self._sanitize_data(data),
             },
             ensure_ascii=False,
         )
@@ -629,6 +780,45 @@ class ToolExecutor:
             if reason:
                 return str(reason)
         return None
+
+    def _validate_tool_arguments(self, tool_name: str, arguments: dict[str, Any]) -> list[str]:
+        """按工具契约验证参数；动态 MCP 工具无契约时不设防（返回空）。"""
+        spec = TOOL_SPECS.get(tool_name)
+        if spec is None or not spec.json_schema:
+            return []
+        return validate_arguments(spec.json_schema, arguments)
+
+    def _normalize_argument_aliases(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        """历史别名归一：shell 的 cmd → command（契约只认规范名）。"""
+        if tool_name == "shell_command" and "cmd" in arguments and "command" not in arguments:
+            arguments = dict(arguments)
+            arguments["command"] = arguments.pop("cmd")
+        return arguments
+
+    def _tool_timeout_ms(self, tool_name: str) -> int:
+        spec = TOOL_SPECS.get(tool_name)
+        return spec.timeout_ms if spec else 30000
+
+    def _run_body_with_timeout(self, tool_name: str, arguments: dict[str, Any], approved: bool) -> Any:
+        """协作式超时预算包装（dsh tool-call-timeout-policy 的同步镜像）。
+
+        预算耗尽立即返回 TIMEOUT 结果；后台线程无法强杀，会自然结束
+        （与 dsh 的进程内协作契约一致——声明 timeout 即承诺可协作停止）。
+        """
+        timeout_ms = self._tool_timeout_ms(tool_name)
+        future = _BODY_POOL.submit(
+            self._run_tool_with_optional_approval,
+            tool_name,
+            arguments,
+            approved,
+        )
+        try:
+            return future.result(timeout=timeout_ms / 1000.0)
+        except concurrent.futures.TimeoutError:
+            # 不 cancel 线程（Python 无法中断），只放弃等待；shell 的子进程
+            # 由 ProcessManager 的 job 清理兜底。
+            future.cancel()
+            raise
 
     def _run_tool_with_optional_approval(self, tool_name: str, arguments: dict[str, Any], approved: bool) -> Any:
         if not approved or self.tools.permission_mode != "ask":
