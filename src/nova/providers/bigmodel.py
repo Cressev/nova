@@ -293,6 +293,84 @@ class BigModelProvider:
             return value.get(key)
         return getattr(value, key, None)
 
+    async def stream_with_tools(
+        self,
+        messages: list[ChatMessage],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AsyncIterator[dict]:
+        """流式工具决策（dsh 逐字输出语义）。
+
+        文本增量以 {"type": "delta", "text": ...} 即时下发；
+        原生 tool_calls 分片跨块聚合（index 对位拼接 name/arguments），
+        流结束后以 {"type": "decision", "content", "tool_calls"} 收口，
+        tool_calls 形状与 complete_with_tools 保持一致。
+        """
+        api_key = self._api_key()
+        if not api_key:
+            raise ProviderError(
+                f"未配置 {self.api_key_env}，请在设置页填写 API Key，或在启动服务前设置环境变量。"
+            )
+
+        client = self._openai_client(api_key)
+        try:
+            stream = await client.chat.completions.create(
+                model=self.model,
+                messages=self._payload_messages(messages),
+                temperature=0.3,
+                tools=tools or self.openai_tool_schemas(),
+                tool_choice="auto",
+                stream=True,
+            )
+        except Exception as exc:
+            raise ProviderError(f"模型流式工具决策调用失败：{exc}") from exc
+
+        parts: list[str] = []
+        fragments: dict[int, dict[str, str]] = {}
+        async for chunk in stream:
+            choices = self._read_attr(chunk, "choices") or []
+            if not choices:
+                continue
+            delta = self._read_attr(choices[0], "delta") or {}
+            content = self._stream_delta_text(delta)
+            if content:
+                parts.append(content)
+                yield {"type": "delta", "text": content}
+            for piece in self._read_attr(delta, "tool_calls") or []:
+                index = self._read_attr(piece, "index")
+                index = 0 if index is None else int(index)
+                entry = fragments.setdefault(index, {"id": "", "name": "", "arguments": ""})
+                piece_id = self._read_attr(piece, "id")
+                if piece_id:
+                    entry["id"] = str(piece_id)
+                function = self._read_attr(piece, "function") or {}
+                name = self._read_attr(function, "name")
+                if name:
+                    entry["name"] += str(name)
+                arguments = self._read_attr(function, "arguments")
+                if arguments:
+                    entry["arguments"] += str(arguments)
+
+        normalized: list[dict[str, Any]] = []
+        for index in sorted(fragments):
+            entry = fragments[index]
+            name = entry["name"].strip()
+            if not name:
+                continue
+            try:
+                parsed_arguments = json.loads(entry["arguments"]) if entry["arguments"] else {}
+            except json.JSONDecodeError:
+                parsed_arguments = {}
+            normalized.append(
+                {
+                    "id": entry["id"],
+                    "type": "function",
+                    "tool": name,
+                    "arguments": parsed_arguments if isinstance(parsed_arguments, dict) else {},
+                }
+            )
+        yield {"type": "decision", "content": "".join(parts), "tool_calls": normalized}
+
     async def complete(self, messages: list[ChatMessage]) -> str:
         api_key = self._api_key()
         if not api_key:

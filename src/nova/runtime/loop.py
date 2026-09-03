@@ -65,7 +65,17 @@ class AgentLoop:
 
         for round_index in range(runtime.max_tool_rounds):
             yield {"type": "agent_status", "status": f"模型决策中，第 {round_index + 1} 轮"}
-            decision = await runtime._complete_tool_decision(working_messages)
+            # dsh 逐字输出：决策阶段直接流式，纯文本回答即时下发，
+            # 工具调用轮的文本由门控拦截（不展示原始 XML）。
+            decision: dict[str, object] = {"content": "", "tool_calls": []}
+            streamed_answer = False
+            async for event in runtime._stream_tool_decision(working_messages):
+                if event.get("type") == "decision":
+                    decision = event
+                    continue
+                if event.get("type") == "assistant_delta":
+                    streamed_answer = True
+                yield event
             runtime._trace_generation(
                 trace_turn_id,
                 name=f"tool-decision-{round_index + 1}",
@@ -77,9 +87,11 @@ class AgentLoop:
             tool_calls = decision["tool_calls"] or runtime._parse_tool_calls(decision_text)
             if not tool_calls:
                 if str(decision_text).strip():
-                    yield {"type": "agent_status", "status": "生成最终回答"}
-                    for chunk in runtime._chunk_text(str(decision_text), 36):
-                        yield {"type": "assistant_delta", "delta": chunk}
+                    # 文本已在决策流里逐字下发；此处只补 done 事件收口。
+                    if not streamed_answer:
+                        yield {"type": "agent_status", "status": "生成最终回答"}
+                        for chunk in runtime._chunk_text(str(decision_text), 36):
+                            yield {"type": "assistant_delta", "delta": chunk}
                     yield {"type": "assistant_done_content", "content": str(decision_text)}
                     return
                 yield {"type": "agent_status", "status": "生成最终回答"}

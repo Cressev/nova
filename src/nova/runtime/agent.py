@@ -30,6 +30,60 @@ TOOL_CALLS_PATTERN = re.compile(
 )
 
 
+class _ToolCallGate:
+    """流式工具标签门控：文本即时放行，仅扣留可能拼出标记的尾部。
+
+    同时盯 <tool_call> 与 <tool_calls> 两种标记（后者的前缀覆盖前者），
+    最多扣留 max(len)-1 个字符；任一标记完整出现即进入 tool 模式，
+    后续文本不再对用户可见（保持既有语义：工具调用轮不展示原始 XML）。
+    """
+
+    MARKERS = ("<tool_call>", "<tool_calls>")
+
+    def __init__(self) -> None:
+        self.buffer = ""
+        self.full_text = ""
+        self.tool_detected = False
+
+    def _hold_length(self) -> int:
+        return max(len(marker) for marker in self.MARKERS) - 1
+
+    def _suffix_hold(self) -> int:
+        for size in range(min(len(self.buffer), self._hold_length()), 0, -1):
+            tail = self.buffer[-size:]
+            if any(marker.startswith(tail) for marker in self.MARKERS):
+                return size
+        return 0
+
+    def feed(self, chunk: str) -> list[str]:
+        self.full_text += chunk
+        if self.tool_detected:
+            return []
+        self.buffer += chunk
+        for marker in self.MARKERS:
+            marker_index = self.buffer.find(marker)
+            if marker_index != -1:
+                emitted = self.buffer[:marker_index]
+                self.buffer = ""
+                self.tool_detected = True
+                return [emitted] if emitted else []
+        keep = self._suffix_hold()
+        if keep:
+            emit_text = self.buffer[:-keep]
+            self.buffer = self.buffer[-keep:]
+            return [emit_text] if emit_text else []
+        emit_text = self.buffer
+        self.buffer = ""
+        return [emit_text] if emit_text else []
+
+    def flush(self) -> list[str]:
+        if self.tool_detected or not self.buffer:
+            return []
+        remaining = self.buffer
+        self.buffer = ""
+        return [remaining]
+
+
 class CodexLikeAgentRuntime:
     def __init__(
         self,
@@ -145,6 +199,46 @@ class CodexLikeAgentRuntime:
         ):
             yield event
 
+    async def _stream_tool_decision(self, messages: list[ChatMessage]) -> AsyncIterator[dict]:
+        """流式模型决策（dsh 逐字输出）。
+
+        文本经 <tool_call> 门控后即时下发 assistant_delta；原生 tool_calls 跨块
+        聚合。结束时产出 {"type": "decision", "content", "tool_calls"}。Provider
+        不支持流式工具决策时退回非流式 complete_with_tools。
+        """
+        stream_with_tools = getattr(self.provider, "stream_with_tools", None)
+        if not callable(stream_with_tools):
+            decision = await self._complete_tool_decision(messages)
+            yield {"type": "decision", **decision}
+            return
+
+        chat_tool_schemas = getattr(self.provider, "chat_tool_schemas", None)
+        if callable(chat_tool_schemas):
+            tools = chat_tool_schemas(
+                TOOL_SPECS,
+                enable_web_search=self.tools.network_access,
+                enable_web_fetch=self.tools.network_access and self._latest_user_has_url(messages),
+            )
+        else:
+            schemas = getattr(self.provider, "openai_tool_schemas", None)
+            tools = schemas(TOOL_SPECS) if callable(schemas) else None
+
+        gate = _ToolCallGate()
+        native_calls: list = []
+        content_parts: list[str] = []
+        async for event in stream_with_tools(messages, tools=tools):
+            if event.get("type") == "delta":
+                content_parts.append(str(event.get("text") or ""))
+                for safe in gate.feed(str(event.get("text") or "")):
+                    yield {"type": "assistant_delta", "delta": safe}
+                continue
+            if event.get("type") == "decision":
+                native_calls = event.get("tool_calls") or []
+                content_parts = [str(event.get("content") or "") or "".join(content_parts)]
+        full_text = "".join(content_parts)
+        tool_calls = native_calls or (self._parse_tool_calls(full_text) if gate.tool_detected else [])
+        yield {"type": "decision", "content": full_text, "tool_calls": tool_calls}
+
     async def _complete_tool_decision(self, messages: list[ChatMessage]) -> dict[str, object]:
         complete_with_tools = getattr(self.provider, "complete_with_tools", None)
         if callable(complete_with_tools):
@@ -188,14 +282,18 @@ class CodexLikeAgentRuntime:
             ),
         )
         emitted = False
-        parts: list[str] = []
+        gate = _ToolCallGate()
         async for delta in self.provider.stream([*working_messages, final_prompt]):
             emitted = True
-            parts.append(delta)
-        text = "".join(parts)
-        final_tool_calls = self._parse_tool_calls(text)
+            for safe in gate.feed(delta):
+                yield {"type": "assistant_delta", "delta": safe}
+        for safe in gate.flush():
+            yield {"type": "assistant_delta", "delta": safe}
+        text = gate.full_text
+        final_tool_calls = self._parse_tool_calls(text) if gate.tool_detected else []
         if final_tool_calls:
-            # 有些模型会在“最终回答”阶段才吐工具标签；这里收回文本，改为真实执行工具。
+            # 有些模型会在“最终回答”阶段才吐工具标签；门控已拦截 XML，
+            # 这里转为真实执行工具，再基于结果流式作答。
             yield {"type": "agent_status", "status": "识别到最终回答中的工具调用，转为真实执行"}
             tool_results: list[str] = []
             async for event in self._run_tool_calls(final_tool_calls):
@@ -207,9 +305,7 @@ class CodexLikeAgentRuntime:
                 yield event
             return
 
-        for part in parts:
-            yield {"type": "assistant_delta", "delta": part}
-
+        parts = [text]
         if not emitted or not text.strip():
             text = self._strip_final_tags(fallback) or "模型没有返回有效内容，请换一种更具体的说法再试。"
             parts = [text]
