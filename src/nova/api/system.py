@@ -9,13 +9,10 @@ router = APIRouter()
 
 @router.get("/", include_in_schema=False)
 async def index() -> ctx.HTMLResponse:
+    # 前端已迁移 Vite + React：产物在 static/index.html，资源带内容 hash，
+    # 无需再按 app.js mtime 拼版本参数（旧 vanilla 静态结构的破缓存手段）。
     index_path = ctx.settings.static_dir / "index.html"
-    app_js_path = ctx.settings.static_dir / "js" / "app.js"
-    version = int(app_js_path.stat().st_mtime)
-    html = index_path.read_text(encoding="utf-8").replace(
-        'src="/static/js/app.js"',
-        f'src="/static/js/app.js?v={version}"',
-    )
+    html = index_path.read_text(encoding="utf-8")
     return ctx.HTMLResponse(
         html,
         headers={

@@ -27,11 +27,12 @@ class ApiTest(unittest.TestCase):
         response = self.client.get("/favicon.ico")
         self.assertEqual(response.status_code, 204)
 
-    def test_index_cache_busts_frontend_bundle(self) -> None:
+    def test_index_serves_vite_bundle_with_no_store(self) -> None:
+        """前端已迁移 Vite + React：入口 no-store，资源带内容 hash。"""
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertIn("no-store", response.headers.get("cache-control", ""))
-        self.assertRegex(response.text, r"/static/js/app\.js\?v=\d+")
+        self.assertRegex(response.text, r'/static/assets/index-[^"]+\.js')
 
     def test_workspace_status(self) -> None:
         response = self.client.get("/api/workspace/status")
