@@ -2106,3 +2106,22 @@ api 就不能再拆了吗？拆。
 [x] 空态移除 header/tabs（dsh 空态即纯画布）；vision 打分 7.5→构图质感双达标
 [x] 252 后端 + React 冒烟回归绿；提交推送 d33456a
 ------ todo-list end at 2026/09/03/19:20:00 -----
+
+------ todo-list begin at 2026/09/03 19:59:54 -----
+用户请求原文：轨迹标签里显示差异太大了，基本处于不可用的状态，完全和dsh功能不一样
+
+[] 实测 dsh 轨迹 tab 功能形态（截图+源码）
+[] 对比 Nova React 版差距
+[] 重写轨迹视图对齐 dsh
+[] 验证 + 提交
+
+------ todo-list begin at 2026/09/03/20:00:00 -----
+用户请求原文：轨迹标签里显示差异太大了，基本处于不可用的状态，完全和dsh功能不一样
+
+[x] 实测 dsh 轨迹页（截图+ui-trajectory 源码 7210 行）：Chrome-Network 式三泳道 tile 时间线 + Duration/Turns/Calls 工具条 + 脊线事件流（Turn 分组 + USER/TOOL/ASSISTANT 徽章 + 等宽工具行）
+[x] 重写 frontend/src/components/TraceView.tsx：runtime-state messages + trace events 融合折叠（user 开轮次组、tool 行等宽"bash {…} → 输出"、失败红标）
+[x] 数据 bug 修复：messages 端点返回裸数组未兼容（msgData.messages undefined → 全部 user/assistant 行丢失）
+[x] 视觉三轮 diff：泳道语义色（绿/紫/橙/红）、竖排标签、去卡片化全宽 timeline、网格线、USER 徽章淡蓝紫、工具行黑等宽红错误、搜索放大镜（background 覆盖 bug）、空 Turn 过滤、failed 判定收紧（status 缺省=成功）
+[x] 富数据会话（86 事件）验证：3 色泳道 tile、15 行事件流、Turn 分组；可用性 6.5→8/10
+[x] 252 后端 + React 冒烟绿；提交推送 4cea3db
+------ todo-list end at 2026/09/03/20:45:00 -----
