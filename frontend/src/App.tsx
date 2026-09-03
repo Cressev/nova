@@ -191,6 +191,7 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, on
   onNewChat: () => void
 }) {
   const [query, setQuery] = useState("")
+  const [searchOpen, setSearchOpen] = useState(false)
   const groups = useMemo(() => {
     const map = new Map<string, ChatSession[]>()
     for (const session of sessions) {
@@ -209,29 +210,41 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, on
   return (
     <aside className="sidebar">
       <div className="brand-row">
-        <span className="brand-mark" aria-hidden="true">✦</span>
+        <span className="brand-mark" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2.5 14.6 9 21.5 11.5 14.6 14 12 20.5 9.4 14 2.5 11.5 9.4 9 12 2.5Z" fill="currentColor"/></svg>
+        </span>
         <strong className="brand-name">Nova</strong>
         <span className="version-badge" id="nova-version">{version}</span>
+        <button className="sidebar-collapse" type="button" aria-label="折叠侧栏" title="折叠侧栏">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M11.2 4.4 6.6 9l4.6 4.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        </button>
       </div>
-      <button className="new-session" type="button" onClick={onNewChat}>新会话</button>
+      <button className="new-session" type="button" onClick={onNewChat}>
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+        <span>新会话</span>
+      </button>
       <div className="sidebar-group sidebar-sessions">
         <div className="group-label">
           <span>工作区</span>
           <div className="group-actions">
-            <input
-              className="session-search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索会话…"
-              hidden={false}
-            />
+            <button className="icon-ghost" type="button" aria-label="搜索会话" title="搜索会话" onClick={() => setSearchOpen((v) => !v)}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="6.4" cy="6.4" r="4.4" stroke="currentColor" strokeWidth="1.4"/><path d="m9.8 9.8 2.9 2.9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+            </button>
           </div>
         </div>
+        {searchOpen ? (
+          <input
+            className="session-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索会话…"
+          />
+        ) : null}
         <nav id="session-list" className="session-list">
           {groups.map((group) => (
             <section className="session-group" key={group.key}>
               <button className={cx("session-group-head", group.sessions.some((s) => s.id === selectedId) ? "active" : "")} type="button" aria-expanded>
-                <span className="folder-icon open" aria-hidden="true">▤</span>
+                <svg className="folder-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 4.2A1.7 1.7 0 0 1 3.5 2.5h2.6l1.4 1.7h5A1.7 1.7 0 0 1 14.2 6v5.8a1.7 1.7 0 0 1-1.7 1.7H3.5a1.7 1.7 0 0 1-1.7-1.7V4.2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>
                 <strong>{group.name}</strong>
               </button>
               <div className="session-group-items">
@@ -269,7 +282,10 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, on
         </nav>
       </div>
       <div className="sidebar-foot">
-        <button className="sidebar-foot-button" type="button" id="open-settings">设置</button>
+        <button className="sidebar-foot-button" type="button" id="open-settings">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6.8 1.8h2.4l.4 1.7 1.5.9 1.6-.7 1.2 2.1-1.2 1.2v1.7l1.2 1.2-1.2 2.1-1.6-.7-1.5.9-.4 1.7H6.8l-.4-1.7-1.5-.9-1.6.7-1.2-2.1 1.2-1.2V8.2L2.1 7l1.2-2.1 1.6.7 1.5-.9.4-1.7Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><circle cx="8" cy="8" r="2.1" stroke="currentColor" strokeWidth="1.2"/></svg>
+          <span>设置</span>
+        </button>
       </div>
     </aside>
   )
@@ -431,10 +447,10 @@ export default function App() {
     try {
       const [config, ws] = await Promise.all([
         api<RuntimeConfig>("/api/runtime/config"),
-        api<{ workspace?: string; current?: string }>("/api/workspace/status?quick=true"),
+        api<{ project_root?: string; workspace?: string }>("/api/workspace/status?quick=true"),
       ])
       setRuntimeConfig(config)
-      setWorkspace(String((ws as { workspace?: string }).workspace || (ws as { current?: string }).current || ""))
+      setWorkspace(String(ws.project_root || ws.workspace || ""))
       const models = Array.isArray(config.models) ? config.models : []
       if (!models.includes(String(config.model || "")) && config.model) setVersion(String(config.version || ""))
     } catch { /* 静默 */ }
@@ -590,6 +606,7 @@ export default function App() {
             setEntries((prev) => [...prev, { kind: "message", key: `m-${message.id}`, message }])
           }
           setStreamState("回复完成")
+          window.setTimeout(() => setStreamState((cur) => (cur === "回复完成" ? "" : cur)), 2500)
         } else if (type === "runtime_event") {
           const inner = (event.event || {}) as Record<string, unknown>
           const eventType = String(inner.event_type || "")
@@ -711,14 +728,16 @@ export default function App() {
         onNewChat={newChat}
       />
       <main className="main-col">
-        <ChatHeader
-          title={selectedSession?.title || (hasContent ? "新会话" : "")}
-          modeLabel={modeLabel}
-          bgTasks={0}
-          activeTab={activeTab}
-          onTab={setActiveTab}
-          onSessionLog={() => void downloadSessionLog()}
-        />
+        {hasContent || streamingText !== null ? (
+          <ChatHeader
+            title={selectedSession?.title || "新会话"}
+            modeLabel={modeLabel}
+            bgTasks={0}
+            activeTab={activeTab}
+            onTab={setActiveTab}
+            onSessionLog={() => void downloadSessionLog()}
+          />
+        ) : null}
         {activeTab === "trace" && selectedId ? (
           <TraceView sessionId={selectedId} />
         ) : !hasContent && streamingText === null ? (
@@ -729,8 +748,16 @@ export default function App() {
               <span className="hero-preview-badge">预览版</span>
             </div>
             <div className="hero-selector-row">
-              <button className="hero-workspace" type="button">{projectName(workspace) || "选择工作区"}</button>
-              <button className="hero-workspace" type="button">{modeLabel}</button>
+              <button className="hero-chip" type="button" title="切换工作区">
+                <svg className="hero-selector-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 4.2A1.7 1.7 0 0 1 3.5 2.5h2.6l1.4 1.7h5A1.7 1.7 0 0 1 14.2 6v5.8a1.7 1.7 0 0 1-1.7 1.7H3.5a1.7 1.7 0 0 1-1.7-1.7V4.2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>
+                <span>{projectName(workspace) || "选择工作区"}</span>
+                <span className="hero-selector-chevron" aria-hidden="true">▾</span>
+              </button>
+              <button className="hero-chip" type="button" title="切换模式">
+                <svg className="hero-selector-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5 13.5 3.5V7.5C13.5 11 11.2 13.6 8 14.5C4.8 13.6 2.5 11 2.5 7.5V3.5L8 1.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>
+                <span>{modeLabel}</span>
+                <span className="hero-selector-chevron" aria-hidden="true">▾</span>
+              </button>
             </div>
           </div>
         ) : (
@@ -776,7 +803,7 @@ export default function App() {
               <button id="composer-add" className="composer-add" type="button" aria-label="添加附件" title="添加附件">＋</button>
               <label className="toolbar-select permission-select" title="权限模式">
                 <svg className="select-icon shield-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5 13.5 3.5V7.5C13.5 11 11.2 13.6 8 14.5C4.8 13.6 2.5 11 2.5 7.5V3.5L8 1.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>
-                <span className="select-value">{PERMISSION_VALUE_LABELS[String(runtimeConfig.permission_mode || "workspace_write")] || "工作区写入"}</span>
+                <span className="select-value">{PERMISSION_VALUE_LABELS[String(runtimeConfig.permission_mode || "workspace_write")] || "工作区写入"} <span aria-hidden="true" className="select-chevron">▾</span></span>
                 <select
                   id="permission-select"
                   value={String(runtimeConfig.permission_mode || "workspace_write")}
@@ -794,9 +821,9 @@ export default function App() {
               </label>
             </div>
             <div className="toolbar-right">
-              <span id="stream-state" className="stream-state" aria-live="polite">{streamState}</span>
+              {streamState ? <span id="stream-state" className="stream-state" aria-live="polite">{streamState}</span> : null}
               <label className="toolbar-select model-select" title="模型">
-                <span className="model-select-label">{model}</span>
+                <span className="model-select-label">{model} <span aria-hidden="true" className="select-chevron">▾</span></span>
                 <select
                   id="model-select"
                   value={model}
@@ -808,7 +835,7 @@ export default function App() {
                   {modelOptions.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
               </label>
-              <button id="regenerate-button" className="round-button ghost" type="button" aria-label="重新生成" title="重新生成最后一轮" onClick={() => void regenerate()}>⟳</button>
+              {hasContent ? <button id="regenerate-button" className="round-button ghost" type="button" aria-label="重新生成" title="重新生成最后一轮" onClick={() => void regenerate()}><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M12.2 6.2A5 5 0 1 0 12.5 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><path d="M12.6 2.8v3.6H9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg></button> : null}
               {running ? (
                 <button id="stop-button" className="round-button stop" type="button" aria-label="停止" onClick={cancel}>■</button>
               ) : (

@@ -521,7 +521,10 @@ body.sidebar-collapsed .sidebar-foot-button {
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
-  padding: 0 0 16px;
+  /* dsh 画布：极淡冷色径向渐变，为白色浮卡提供对比与空气感 */
+  background:
+    radial-gradient(1200px 620px at 50% -8%, #eef3fa 0%, rgba(255, 255, 255, 0) 62%),
+    #ffffff;
 }
 
 
@@ -2965,9 +2968,10 @@ body.inspector-collapsed .inspector-toggle {
 .hero-selector-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 2px;
+  justify-content: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding-left: 0;
 }
 
 
@@ -3353,21 +3357,17 @@ body.inspector-collapsed .inspector-toggle {
 }
 
 
-.toolbar-select.permission-select::after {
-  content: "▾";
-  color: var(--dsw-alias-label-quaternary);
-  font-size: 10px;
-}
+/* ▾ 由原生 select 覆盖层承担 */
 
 
-/* dsh 头部模式项：◎ 图标前缀 */
+/* （已迁移） */
 .header-mode::before {
   content: "◎ ";
   color: var(--dsw-alias-label-quaternary);
 }
 
 
-/* dsh 头部模式项：◎ 图标前缀 */
+/* （已迁移） */
 .header-mode::before {
   content: "◎ ";
   color: var(--dsw-alias-label-quaternary);
@@ -3447,17 +3447,22 @@ body.inspector-collapsed .inspector-toggle {
 /* hero 居中 */
 .empty-hero {
   display: flex;
-  flex: 1 1 auto;
+  flex: none;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 48px 24px;
+  gap: 28px;
+  /* dsh 构图：hero 从顶部 18vh 开始；chips→卡片间距由 margin-bottom 收束 */
+  margin: 18vh 0 20px;
+  padding: 0;
 }
 
-/* composer 固定在底部内容列内 */
+/* composer：会话态贴底；空态组团下方留白 */
 #chat-form {
   flex: none;
+}
+
+.main-col:not(:has(.messages)) #chat-form {
+  margin-bottom: 16vh;
 }
 
 /* 侧栏搜索框常驻（React 版简化为输入框过滤） */
@@ -3517,4 +3522,299 @@ body.inspector-collapsed .inspector-toggle {
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 18px;
+}
+
+
+/* ---- dsh 空态精修（第三轮视觉对齐） ---- */
+
+/* hero 锁孔：36px logo + 28px 标题 */
+.hero-headline .hero-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+
+.hero-headline h1 {
+  margin: 0;
+  color: var(--dsw-static-neutral-bluish-1000, #0f1115);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 36px;
+}
+
+/* 上下文 chips：icon + 13px 文本 + chevron */
+.hero-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: transparent;
+  color: #4b5563;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.hero-chip:hover {
+  background: rgba(0, 0, 0, 0.045);
+}
+
+.hero-chip + .hero-chip {
+  margin-left: 12px;
+}
+
+/* composer 紧跟 chips（空态组团）——由 hero 的 margin-bottom 收束 */
+.empty-hero + .takeover-dock:empty + #chat-form {
+  margin-top: 0;
+}
+
+/* 主列内容列：hero 与 composer 同轴 780px */
+.empty-hero {
+  width: 100%;
+  max-width: 780px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* composer 卡：半透明 + blur + 双层投影（dsh 悬浮卡质感） */
+#chat-form {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid #ececec;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.05),
+    0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+/* 品牌行：单行锁孔（logo 24 + 名称 + 徽章 + 折叠钮同行） */
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.brand-row .brand-mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 7px;
+  background: #111827;
+  color: #fff;
+}
+
+.brand-row .brand-mark svg {
+  width: 14px;
+  height: 14px;
+}
+
+.brand-row .brand-name {
+  color: #171717;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.brand-row .version-badge {
+  flex: none;
+  border-radius: 4px;
+  padding: 1px 5px;
+  background: #111827;
+  color: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.sidebar-collapse {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-left: auto;
+  flex: none;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #737373;
+  cursor: pointer;
+}
+
+.sidebar-collapse:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* 新会话：⊕ + 文字，通栏 33px */
+.new-session {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 33px;
+  border: 1px solid #e5e5e5;
+  border-radius: 10px;
+  background: #fff;
+  color: #171717;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* 分区行：灰标签 + 图标组（搜索收入图标） */
+.group-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.group-label > span:first-child {
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.group-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.icon-ghost {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #8c8c8c;
+  cursor: pointer;
+}
+
+.icon-ghost:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #595959;
+}
+
+.session-search {
+  width: 100%;
+  margin: 4px 0 6px;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 5px 10px;
+  background: #fff;
+  color: var(--text);
+  font-size: 12px;
+}
+
+/* 工作区文件夹：蓝色 outline SVG */
+.folder-icon-svg {
+  flex: none;
+  color: var(--dsw-static-deepseek-500, #4176e6);
+}
+
+.session-group-head strong {
+  color: #171717;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* 底部设置行：齿轮 + 文字 */
+.sidebar-foot-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #595959;
+  font-size: 13px;
+}
+
+.sidebar-foot-button svg {
+  color: #737373;
+}
+
+/* 发送键禁用态：淡蓝（dsh），不用死灰 */
+.round-button.send:disabled {
+  background: #a8c3fb;
+  border-color: transparent;
+  color: #fff;
+  opacity: 1;
+}
+
+/* select 值旁 chevron */
+.select-chevron {
+  color: #9ca3af;
+  font-size: 10px;
+}
+
+/* 会话选中态：灰色 pill（dsh） */
+.session-item.active {
+  background: #ececec;
+  border-radius: 8px;
+}
+
+/* 会话列表滚动底部呼吸 */
+.session-list {
+  padding-bottom: 16px;
+}
+
+/* 侧栏设置行底部留白 */
+.sidebar-foot {
+  padding-bottom: 14px;
+}
+
+
+/* ---- dsh 质感收尾：pill 容器 + 悬浮阴影 + 饱和发送键 ---- */
+
+/* hero chips：白底描边 pill */
+.hero-chip {
+  border: 1px solid #d6dbe3;
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+/* 预览版徽章 pill（浅蓝底） */
+.hero-preview-badge {
+  border: none;
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: #dbeafe;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+/* 输入卡：去硬描边，柔和悬浮阴影 */
+#chat-form {
+  border-color: rgba(0, 0, 0, 0.02);
+  box-shadow:
+    0 8px 24px rgba(15, 23, 42, 0.08),
+    0 0 0 1px rgba(0, 0, 0, 0.02);
+}
+
+/* 发送键：饱和蓝 + 32px */
+.round-button.send {
+  width: 32px;
+  height: 32px;
+  background: #3b82f6;
+}
+
+.round-button.send:disabled {
+  background: #a8c3fb;
+}
+
+/* hero-mark 无容器形态（dsh：裸 glyph，非黑底方块） */
+.hero-headline .hero-mark {
+  background: transparent;
+  color: #0f1115;
 }
