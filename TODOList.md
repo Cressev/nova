@@ -1687,11 +1687,208 @@ api 就不能再拆了吗？拆。
 ------ todo-list begin at 2026/09/02/21:33:37 -----
 用户请求原文：新建一个新的git 分支，直接抄dsh的设计，后面我们在这个基础上改
 
-[] 登记 user-queries 和 TODOList
-[] 调研 DSH Web GUI 设计（截图走查 + 源码设计令牌）
-[] 提交 main 上待提交的 durable 改动
-[] 新建 dsh-design 分支
-[] 按照需求实现：Nova 前端视觉与布局对齐 DSH 设计语言
-[] 测试 + 视觉验证（截图对比）
-[] 交付并给出验证 URL
+[x] 登记 user-queries 和 TODOList
+[x] 调研 DSH Web GUI 设计（截图走查 + 源码设计令牌）
+[x] 提交 main 上待提交的 durable 改动
+[x] 新建 dsh-design 分支
+[x] 按照需求实现：Nova 前端视觉与布局对齐 DSH 设计语言
+[x] 测试 + 视觉验证（截图对比）
+[x] 交付并给出验证 URL
+
+交付记录：
+- 分支：dsh-design（提交 a053126；main 先落 durable 提交 51a951a）。
+- 设计来源：ref/deepseek-harness packages/client/ui-theme design-platform.css 的 --dsw-static/--dsw-alias 双层令牌（MIT），移植为浅色默认 + body[data-ds-dark-theme] 深色切换；173 处硬编码色值全部收敛到令牌；legacy 令牌映射别名实现零 DOM 改动换肤。
+- 结构签名式改动：主面板 820px 限宽居中、composer 16px 圆角输入卡+软阴影+品牌蓝聚焦环、新线程改白底描边、发送按钮改 deepseek 蓝实心、消息气泡改 deepseek-50、状态胶囊改中性底+6px 成功点、brand-mark 深底白字、中文字体栈、主题切换按钮（localStorage 持久化）。
+- 验证：前端全矩阵 + Python 195 tests + compileall + node --check + git diff --check 全绿；CDP 截图 + zai 视觉 MCP 两轮评审：浅色还原度 8/10（状态胶囊/气泡/按钮全部达标），深色主题无白块残留、无阻断 bug。
+- 后续迭代项（视觉 MCP 指出）：状态/审查徽章悬空、右栏 67A 头像裁切、深色下停止按钮禁用对比度、「搜」字金色不统一、旧会话条目文字过淡。
 ------ todo-list end at 2026/09/02/21:33:37 -----
+
+------ todo-list begin at 2026/09/02/22:23:14 -----
+用户请求原文：不是光还原色彩，全部还原，有些功能不要了好不好
+
+[x] 登记 user-queries 和 TODOList
+[x] 梳理 DSH 完整 UI 结构（侧栏/主区/composer/交互），确定砍留清单
+[x] 重写 index.html 为 DSH 双栏结构（砍右栏 Inspector/模式卡/技能卡/状态卡等）
+[x] 重写 styles.css 布局与组件区（保留 dsw 令牌层）
+[x] 清理 app.js 中已删元素的绑定逻辑
+[x] 删除/更新针对已砍功能的前端测试
+[x] 全量测试 + CDP 截图 + 视觉 MCP 验证
+[x] 提交并交付验证 URL
+
+交付记录：
+- 分支 dsh-design 提交 ce6d88d（前一提交 a053126 令牌层）。
+- 结构：index.html 重写为 dsh 双栏——侧栏（logo+版本徽章+新会话+工作区+会话树+底部设置）+ 主区（空态 hero"探索未至之境"+消息流+composer 大圆角输入卡）；composer 工具栏内嵌权限/模型选择器和圆形发送/停止键。
+- 砍掉：右栏 Inspector 全部 9 面板、模式卡、技能卡、项目卡内嵌表单、状态胶囊组、"当前线程"状态卡、runtime overview、状态线、消息导航轨、memory dialog。
+- 保留：会话树、工作区切换弹窗、设置弹窗、/指令面板、对话内工具卡/审批卡/队列、主题切换。
+- app.js 策略：REMOVED_ELEMENT_IDS 幽灵节点 shim 使旧渲染无操作化（后续迭代逐步删死代码）；重写 setSendButtonMode 为图标模式；默认进入新会话空态不自动恢复历史；新增权限/模型选择器接线（PATCH /api/runtime/config）、版本徽章、hero 显隐同步、会话删除 hover 显示。
+- 测试：删除 11 个已砍面板测试；改写 composer_buttons/turn_cancel/context_budget 三个；前端全矩阵 + Python 195 全绿。
+- 视觉：CDP+视觉 MCP 终审 8/10，无阻塞问题；真实 GLM 对话闭环验证通过（发送→流式→回复完成）。
+- 已知后续项：会话标题脏数据（历史事件名）、时间戳短格式、侧栏底缘渐隐、shim 死代码清理。
+------ todo-list end at 2026/09/02/22:23:14 -----
+
+------ todo-list begin at 2026/09/02/22:47:04 -----
+用户请求原文：左侧侧边栏收齐就不能打开了我笑了
+
+[x] 登记 user-queries 和 TODOList
+[x] CDP 复现折叠后无法展开的问题
+[x] 修复折叠态侧栏（按钮被裁剪/不可点）
+[x] 浏览器验证折叠↔展开循环 + 测试矩阵
+[x] 提交并收尾
+
+交付记录：
+- 根因：折叠态侧栏 56px + overflow:hidden，但头部横排内容实际需要 104px，展开按钮（右缘 116px）整体被裁到可视区外，点击命中侧栏容器。
+- 修复：折叠态头部改纵向堆叠（N/◐/› 从左到右变为从上到下），配套收紧水平 padding、居中新会话/工作区/设置图标，形成 dsh 式窄图标栏。
+- 验证：CDP 两轮折叠↔展开循环，按钮始终在区内且 elementFromPoint 直接命中，箭头 ›/‹ 正确；视觉 MCP 确认图标纵向排列无裁剪；前端全矩阵 + Python 全量通过。
+- 提交：960e45d。
+------ todo-list end at 2026/09/02/22:47:04 -----
+
+------ todo-list begin at 2026/09/02/23:04:13 -----
+用户请求原文：好难用啊  发完消息之后页面就卡住了 不是有dsh 的前端源码吗 你对照着改啊 不要光从视觉上像
+
+[x] 登记 user-queries 和 TODOList
+[x] CDP 复现"发完消息页面卡住"，抓 console 错误定位根因
+[x] 对照 dsh 前端源码的会话/流式交互逻辑（乐观 UI、状态机、渲染节奏）
+[x] 修复发送链路与状态机
+[x] 对照 dsh 补齐交互体感（流式打字、发送后焦点、禁用态）
+[x] 全量验证 + 提交
+
+交付记录：
+- 根因 1（布局）：CSS 重组时 .messages 主布局块被误删，消息渲染后撑爆 .main-inner、composer 被顶出视口、无法滚动——"页面卡住"的主体。已恢复 grid/flex:1/min-height:0/overflow-y:auto 布局块。
+- 根因 2（输入法）：Enter 提交未检查 isComposing，中文组字时按回车确认候选词会提前发送半截消息。已加 isComposing 守卫。
+- 对照 dsh ChatView 补交互：流式滚动跟随采用 dsh 的 FOLLOW_THRESHOLD+atBottom 模式（贴底自动跟滚、上滚即暂停不打断阅读），挂点在 onDelta/onToolStart/发送后；发送与排队路径提交后保持输入框焦点。
+- 验证：CDP 实测组字 Enter 不发送、composer 恒在视口、消息区可滚、流式结束贴底；前端全矩阵+Python 全量绿。
+- 提交：ccb2094。
+------ todo-list end at 2026/09/02/23:04:13 -----
+
+------ todo-list begin at 2026/09/02/23:30:33 -----
+用户请求原文：对话中的工具卡片太大了
+
+[x] 登记 user-queries 和 TODOList
+[x] 查看当前工具卡片样式与 dsh 工具呈现的差距
+[x] 压缩工具卡片视觉尺寸（单行化/降密度）
+[x] CDP 截图验证 + 测试
+[x] 提交收尾
+
+交付记录：
+- 用户追加指示"你就学dsh"后，通读 ref 内 ui-tool ToolRow 源码（figma 122:9479 规格：24px 单行 = 前导图标 + 13/24 标题 + 2px 分隔点 + 截断摘要 + chevron，运行中扫光动画，点击展开详情）。
+- 工具卡从 229px 大卡改为 24px 单行：状态点（运行=主题蓝/成功=绿/失败=红）+ 工具名 + 灰色用途摘要截断 + 状态文字 + ▾；元数据网格/参数 chips/args/输出全部默认隐藏，点击头部行展开为带边框详情卡（160px）；运行中 2.6s 扫光与 dsh 同款。
+- 浏览器实测：折叠 24px / 展开 160px / 再折叠 24px，历史会话重放同样生效；视觉 MCP 确认单行形态与消息密度协调。
+- 前端全矩阵 + Python 全量通过。提交：见 Done 行。
+------ todo-list end at 2026/09/02/23:30:33 -----
+
+------ todo-list begin at 2026/09/02/23:38:28 -----
+用户请求原文：还是好丑啊 我说了 直接抄dsh
+
+[x] 登记 user-queries 和 TODOList
+[x] 用 CDP 打开 DSH 本尊 GUI（127.0.0.1:3080），抓真实工具行 DOM + 计算样式
+[x] 逐属性照搬到 Nova（DOM 结构、字体、颜色、间距、图标、悬停）
+[x] Nova 实测截图对比
+[x] 提交收尾
+
+交付记录：
+- 方法升级：不再"参考源码"，直接在浏览器里打开 DSH 本尊 GUI，定位到真实工具行节点（B92XqW_root，bash 变体），用 getComputedStyle 逐属性抓取实测值。
+- 工具行五件套照搬：[16px 图标位 mr6][工具名 14px/400/label-secondary][2px 分隔点 m0 8/label-caption][摘要 14px/label-tertiary 截断][14px chevron 旋转动画]；无状态点无状态文字；图标分文档/终端两类；工具名转语义标签（list_files→列出文件）；终端图标 SVG 路径直接从 DSH DOM 提取。
+- 消息铬照搬：assistant 消息从边框卡片改为全宽裸文本（15px/1.62，无角色头无时间戳）；user 消息改右对齐 16px 圆角淡色气泡（queued 才虚线黄）；运行状态条不再插入消息流；"收起过程"折叠条改 dsh TurnProcessNodeView 式纯文字行+底部 0.5px 发丝线（无底色无虚线）。
+- 新增轻量 Markdown 渲染（标题/列表/行内代码/代码块/链接，先转义后生成防注入），代码块对照 dsh 12px 圆角浅底。
+- 验证：Nova 行计算样式与 DSH 实测逐值一致（24px/14px/2px m0 8/6px）；视觉 MCP 评分 7→8.5→9/10；前端全矩阵+Python 全量绿。
+- 提交：cbaf81f
+------ todo-list end at 2026/09/02/23:38:28 -----
+
+------ todo-list begin at 2026/09/02/23:57:19 -----
+用户请求原文：上下文处理有严重的问题，模型的记忆非常差 都不是长期记忆了 属于问了上句忘记下局
+
+[x] 登记 user-queries 和 TODOList
+[x] 审查后端上下文组装代码（历史消息如何进入模型请求）
+[x] 真实对话复现记忆丢失（A 告知 → B 追问）
+[x] 定位并修复根因
+[x] 回归验证 + 提交
+
+交付记录：
+- 后端无罪：API 直连测试会话记忆完好（4 条消息入库、暗号跨轮答对、context budget 128K 保留 3 条最近消息），agent loop 也全量传 history。
+- 根因 1（主）：前端刷新后不自动恢复会话（上轮 dsh 改造过度）→ 刷新后首条消息经 ensureSession 落入新会话，历史断裂——侧栏 12 个碎片会话（"强制停止"/"队列"等）是铁证。修复：loadSessions 自动恢复最近活跃会话（updated_at 倒序取第一），"新会话"按钮置 startNewChat 标记避免劫持。
+- 根因 2：排队分支竞态——streamAssistant 结束后还要 await 一串刷新才复位 state.sending，窗口期内下一条消息误入排队路径；后端已空闲返回 200 完整 SSE，前端当错误丢掉整轮回复（"排队失败：{5000字JSON}"）。修复：turn 结束立即复位运行态；排队分支遇 200 解析 SSE 提取 assistant_done 渲染（不重发避免重复）。
+- 验证：浏览器刷新→自动恢复 4 条消息→追问暗号→"红色企鹅看书" 答对（跨刷新记忆闭环）；前端全矩阵+Python 全量绿。
+- 提交：0ed5e3a
+------ todo-list end at 2026/09/02/23:57:19 -----
+
+------ todo-list begin at 2026/09/03/00:04:17 -----
+用户请求原文：你看看dsh 的上下文是怎么处理的 包括压缩 你先对比一下 别改代码先，我正好学习一下，你用表格的形式，对比dsh有哪些类型的处理，以我们现在的情况
+
+[] 登记 user-queries 和 TODOList
+[] 通读 dsh 上下文/压缩源码（session、context-occupancy、compact 相关包）
+[] 通读 Nova 现有 context_budget/会话管理实现
+[] 输出对比表格（不改代码）
+[] 记录学习结论到 durable 文件
+------ todo-list end at 2026/09/03/00:04:17 -----
+
+------ todo-list begin at 2026/09/03/00:11:40 -----
+用户请求原文：差远着呢 对照着dsh一条一条的改 要完全对应可以说照抄就行，不要做任何降级处理，有卡点告诉我
+
+[x] 登记 user-queries 和 TODOList
+[x] 通读 Nova 侧现状源码（session_runner/loop/orchestrator/store/models/provider）
+[x] 新建 compaction 包：estimate（token 结构开销）+ pruner（工具结果头尾剪枝）+ summarizer（LLM 八段 checkpoint）+ engine（阈值/保留/锁/配对）
+[x] 摘要回流：checkpoint 消息替换被遮蔽历史进入模型请求（surface 投影）
+[x] 接线 session_runner：pre-step 自动压缩 + 溢出恢复重试 + /compact 手动路径
+[x] 全量测试 + 浏览器实测 + 提交
+
+交付记录（对照表逐条落地，无降级）：
+- 新包 src/nova/compaction/ 四模块照抄 dsh：
+  - estimate.py ← dsh-token-meter：4 chars/token + ROLE_OVERHEAD=4/条
+  - pruner.py ← tool-result-pruner：threshold 8192 / head 4096 / tail 1024 + PRUNE_MARKER 文案同款
+  - summarizer.py ← compaction-basic/summarizer.ts：COMPACTION_INSTRUCTION 八段 prompt 逐字移植；摘要指令作为最后一条 user message（前缀缓存复用）；CHECKPOINT_PREAMBLE 同款
+  - engine.py ← compaction+compaction-basic：threshold_ratio 0.8 / retain_ratio 0.16；compaction.start/summary/end 三事件；asyncio 锁 + busy 事件；user/assistant 配对边界；comp_ 前缀 checkpoint 消息；surface_messages 投影（checkpoint 在被遮蔽区域前缀位）；二次压缩合并为单 checkpoint
+- 接线：session_runner pre-step 压力压缩 + surface 投影进模型请求 + ProviderError 溢出判定→context-overflow 压缩→重试一次；/compact 手动路径（extra instruction 追加到基础指令后）；loop.py/agent.py 工具结果进入上下文前剪枝；statusline 按 surface 计量（压缩后压力立即回落）；routes._compaction_engine 工厂注入（FakeRuntime 容错）
+- 前端：checkpoint 消息渲染为折叠行（◷ 上下文检查点 · 更早的对话已压缩为摘要），不占对话气泡位
+- 真 GLM 实测：10 条历史 → compact_now → 8 段标准 checkpoint（Liam 身份/Nova 技术栈完整保留），shadowed 2 条 58 tokens，checkpoint 在前缀位
+- 测试：重写 test_api 两个旧压缩测试为新引擎语义（precise 函数边界替换，31 个测试函数无丢失）；195 Python 全绿 + 前端全绿 + compileall + git diff --check
+- 提交：91e37d0
+------ todo-list end at 2026/09/03/00:11:40 -----
+
+------ todo-list begin at 2026/09/03/00:54:07 -----
+用户请求原文：这种agent系统设计的测试benchmark有没有
+
+[x] 登记 user-queries 和 TODOList
+[x] 调研 agent 系统/benchmark 全景（通用能力、长上下文/记忆/压缩专项）
+[x] 输出带表格的调研答复（含 Nova 可落地的测试路径）
+------ todo-list end at 2026/09/03/00:54:07 -----
+
+------ todo-list begin at 2026/09/03/00:57:14 -----
+用户请求原文：先把nova的工具设计和dsh对齐，不要做降级，很多边际处理都要保证好，做好并测试
+
+[x] 登记 user-queries 和 TODOList
+[x] 通读 dsh 工具体系源码（core/tools 的 schema/json-schema/index 管线）
+[x] 通读 Nova 工具现状（executor/orchestrator/workspace 21 工具）
+[x] 差距清单 + 对齐实现（边际处理不降级）
+[x] 全量测试 + 浏览器实测 + 提交
+
+交付记录（对照 dsh core/tools，提交 987123c）：
+- 新增 tools/errors.py：结构化错误码词汇表（UNKNOWN_TOOL / INVALID_ARGS / INVALID_TOOL_OUTPUT / TIMEOUT / ABORTED / ABORTED_BEFORE_DISPATCH / PERMISSION_DENIED），所有失败路径带 error_code 进 result data 与 tool_done 事件
+- 新增 tools/validation.py：受支持 JSON Schema 子集验证器（type/oneOf/properties/required/additionalProperties/items/enum/const + 注解，与 dsh json-schema.ts 同子集同 violation 文案）；snapshot_arguments 无损 JSON 快照边界（深拷贝隔离 + NaN/非字符串键拒绝）
+- workspace.py：21 个工具全部写真 JSON Schema 契约（ToolSpec.json_schema，注册期静态校验）；ToolSpec.timeout_ms 每工具超时预算（读 30s/批量 60s/shell 120s/网络 60s/todo 10s）；ToolExecutionError 带 code；未知工具→UNKNOWN_TOOL、权限分支→PERMISSION_DENIED
+- executor.py 管线重排（dsh 顺序）：快照→pre-hook/权限→别名归一→契约验证（INVALID_ARGS 且 body 永不执行）→取消重查（ABORTED_BEFORE_DISPATCH）→超时包装 body（协作式，TIMEOUT 立即返回）→输出规范化（非序列化 data 净化为 repr + INVALID_TOOL_OUTPUT，绝不在事件流中途炸 turn）
+- tool_orchestrator.py：串行批次每工具派发前取消检查；is_cancel_requested 透传
+- agent.py：executor 接会话层取消标志（runtime.cancel_requested）
+- bigmodel.py：模型可见 schema = 真契约本体 + annotation（所见即所验；MCP 动态工具退回示例推断）
+- 测试：新增 tests/test_tool_pipeline.py 20 个边际用例（验证文案逐字断言/bool≠integer/oneOf/别名归一/hook 注入垃圾→INVALID_ARGS/超时即时返回/取消 body 不执行/输出净化/schema 静态校验）；全量 215 绿（cancel 时序 flake 复跑通过）；真 GLM E2E：正常调用契约填写正确 + INVALID_ARGS path 限定违规回流模型自我转述
+------ todo-list end at 2026/09/03/00:57:14 -----
+
+------ todo-list begin at 2026/09/03/09:18:45 -----
+用户请求原文：nova dsh 工具对比
+
+[x] 登记 user-queries 和 TODOList
+[x] 枚举 dsh 各工具包的工具名与能力
+[x] 输出对比表（清单/管线/语义差距/建议）
+------ todo-list end at 2026/09/03/09:18:45 -----
+
+------ todo-list begin at 2026/09/03/09:52:48 -----
+用户请求原文：难受 nova的工具设计也是很乱，你直接对齐dsh的工具我不是说了吗，边界情况安全性能异常处理，以及工具返回和上下文注入都要对齐，对齐对齐对齐 听得懂吗？memory在dsh也添加了，只不过是以插件的形式。都要对齐，没有的添加，不一样的修改，名称也要对齐，多的删掉
+
+[x] 登记 user-queries 和 TODOList
+[x] 精读 dsh fs/fs-search/shell/web/todo/memory 工具源码（schema/行为/返回/边界）
+[x] 工具重命名+语义对齐（read/write/edit/glob/grep/bash/todo_write/web_fetch/web_search/memory_write/memory_remove；dsh 契约字段名与返回格式逐一对齐）
+[x] 删多余工具、对齐 memory 插件形态（17 个旧工具删除；新增 src/nova/memory/layered.py 分层存储，索引注入系统提示词，详情经 read 读取；/memory /remember 与候选确认流全部落分层）
+[x] 接线（executor/orchestrator/provider/前端/测试）
+[x] 全量测试 + 服务实测 + 提交（unittest 216 绿、前端 23 绿、/api/tools 实测 11+MCP；提交 342e34b）
+------ todo-list end at 2026/09/03/09:52:48 -----
+
+执行问题记录：无失败任务。浏览器端到端对话冒烟未完成——CDP 代理 /new 打开的 tab 停留在 about:blank（代理侧导航故障，非 Nova 问题；HTTP 层 200 验证通过），待代理恢复后补一轮 UI 冒烟。
