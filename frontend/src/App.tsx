@@ -4,6 +4,7 @@ import { api, cx, formatTime, projectName, relativeTime, shortText, workspaceGro
 import { Markdown, CopyButton } from "./components/Markdown"
 import { ToolEventRow, deriveToolSummary, type ToolEventView } from "./components/ToolEvent"
 import { PermissionCard, QuestionCard } from "./components/Takeover"
+import { TraceView } from "./components/TraceView"
 
 /* ============================================================================
    Nova App —— React 版（对齐 dsh ui-conversation 的组件分区）。
@@ -317,34 +318,6 @@ function ChatHeader({ title, modeLabel, bgTasks, activeTab, onTab, onSessionLog 
         <button className={cx("header-tab", activeTab === "trace" ? "active" : "")} type="button" onClick={() => onTab("trace")}>轨迹</button>
       </div>
     </header>
-  )
-}
-
-/* ---- 轨迹视图 ---- */
-function TraceView({ sessionId }: { sessionId: string }) {
-  const [events, setEvents] = useState<TraceEvent[] | null>(null)
-  const [error, setError] = useState("")
-  useEffect(() => {
-    let alive = true
-    api<{ items?: TraceEvent[] }>(`/api/chat/sessions/${encodeURIComponent(sessionId)}/trace`)
-      .then((data: { items?: TraceEvent[] }) => { if (alive) setEvents([...(data.items || [])].reverse()) })
-      .catch((e: unknown) => { if (alive) setError(String(e instanceof Error ? e.message : e)) })
-    return () => { alive = false }
-  }, [sessionId])
-  if (error) return <div className="trace-view"><p className="trace-loading">轨迹加载失败：{error}</p></div>
-  if (!events) return <div className="trace-view"><p className="trace-loading">加载中…</p></div>
-  return (
-    <div className="trace-view">
-      <ul className="trace-list">
-        {events.map((event) => (
-          <li key={event.id}>
-            <span className="trace-time">{formatTime(event.created_at)}</span>
-            <span className="trace-type">{event.event_type}</span>
-            <span className="trace-title">{event.title || event.message || ""}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
   )
 }
 

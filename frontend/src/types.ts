@@ -85,5 +85,10 @@ export interface TraceEvent {
   created_at: string
   title?: string
   message?: string
+  tool?: string | null
+  arguments?: Record<string, unknown>
+  output?: string | null
+  status?: string | null
+  duration_ms?: number
   [key: string]: unknown
 }

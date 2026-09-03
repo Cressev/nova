@@ -3818,3 +3818,302 @@ body.inspector-collapsed .inspector-toggle {
   background: transparent;
   color: #0f1115;
 }
+
+/* ---- dsh 轨迹视图（ui-trajectory 形态） ---- */
+.trajectory-view {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 16px 12px;
+}
+
+.trajectory-toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.trajectory-modes {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.trajectory-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  background: transparent;
+  color: #6b7280;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.trajectory-mode.active {
+  background: transparent;
+  color: #171717;
+  font-weight: 500;
+}
+
+.trajectory-mode.active::before {
+  content: "✓ ";
+  color: #6d5ae0;
+  font-size: 11px;
+}
+
+.trajectory-mode::before {
+  content: "○ ";
+  color: #b0b4bb;
+  font-size: 11px;
+}
+
+/* 搜索框放大镜 */
+.trajectory-search {
+  width: 220px;
+  height: 26px;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  padding: 0 10px 0 26px;
+  background-color: #fff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 14 14' fill='none'%3E%3Ccircle cx='6.4' cy='6.4' r='4.4' stroke='%239ca3af' stroke-width='1.4'/%3E%3Cpath d='m9.8 9.8 2.9 2.9' stroke='%239ca3af' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 8px center;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.trajectory-search:focus {
+  outline: none;
+  border-color: #c9ced6;
+}
+
+/* 泳道 tile 时间线 */
+.trajectory-timeline {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+}
+
+.trajectory-lane-labels {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+  width: 44px;
+  text-align: right;
+}
+
+.trajectory-lane-labels span {
+  color: #8a8f98;
+  font-size: 10px;
+  line-height: 10px;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+}
+
+.trajectory-lanes {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(100% / 12 - 1px), #f0f0f2 calc(100% / 12 - 1px), #f0f0f2 calc(100% / 12));
+}
+
+.trajectory-lane {
+  display: flex;
+  gap: 3px;
+  height: 10px;
+}
+
+.trajectory-tile {
+  flex: 1;
+  height: 10px;
+  border-radius: 2px;
+  background: #f4f4f6;
+}
+
+.trajectory-tile[data-filled] {
+  background: #d9d9de;
+}
+
+/* 泳道语义色由内联 style 承担；此处保证空 tile 不抢视觉 */
+
+.trajectory-total {
+  flex: none;
+  color: #8a8f98;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 空 Turn（仅 turn.started 无内容）不渲染分组头 */
+.trajectory-turn-header[data-empty] {
+  display: none;
+}
+
+/* 事件流账本：脊线 + 圆点 + 徽章行 */
+.trajectory-ledger {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  position: relative;
+  margin-top: 6px;
+  padding-left: 18px;
+}
+
+.trajectory-ledger::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 5px;
+  width: 1px;
+  background: #e5e7eb;
+}
+
+.trajectory-turn-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  position: relative;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 8px 6px 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.trajectory-turn-header::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: #9ca3af;
+}
+
+.trajectory-turn-label {
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.trajectory-turn-meta {
+  color: #b0b4bb;
+  font-size: 11px;
+}
+
+.trajectory-turn-chevron {
+  margin-left: auto;
+  color: #9ca3af;
+  font-size: 10px;
+}
+
+.trajectory-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  min-height: 30px;
+  border-radius: 6px;
+  padding: 4px 8px 4px 0;
+}
+
+.trajectory-row::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: #d1d5db;
+}
+
+.trajectory-row:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+/* 角色徽章：圆角 3-4px 小胶囊，10px 大写字距 */
+.trajectory-badge {
+  flex: none;
+  min-width: 68px;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  line-height: 16px;
+  text-align: center;
+}
+
+.badge-user {
+  color: #4338ca;
+  background: #e0e7ff;
+}
+
+.badge-message {
+  color: #6d5ae0;
+  background: #ece8fc;
+}
+
+.badge-tool {
+  color: #c8791b;
+  background: #fbeede;
+}
+
+.badge-system {
+  color: #6b7280;
+  background: #f1f2f4;
+}
+
+.trajectory-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #33363c;
+  font-size: 13px;
+}
+
+.trajectory-text.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: #40454e;
+}
+
+.trajectory-row.failed .trajectory-text {
+  color: #e5484d;
+}
+
+/* 普通工具行黑色等宽；红仅错误（dsh 语义） */
+.trajectory-row.kind-tool:not(.failed) .trajectory-text {
+  color: #111827;
+}
+
+.trajectory-row-time {
+  flex: none;
+  color: #b0b4bb;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
