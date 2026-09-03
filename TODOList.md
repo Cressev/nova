@@ -1892,3 +1892,13 @@ api 就不能再拆了吗？拆。
 ------ todo-list end at 2026/09/03/09:52:48 -----
 
 执行问题记录：无失败任务。浏览器端到端对话冒烟未完成——CDP 代理 /new 打开的 tab 停留在 about:blank（代理侧导航故障，非 Nova 问题；HTTP 层 200 验证通过），待代理恢复后补一轮 UI 冒烟。
+
+------ todo-list begin at 2026/09/03/10:35:00 -----
+用户请求原文：还有几个工具我没看到啊
+
+[x] 对照 dsh 全部 tool-* 包枚举缺口（read_image/skill/jobs/ask-user/goal/subagent 家族/schedule/lsp/session-query）
+[x] 实现 18 个缺失工具（契约/处理器/超时/接线）
+[x] ask_user_question 挂起-回答-续跑链路（pending approval 机制复用 + /answer 端点 + 前端问题卡）
+[x] schedule 到期送达（turn 开头注入）+ subagent send 续聊支持
+[x] 测试（新增 26 用例，全量 242 绿）+ 服务实测 + 提交 5471b29
+------ todo-list end at 2026/09/03/10:35:00 -----
