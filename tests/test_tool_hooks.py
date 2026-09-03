@@ -25,8 +25,8 @@ class ToolHooksTest(unittest.TestCase):
                 "PreToolUse": [
                     {
                         "name": "readme-alias",
-                        "matcher": "read_file",
-                        "updated_input": {"path": "README.md"},
+                        "matcher": "read",
+                        "updated_input": {"file_path": "README.md"},
                         "additional_context": "已将别名解析为 README.md",
                     }
                 ]
@@ -34,7 +34,7 @@ class ToolHooksTest(unittest.TestCase):
         )
         executor = ToolExecutor(WorkspaceTools(self.root), hooks=hooks)
 
-        events, result_json = executor.run_one("tool_read", "read_file", {"path": "ALIAS.md"})
+        events, result_json = executor.run_one("tool_read", "read", {"file_path": "ALIAS.md"})
 
         self.assertTrue(any(event["type"] == "hook_start" and event["hook_event"] == "PreToolUse" for event in events))
         self.assertTrue(any(event["type"] == "hook_done" and event["data"].get("updated_input") for event in events))
@@ -46,7 +46,7 @@ class ToolHooksTest(unittest.TestCase):
                 "PreToolUse": [
                     {
                         "name": "deny-shell",
-                        "matcher": "shell_command",
+                        "matcher": "bash",
                         "permission_decision": "deny",
                         "reason": "测试拒绝 shell",
                     }
@@ -54,7 +54,7 @@ class ToolHooksTest(unittest.TestCase):
                 "PermissionDenied": [
                     {
                         "name": "record-denial",
-                        "matcher": "shell_command",
+                        "matcher": "bash",
                         "additional_context": "shell 已被策略拒绝",
                     }
                 ],
@@ -62,7 +62,7 @@ class ToolHooksTest(unittest.TestCase):
         )
         executor = ToolExecutor(WorkspaceTools(self.root), hooks=hooks)
 
-        events, result_json = executor.run_one("tool_shell", "shell_command", {"command": "pwd"})
+        events, result_json = executor.run_one("tool_shell", "bash", {"command": "pwd"})
 
         self.assertTrue(any(event["type"] == "hook_start" and event["hook_event"] == "PermissionDenied" for event in events))
         done = next(event for event in events if event["type"] == "tool_done")
@@ -76,7 +76,7 @@ class ToolHooksTest(unittest.TestCase):
                 "PermissionRequest": [
                     {
                         "name": "allow-safe-write",
-                        "matcher": "create_file",
+                        "matcher": "write",
                         "permission_decision": "allow",
                         "reason": "测试允许创建文件",
                         "additional_context": "审批 hook 已确认该写入安全",
@@ -88,8 +88,8 @@ class ToolHooksTest(unittest.TestCase):
 
         events, result_json = executor.run_one(
             "tool_create",
-            "create_file",
-            {"path": "notes.txt", "content": "ok"},
+            "write",
+            {"file_path": "notes.txt", "content": "ok"},
             require_permission=True,
         )
 
@@ -107,7 +107,7 @@ class ToolHooksTest(unittest.TestCase):
                 "PermissionRequest": [
                     {
                         "name": "deny-dangerous-write",
-                        "matcher": "write_file",
+                        "matcher": "write",
                         "permission_decision": "deny",
                         "reason": "测试拒绝覆盖文件",
                         "additional_context": "覆盖写入需要人工复核",
@@ -116,7 +116,7 @@ class ToolHooksTest(unittest.TestCase):
                 "PermissionDenied": [
                     {
                         "name": "record-denial",
-                        "matcher": "write_file",
+                        "matcher": "write",
                         "additional_context": "已记录拒绝事件",
                     }
                 ],
@@ -126,8 +126,8 @@ class ToolHooksTest(unittest.TestCase):
 
         events, result_json = executor.run_one(
             "tool_write",
-            "write_file",
-            {"path": "README.md", "content": "replace"},
+            "write",
+            {"file_path": "README.md", "content": "replace"},
             require_permission=True,
         )
 
@@ -145,7 +145,7 @@ class ToolHooksTest(unittest.TestCase):
                 "PermissionRequest": [
                     {
                         "name": "ask-before-write",
-                        "matcher": "create_file",
+                        "matcher": "write",
                         "permission_decision": "ask",
                         "reason": "测试要求人工确认",
                         "additional_context": "需要用户确认目标路径",
@@ -157,8 +157,8 @@ class ToolHooksTest(unittest.TestCase):
 
         events, result_json = executor.run_one(
             "tool_create",
-            "create_file",
-            {"path": "manual.txt", "content": "ok"},
+            "write",
+            {"file_path": "manual.txt", "content": "ok"},
             require_permission=True,
         )
 
@@ -174,14 +174,14 @@ class ToolHooksTest(unittest.TestCase):
                 "PreToolUse": [
                     {
                         "name": "add-pre-context",
-                        "matcher": "read_file",
+                        "matcher": "read",
                         "additional_context": "读取前上下文",
                     }
                 ],
                 "PostToolUse": [
                     {
                         "name": "add-post-context",
-                        "matcher": "read_file",
+                        "matcher": "read",
                         "additional_context": "读取后上下文",
                     }
                 ],
@@ -189,7 +189,7 @@ class ToolHooksTest(unittest.TestCase):
         )
         executor = ToolExecutor(WorkspaceTools(self.root), hooks=hooks)
 
-        events, result_json = executor.run_one("tool_read", "read_file", {"path": "README.md"})
+        events, result_json = executor.run_one("tool_read", "read", {"file_path": "README.md"})
 
         done = next(event for event in events if event["type"] == "tool_done")
         self.assertIn("读取前上下文", json.dumps(done["data"], ensure_ascii=False))

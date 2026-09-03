@@ -2631,15 +2631,17 @@ function renderMarkdown(raw) {
 
 // 工具显示名映射（dsh 按变体给语义标签，如 Bash/Read；Nova 工具名转中文短标签）
 const TOOL_DISPLAY_NAMES = {
-  list_files: "列出文件",
-  read_file: "读取文件",
-  write_file: "写入文件",
-  edit_file: "编辑文件",
-  search: "搜索",
-  grep: "搜索内容",
-  glob: "匹配文件",
+  read: "Read",
+  write: "Write",
+  edit: "Edit",
+  glob: "Glob",
+  grep: "Grep",
   bash: "Bash",
-  shell: "Shell",
+  todo_write: "TodoWrite",
+  web_fetch: "WebFetch",
+  web_search: "WebSearch",
+  memory_write: "MemoryWrite",
+  memory_remove: "MemoryRemove",
 };
 
 // dsh ToolRow 五件套行：[16px 图标位] [工具名] [2px 分隔点] [摘要 flex 截断] [14px chevron]

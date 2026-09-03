@@ -1,3 +1,6 @@
+"""工具事件元数据：spec 注入、duration、diff 预览、失败原因、
+bash description 作为标题（dsh：bash 的必填 description 即调用说明）。"""
+
 from __future__ import annotations
 
 import tempfile
@@ -13,7 +16,7 @@ class ToolEventMetadataTest(unittest.TestCase):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.root = Path(self.tmpdir.name)
         (self.root / "README.md").write_text("Nova 工具测试\n", encoding="utf-8")
-        self.executor = ToolExecutor(WorkspaceTools(self.root))
+        self.executor = ToolExecutor(WorkspaceTools(self.root, permission_mode="accept_edits"))
 
     def tearDown(self) -> None:
         self.tmpdir.cleanup()
@@ -21,27 +24,28 @@ class ToolEventMetadataTest(unittest.TestCase):
     def test_tool_events_carry_spec_duration_and_diff_preview(self) -> None:
         events, _result_json = self.executor.run_one_stream(
             "tool_write_preview",
-            "write_file",
-            {"path": "README.md", "content": "Nova 新内容\n"},
+            "write",
+            {"file_path": "README.md", "content": "Nova 新内容\n"},
         )
 
         start = next(event for event in events if event["type"] == "tool_start")
         done = next(event for event in events if event["type"] == "tool_done")
 
         self.assertEqual(start["data"]["spec"]["permission"], "write")
-        self.assertEqual(start["data"]["spec"]["risk"], "high")
-        self.assertEqual(start["data"]["spec"]["schema"]["path"], "文件")
+        self.assertEqual(start["data"]["spec"]["risk"], "medium")
+        self.assertEqual(start["data"]["spec"]["name"], "write")
         self.assertGreaterEqual(done["data"]["duration_ms"], 0)
         self.assertEqual(done["data"]["diff"]["files"], ["README.md"])
         self.assertEqual(done["data"]["diff"]["additions"], 1)
         self.assertEqual(done["data"]["diff"]["deletions"], 1)
         self.assertIn("+Nova 新内容", done["data"]["diff"]["preview"])
+        self.assertIn("-Nova 工具测试", done["data"]["diff"]["preview"])
 
     def test_failed_tool_event_includes_failure_reason_and_retryable_flag(self) -> None:
         events, _result_json = self.executor.run_one_stream(
             "tool_failed_read",
-            "read_file",
-            {"path": "missing.md"},
+            "read",
+            {"file_path": "missing.md"},
         )
 
         done = next(event for event in events if event["type"] == "tool_done")
@@ -51,21 +55,34 @@ class ToolEventMetadataTest(unittest.TestCase):
         self.assertTrue(done["data"]["retryable"])
         self.assertEqual(done["data"]["spec"]["permission"], "read")
 
-    def test_tool_annotation_becomes_card_title_metadata_and_is_not_executed_argument(self) -> None:
-        events, result_json = self.executor.run_one_stream(
-            "tool_read_annotated",
-            "read_file",
-            {"path": "README.md", "annotation": "读取项目说明"},
+    def test_edit_event_carries_diff_preview(self) -> None:
+        self.executor.tools.run("read", {"file_path": "README.md"})
+        events, _result_json = self.executor.run_one_stream(
+            "tool_edit_preview",
+            "edit",
+            {"file_path": "README.md", "old_string": "Nova 工具测试", "new_string": "Nova 已编辑"},
+        )
+        done = next(event for event in events if event["type"] == "tool_done")
+        self.assertTrue(done["ok"])
+        self.assertEqual(done["data"]["replacements"], 1)
+        self.assertIn("+Nova 已编辑", done["data"]["diff"]["preview"])
+
+    def test_bash_description_becomes_card_title(self) -> None:
+        events, result_json = ToolExecutor(
+            WorkspaceTools(self.root, permission_mode="bypass_permissions")
+        ).run_one_stream(
+            "tool_bash_desc",
+            "bash",
+            {"command": "pwd", "description": "Print working directory"},
         )
 
         start = next(event for event in events if event["type"] == "tool_start")
         done = next(event for event in events if event["type"] == "tool_done")
 
-        self.assertEqual(start["title"], "读取项目说明")
-        self.assertEqual(start["data"]["annotation"], "读取项目说明")
+        self.assertEqual(start["title"], "Print working directory")
+        self.assertEqual(done["title"], "Print working directory")
         self.assertNotIn("annotation", start["arguments"])
-        self.assertEqual(done["data"]["annotation"], "读取项目说明")
-        self.assertIn('"annotation": "读取项目说明"', result_json)
+        self.assertNotIn("annotation", result_json)
 
 
 if __name__ == "__main__":

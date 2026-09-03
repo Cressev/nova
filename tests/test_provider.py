@@ -16,7 +16,7 @@ class BigModelProviderTest(unittest.TestCase):
             {
                 "content": "",
                 "reasoning_content": (
-                    '<tool_calls>[{"tool":"read_file","arguments":{"path":"README.md"}}]</tool_calls>'
+                    '<tool_calls>[{"tool":"read","arguments":{"path":"README.md"}}]</tool_calls>'
                 ),
             }
         )
@@ -38,13 +38,15 @@ class BigModelProviderTest(unittest.TestCase):
         provider = BigModelProvider()
 
         schemas = provider.openai_tool_schemas(TOOL_SPECS)
-        read_file = next(item for item in schemas if item["function"]["name"] == "read_file")
+        read_file = next(item for item in schemas if item["function"]["name"] == "read")
         properties = read_file["function"]["parameters"]["properties"]
 
         self.assertEqual(read_file["type"], "function")
-        self.assertIn("path", properties)
-        self.assertEqual(properties["annotation"]["type"], "string")
-        self.assertIn("annotation", read_file["function"]["parameters"]["required"])
+        self.assertIn("file_path", properties)
+        self.assertIn("offset", properties)
+        self.assertIn("limit", properties)
+        self.assertIn("file_path", read_file["function"]["parameters"]["required"])
+        self.assertNotIn("annotation", properties)
 
     def test_openai_function_schemas_expose_local_web_search_tool(self) -> None:
         provider = BigModelProvider()
@@ -61,10 +63,39 @@ class BigModelProviderTest(unittest.TestCase):
         schemas = provider.openai_tool_schemas()
         function_names = {item["function"]["name"] for item in schemas if item["type"] == "function"}
 
-        self.assertIn("read_file", function_names)
-        self.assertIn("write_file", function_names)
-        self.assertIn("apply_patch", function_names)
-        for retired in {"read_many_files", "git_status", "git_diff", "replace_in_file", "edit_file", "multi_edit", "create_file"}:
+        expected = {
+            "read",
+            "write",
+            "edit",
+            "glob",
+            "grep",
+            "bash",
+            "todo_write",
+            "web_fetch",
+            "web_search",
+            "memory_write",
+            "memory_remove",
+        }
+        self.assertEqual(function_names, expected)
+        for retired in {
+            "read_many_files",
+            "read_file",
+            "list_files",
+            "glob_files",
+            "search_text",
+            "shell_command",
+            "write_file",
+            "create_file",
+            "replace_in_file",
+            "edit_file",
+            "multi_edit",
+            "apply_patch",
+            "todo_read",
+            "memory_read",
+            "memory_search",
+            "memory_summarize",
+            "memory_compact",
+        }:
             self.assertNotIn(retired, function_names)
 
     def test_chat_tool_schemas_can_hide_web_fetch_for_search_queries_without_url(self) -> None:
@@ -95,7 +126,7 @@ class BigModelProviderTest(unittest.TestCase):
 
         self.assertEqual(decision.content, "我会并行读取这些文件。")
         self.assertEqual(len(decision.tool_calls), 3)
-        self.assertEqual(decision.tool_calls[0]["tool"], "read_file")
+        self.assertEqual(decision.tool_calls[0]["tool"], "read")
         self.assertEqual(decision.tool_calls[0]["arguments"]["annotation"], "读取 README")
 
     def test_complete_uses_openai_sdk_client_for_text_response(self) -> None:
@@ -155,21 +186,21 @@ class _FakeCompletions:
                             SimpleNamespace(
                                 id="call_readme",
                                 function=SimpleNamespace(
-                                    name="read_file",
+                                    name="read",
                                     arguments='{"path":"README.md","annotation":"读取 README"}',
                                 ),
                             ),
                             SimpleNamespace(
                                 id="call_agents",
                                 function=SimpleNamespace(
-                                    name="read_file",
+                                    name="read",
                                     arguments='{"path":"AGENTS.md","annotation":"读取项目指令"}',
                                 ),
                             ),
                             SimpleNamespace(
                                 id="call_progress",
                                 function=SimpleNamespace(
-                                    name="read_file",
+                                    name="read",
                                     arguments='{"path":"PROGRESS.md","annotation":"读取进度"}',
                                 ),
                             ),

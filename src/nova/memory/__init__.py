@@ -1,3 +1,5 @@
 from .project import ProjectMemory
 
-__all__ = ["ProjectMemory"]
+from . import layered
+
+__all__ = ["ProjectMemory", "layered"]

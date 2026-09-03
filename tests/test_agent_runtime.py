@@ -26,36 +26,36 @@ class AgentRuntimeTest(unittest.TestCase):
 
     def test_parse_closed_tool_call(self) -> None:
         payload = self.runtime._parse_tool_call(
-            '<tool_call>{"tool":"read_file","arguments":{"path":"README.md"}}</tool_call>'
+            '<tool_call>{"tool":"read","arguments":{"file_path":"README.md"}}</tool_call>'
         )
-        self.assertEqual(payload, {"tool": "read_file", "arguments": {"path": "README.md"}})
+        self.assertEqual(payload, {"tool": "read", "arguments": {"file_path": "README.md"}})
 
     def test_parse_unclosed_tool_call(self) -> None:
         # GLM 有时只输出起始标签；Agent Runtime 仍要能识别并执行工具。
         payload = self.runtime._parse_tool_call(
-            '<tool_call>{"tool":"read_file","arguments":{"path":"README.md"}}'
+            '<tool_call>{"tool":"read","arguments":{"file_path":"README.md"}}'
         )
-        self.assertEqual(payload, {"tool": "read_file", "arguments": {"path": "README.md"}})
+        self.assertEqual(payload, {"tool": "read", "arguments": {"file_path": "README.md"}})
 
     def test_parse_parallel_tool_calls(self) -> None:
         payload = self.runtime._parse_tool_calls(
-            '<tool_calls>[{"tool":"read_file","arguments":{"path":"README.md"}},'
+            '<tool_calls>[{"tool":"read","arguments":{"file_path":"README.md"}},'
             '{"tool":"git_status","arguments":{}}]</tool_calls>'
         )
         self.assertEqual(len(payload), 2)
-        self.assertEqual(payload[0]["tool"], "read_file")
+        self.assertEqual(payload[0]["tool"], "read")
         self.assertEqual(payload[1]["tool"], "git_status")
 
     def test_normalize_tool_call_variants(self) -> None:
         self.assertEqual(
-            self.runtime._normalize_tool_call({"name": "read_file", "parameters": {"path": "README.md"}}),
-            ("read_file", {"path": "README.md"}),
+            self.runtime._normalize_tool_call({"name": "read", "parameters": {"file_path": "README.md"}}),
+            ("read", {"file_path": "README.md"}),
         )
         self.assertEqual(
             self.runtime._normalize_tool_call(
-                {"function": {"name": "read_file", "arguments": '{"path":"README.md"}'}}
+                {"function": {"name": "read", "arguments": '{"file_path":"README.md"}'}}
             ),
-            ("read_file", {"path": "README.md"}),
+            ("read", {"file_path": "README.md"}),
         )
 
     def test_parse_wrapped_tool_calls(self) -> None:
@@ -65,13 +65,13 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertEqual(payload, [{"name": "git_status", "parameters": {}}])
 
     def test_parse_named_tool_call_without_json_wrapper(self) -> None:
-        payload = self.runtime._parse_tool_calls('<tool_call>list_files{"path":".","limit":100}</think>')
+        payload = self.runtime._parse_tool_calls('<tool_call>glob{"pattern":"*.py","path":"."}</think>')
 
-        self.assertEqual(payload, [{"tool": "list_files", "arguments": {"path": ".", "limit": 100}}])
+        self.assertEqual(payload, [{"tool": "glob", "arguments": {"pattern": "*.py", "path": "."}}])
 
     def test_builtin_tools_command(self) -> None:
         text = self.runtime._builtin_response("/tools")
-        self.assertIn("read_file", text)
+        self.assertIn("read", text)
         self.assertIn("并行", text)
         self.assertNotIn("git_status", text)
         self.assertNotIn("git_diff", text)
@@ -88,16 +88,22 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertIn("工作区", text)
         self.assertNotIn("Git 状态", text)
 
-    def test_builtin_memory_command_uses_separated_sources(self) -> None:
-        Path(self.tmpdir.name, "AGENTS.md").write_text("项目指令", encoding="utf-8")
-        Path(self.tmpdir.name, "CURRENT.md").write_text("开发状态", encoding="utf-8")
+    def test_builtin_memory_command_lists_layered_entries(self) -> None:
+        from nova.memory import layered
+
+        layered.write_entry(
+            layered.project_dir(Path(self.tmpdir.name)),
+            layered.normalize_entry({"scope": "project", "title": "项目偏好", "content": "中文回复"}),
+            layered.read_index(layered.project_dir(Path(self.tmpdir.name))),
+            has_explicit_id=False,
+        )
 
         text = self.runtime._builtin_response("/memory")
 
-        self.assertIn("注入给开发 Agent", text)
-        self.assertIn("只给 Nova 开发过程", text)
-        self.assertIn("AGENTS.md", text)
-        self.assertIn("CURRENT.md", text)
+        self.assertIn("分层记忆", text)
+        self.assertIn("project :: 项目偏好", text)
+        self.assertIn("memory_write", text)
+        self.assertIn("memory_remove", text)
 
     def test_builtin_compact_writes_session_memory_and_emits_boundary(self) -> None:
         from nova.models import ChatMessage, ChatRole
@@ -121,22 +127,24 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertTrue(any(event["type"] == "compact_done" for event in events))
         self.assertTrue(any(event["type"] == "agent_status" and "压缩边界" in event["status"] for event in events))
 
-    def test_builtin_memory_subcommands_search_summarize_and_compact(self) -> None:
-        memory_dir = Path(self.tmpdir.name, ".nova", "memory")
-        memory_dir.mkdir(parents=True)
-        (memory_dir / "index.md").write_text("- 用户偏好：中文输出\n- 项目目标：对标 Codex\n", encoding="utf-8")
-        (memory_dir / "session.md").write_text("# 会话\n继续补 memory compact。\n", encoding="utf-8")
+    def test_builtin_memory_search_over_layered_entries(self) -> None:
+        from nova.memory import layered
 
-        search = self.runtime._builtin_response("/memory", "/memory search Codex")
-        summarize = self.runtime._builtin_response("/memory", "/memory summarize")
-        compact = self.runtime._builtin_response("/memory", "/memory compact")
+        dir_path = layered.project_dir(Path(self.tmpdir.name))
+        for title in ["项目偏好：中文输出", "项目目标：对标 Codex"]:
+            layered.write_entry(
+                dir_path,
+                layered.normalize_entry({"scope": "project", "title": title, "content": title}),
+                layered.read_index(dir_path),
+                has_explicit_id=False,
+            )
 
-        self.assertIn("index.md:2", search)
-        self.assertIn("项目目标：对标 Codex", search)
-        self.assertIn("记忆摘要", summarize)
-        self.assertIn("session.md", summarize)
-        self.assertIn("已压缩记忆", compact)
-        self.assertIn("memory/project.md", compact)
+        hit = self.runtime._builtin_response("/memory", "/memory search Codex")
+        miss = self.runtime._builtin_response("/memory", "/memory search 不存在关键词")
+
+        self.assertIn("对标 Codex", hit)
+        self.assertIn("project ::", hit)
+        self.assertIn("未找到匹配记忆", miss)
 
     def test_builtin_help_lists_all_required_slash_commands(self) -> None:
         text = self.runtime._builtin_response("/help", "/help")
@@ -203,7 +211,7 @@ class AgentRuntimeTest(unittest.TestCase):
     def test_answer_from_tool_results_uses_latest_successful_output(self) -> None:
         text = self.runtime._answer_from_tool_results(
             [
-                '{"tool":"list_files","title":"列出 .","ok":true,"output":"README.md\\nsrc/main.py","data":{}}'
+                '{"tool":"glob","title":"列出 .","ok":true,"output":"README.md\\nsrc/main.py","data":{}}'
             ]
         )
 
@@ -213,27 +221,27 @@ class AgentRuntimeTest(unittest.TestCase):
     def test_direct_directory_intent_routes_to_list_files(self) -> None:
         calls = self.runtime._direct_tool_calls_from_user("查看当前文件目录")
 
-        self.assertEqual(calls, [{"tool": "list_files", "arguments": {"path": ".", "limit": 120}}])
+        self.assertEqual(calls, [{"tool": "glob", "arguments": {"path": ".", "pattern": "*"}}])
 
     def test_direct_document_directory_intent_routes_to_docs_folder(self) -> None:
         Path(self.tmpdir.name, "产品研发文档集").mkdir()
 
         calls = self.runtime._direct_tool_calls_from_user("查看当前文档目录")
 
-        self.assertEqual(calls, [{"tool": "list_files", "arguments": {"path": "产品研发文档集", "limit": 120}}])
+        self.assertEqual(calls, [{"tool": "glob", "arguments": {"path": "产品研发文档集", "pattern": "*"}}])
 
     def test_direct_shell_intent_routes_to_safe_shell_command(self) -> None:
         calls = self.runtime._direct_tool_calls_from_user("你不会调用命令行工具吗")
 
         self.assertEqual(
             calls,
-            [{"tool": "shell_command", "arguments": {"command": "pwd", "workdir": ".", "timeout_ms": 5000}}],
+            [{"tool": "bash", "arguments": {"command": "pwd", "workdir": ".", "timeoutMs": 5000, "description": "Print working directory"}}],
         )
 
     def test_direct_shell_intent_uses_command_after_colon(self) -> None:
         calls = self.runtime._direct_tool_calls_from_user("执行命令：python3 --version")
 
-        self.assertEqual(calls[0]["tool"], "shell_command")
+        self.assertEqual(calls[0]["tool"], "bash")
         self.assertEqual(calls[0]["arguments"]["command"], "python3 --version")
 
     def test_wifi_password_request_does_not_bypass_model_with_direct_shell_tool(self) -> None:
@@ -260,7 +268,7 @@ class AgentRuntimeTest(unittest.TestCase):
 
         events = asyncio.run(collect_events())
 
-        self.assertFalse(any(event["type"] == "tool_start" and event.get("tool") == "shell_command" for event in events))
+        self.assertFalse(any(event["type"] == "tool_start" and event.get("tool") == "bash" for event in events))
 
     def test_direct_tool_answer_uses_provider_when_configured(self) -> None:
         from nova.models import ChatMessage, ChatRole
@@ -310,7 +318,7 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertFalse(provider.stream_called)
         self.assertFalse(any(item["type"] == "web_search" for item in provider.seen_tools))
         function_names = [item["function"]["name"] for item in provider.seen_tools if item["type"] == "function"]
-        self.assertIn("read_file", function_names)
+        self.assertIn("read", function_names)
 
     def test_runtime_delegates_model_tool_loop_to_agent_loop(self) -> None:
         from nova.models import ChatMessage, ChatRole
@@ -360,7 +368,7 @@ class AgentRuntimeTest(unittest.TestCase):
         provider = _DecisionProvider(
             ProviderDecision(
                 content="我先读取 README。",
-                tool_calls=[{"tool": "read_file", "arguments": {"path": "README.md", "annotation": "读取说明"}}],
+                tool_calls=[{"tool": "read", "arguments": {"file_path": "README.md"}}],
             )
         )
         recorder = _FakeTraceRecorder()
@@ -386,7 +394,7 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertIn("tool", kinds)
         self.assertIn("turn_end", kinds)
         tool_record = next(item for item in recorder.records if item["kind"] == "tool")
-        self.assertEqual(tool_record["tool"], "read_file")
+        self.assertEqual(tool_record["tool"], "read")
         self.assertTrue(tool_record["ok"])
 
     def test_tool_events_have_stable_call_id(self) -> None:
@@ -394,7 +402,7 @@ class AgentRuntimeTest(unittest.TestCase):
             return [
                 event
                 async for event in self.runtime._run_tool_calls(
-                    [{"tool": "list_files", "arguments": {"path": ".", "limit": 5}}]
+                    [{"tool": "glob", "arguments": {"path": ".", "pattern": "*"}}]
                 )
             ]
 
@@ -405,7 +413,7 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertTrue(start["call_id"].startswith("tool_"))
         self.assertEqual(start["call_id"], done["call_id"])
 
-    def test_standard_tool_calls_with_annotations_execute_in_parallel(self) -> None:
+    def test_standard_readonly_tool_calls_execute_in_parallel(self) -> None:
         Path(self.tmpdir.name, "README.md").write_text("Nova\n", encoding="utf-8")
         Path(self.tmpdir.name, "AGENTS.md").write_text("项目指令\n", encoding="utf-8")
 
@@ -418,16 +426,16 @@ class AgentRuntimeTest(unittest.TestCase):
                             "id": "call_readme",
                             "type": "function",
                             "function": {
-                                "name": "read_file",
-                                "arguments": '{"path":"README.md","annotation":"读取 README"}',
+                                "name": "read",
+                                "arguments": '{"file_path":"README.md"}',
                             },
                         },
                         {
                             "id": "call_agents",
                             "type": "function",
                             "function": {
-                                "name": "read_file",
-                                "arguments": '{"path":"AGENTS.md","annotation":"读取项目指令"}',
+                                "name": "read",
+                                "arguments": '{"file_path":"AGENTS.md"}',
                             },
                         },
                     ]
@@ -439,8 +447,8 @@ class AgentRuntimeTest(unittest.TestCase):
 
         self.assertEqual(len(starts), 2)
         self.assertTrue(all(event.get("parallel") for event in starts))
-        self.assertEqual(starts[0]["title"], "读取 README")
-        self.assertEqual(starts[0]["data"]["annotation"], "读取 README")
+        self.assertEqual(starts[0]["title"], "read README.md")
+        self.assertIn("spec", starts[0]["data"])
         self.assertNotIn("annotation", starts[0]["arguments"])
 
     def test_shell_tool_start_streams_before_long_command_finishes_and_can_cancel(self) -> None:
@@ -448,11 +456,12 @@ class AgentRuntimeTest(unittest.TestCase):
             generator = self.runtime._run_tool_calls(
                 [
                     {
-                        "tool": "shell_command",
+                        "tool": "bash",
                         "arguments": {
                             "command": "python3 -u -c 'import time; print(\"ready\", flush=True); time.sleep(20)'",
+                            "description": "Run long sleep for cancel test",
                             "workdir": ".",
-                            "timeout_ms": 60000,
+                            "timeoutMs": 60000,
                         },
                     }
                 ]
@@ -476,8 +485,8 @@ class AgentRuntimeTest(unittest.TestCase):
     def test_parallel_readonly_tools_use_executor_hooks(self) -> None:
         hook_file = Path(self.tmpdir.name, ".nova-hooks.json")
         hook_file.write_text(
-            '{"hooks":{"PreToolUse":[{"name":"readme-alias","matcher":"read_file",'
-            '"updated_input":{"path":"README.md"}}]}}',
+            '{"hooks":{"PreToolUse":[{"name":"readme-alias","matcher":"read",'
+            '"updated_input":{"file_path":"README.md"}}]}}',
             encoding="utf-8",
         )
         Path(self.tmpdir.name, "README.md").write_text("Nova\n", encoding="utf-8")
@@ -492,8 +501,8 @@ class AgentRuntimeTest(unittest.TestCase):
                 event
                 async for event in runtime._run_tool_calls(
                     [
-                        {"tool": "read_file", "arguments": {"path": "ALIAS.md"}},
-                        {"tool": "list_files", "arguments": {"path": ".", "limit": 5}},
+                        {"tool": "read", "arguments": {"file_path": "ALIAS.md"}},
+                        {"tool": "glob", "arguments": {"path": ".", "pattern": "*"}},
                     ]
                 )
             ]
@@ -503,7 +512,7 @@ class AgentRuntimeTest(unittest.TestCase):
         read_result = next(
             event["result_json"]
             for event in events
-            if event["type"] == "tool_result_json" and '"tool": "read_file"' in event["result_json"]
+            if event["type"] == "tool_result_json" and '"tool": "read"' in event["result_json"]
         )
 
         self.assertTrue(any(event["hook_name"] == "readme-alias" for event in hook_events))
@@ -521,7 +530,7 @@ class AgentRuntimeTest(unittest.TestCase):
             return [
                 event
                 async for event in runtime._run_tool_calls(
-                    [{"tool": "shell_command", "arguments": {"command": "pwd", "workdir": "."}}]
+                    [{"tool": "bash", "arguments": {"command": "pwd", "workdir": ".", "description": "Print working directory"}}]
                 )
             ]
 
@@ -529,7 +538,7 @@ class AgentRuntimeTest(unittest.TestCase):
         request = next(event for event in events if event["type"] == "permission_request")
         result = next(event for event in events if event["type"] == "tool_result_json")
 
-        self.assertEqual(request["tool"], "shell_command")
+        self.assertEqual(request["tool"], "bash")
         self.assertEqual(request["permission"], "shell")
         self.assertEqual(request["arguments"]["command"], "pwd")
         self.assertIn("permission_request", result["result_json"])
@@ -546,7 +555,7 @@ class AgentRuntimeTest(unittest.TestCase):
             return [
                 event
                 async for event in runtime._run_tool_calls(
-                    [{"tool": "shell_command", "arguments": {"command": command, "workdir": "."}}]
+                    [{"tool": "bash", "arguments": {"command": command, "workdir": ".", "description": "Run user requested command"}}]
                 )
             ]
 
@@ -571,7 +580,7 @@ class AgentRuntimeTest(unittest.TestCase):
             return [
                 event
                 async for event in runtime._run_tool_calls(
-                    [{"tool": "shell_command", "arguments": {"command": "reboot", "workdir": "."}}]
+                    [{"tool": "bash", "arguments": {"command": "reboot", "workdir": ".", "description": "Reboot the machine"}}]
                 )
             ]
 
@@ -585,7 +594,7 @@ class AgentRuntimeTest(unittest.TestCase):
     def test_tool_hooks_emit_runtime_events_and_can_deny(self) -> None:
         hook_file = Path(self.tmpdir.name, ".nova-hooks.json")
         hook_file.write_text(
-            '{"hooks":{"PreToolUse":[{"name":"deny-shell","matcher":"shell_command",'
+            '{"hooks":{"PreToolUse":[{"name":"deny-shell","matcher":"bash",'
             '"permission_decision":"deny","reason":"hook 拒绝执行"}]}}',
             encoding="utf-8",
         )
@@ -599,7 +608,7 @@ class AgentRuntimeTest(unittest.TestCase):
             return [
                 event
                 async for event in runtime._run_tool_calls(
-                    [{"tool": "shell_command", "arguments": {"command": "pwd", "workdir": "."}}]
+                    [{"tool": "bash", "arguments": {"command": "pwd", "workdir": ".", "description": "Print working directory"}}]
                 )
             ]
 
@@ -612,7 +621,7 @@ class AgentRuntimeTest(unittest.TestCase):
 
     def test_final_stream_tool_calls_are_executed_not_rendered_as_text(self) -> None:
         async def fake_stream(_messages):
-            yield '<tool_calls>[{"tool":"shell_command","arguments":{"command":"pwd","workdir":".","timeout_ms":5000}}]</tool_calls>'
+            yield '<tool_calls>[{"tool":"bash","arguments":{"command":"pwd","workdir":".","timeoutMs":5000,"description":"Print working directory"}}]</tool_calls>'
 
         self.runtime.provider.stream = fake_stream  # type: ignore[method-assign]
 
@@ -622,7 +631,7 @@ class AgentRuntimeTest(unittest.TestCase):
         events = asyncio.run(collect_events())
         deltas = "".join(event.get("delta", "") for event in events if event["type"] == "assistant_delta")
 
-        self.assertTrue(any(event["type"] == "tool_start" and event["tool"] == "shell_command" for event in events))
+        self.assertTrue(any(event["type"] == "tool_start" and event["tool"] == "bash" for event in events))
         self.assertNotIn("<tool_calls>", deltas)
 
 
@@ -655,7 +664,7 @@ class _DecisionProvider:
             {
                 "type": "function",
                 "function": {
-                    "name": "read_file",
+                    "name": "read",
                     "description": "读取文件",
                     "parameters": {"type": "object", "properties": {}, "required": []},
                 },

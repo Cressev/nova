@@ -76,8 +76,10 @@ class ApiTest(unittest.TestCase):
         tools = self.client.get("/api/tools")
         self.assertEqual(tools.status_code, 200)
         names = {item["name"] for item in tools.json()["items"]}
-        self.assertIn("read_file", names)
-        self.assertIn("apply_patch", names)
+        for expected in ["read", "write", "edit", "glob", "grep", "bash", "todo_write",
+                         "web_fetch", "web_search", "memory_write", "memory_remove"]:
+            self.assertIn(expected, names)
+        self.assertNotIn("apply_patch", names)
 
         memory = self.client.get("/api/memory/status")
         self.assertEqual(memory.status_code, 200)
@@ -360,7 +362,7 @@ class ApiTest(unittest.TestCase):
                 phase="completed",
                 status="ok",
                 title="读取 README",
-                tool="read_file",
+                tool="read",
                 output="关键工具输出：README 里说明 Nova 是本地开发 Agent。" * 3,
             )
         )
@@ -660,14 +662,14 @@ class ApiTest(unittest.TestCase):
             yield {
                 "type": "tool_start",
                 "call_id": "tool_test_readme",
-                "tool": "read_file",
+                "tool": "read",
                 "title": "读取 README.md",
                 "arguments": {"path": "README.md"},
             }
             yield {
                 "type": "tool_done",
                 "call_id": "tool_test_readme",
-                "tool": "read_file",
+                "tool": "read",
                 "ok": True,
                 "title": "读取 README.md",
                 "output": "Nova",
@@ -711,7 +713,7 @@ class ApiTest(unittest.TestCase):
             if item["kind"] == "event" and item["item"]["type"] == "tool"
         ]
         self.assertEqual(len(tool_events), 1)
-        self.assertEqual(tool_events[0]["tool"], "read_file")
+        self.assertEqual(tool_events[0]["tool"], "read")
         self.assertEqual(tool_events[0]["arguments"], {"path": "README.md"})
         self.assertEqual(tool_events[0]["output"], "Nova")
         self.assertEqual(tool_events[0]["status"], "ok")
@@ -800,7 +802,7 @@ class ApiTest(unittest.TestCase):
             yield {
                 "type": "permission_request",
                 "call_id": "tool_needs_shell",
-                "tool": "shell_command",
+                "tool": "bash",
                 "permission": "shell",
                 "title": "需要审批：shell_command",
                 "message": "执行命令前需要用户确认。",
@@ -837,7 +839,7 @@ class ApiTest(unittest.TestCase):
             event for event in runtime_events if event["event_type"] == "permission.requested"
         ]
         self.assertEqual(len(permission_events), 1)
-        self.assertEqual(permission_events[0]["tool"], "shell_command")
+        self.assertEqual(permission_events[0]["tool"], "bash")
         self.assertEqual(permission_events[0]["arguments"], {"command": "pwd"})
 
         timeline = self.client.get(f"/api/chat/sessions/{session['id']}/timeline")
@@ -984,7 +986,7 @@ class ApiTest(unittest.TestCase):
                 session_id=session["id"],
                 turn_id="turn_restore",
                 call_id="tool_restore",
-                tool="shell_command",
+                tool="bash",
                 arguments={"command": "pwd"},
                 permission="shell",
                 reason="恢复审批",
@@ -1038,7 +1040,7 @@ class ApiTest(unittest.TestCase):
             session["id"],
             turn_id="turn_state",
             call_id="tool_state",
-            tool="read_file",
+            tool="read",
             arguments={"path": "README.md"},
             status="running",
         )

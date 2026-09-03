@@ -701,7 +701,7 @@ def _runtime_event_from_agent_event(event: dict, build_event) -> dict | None:
 
 def _denied_tool_alternative_message(*, tool: str, arguments: dict, reason: str) -> str:
     command = ""
-    if tool == "shell_command":
+    if tool in {"bash", "shell_command"}:
         command = str(arguments.get("command") or "").strip()
     target = command or json.dumps(arguments, ensure_ascii=False)
     target_line = f"这次被拒绝的是 `{tool}`"

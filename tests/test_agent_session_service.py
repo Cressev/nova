@@ -56,7 +56,7 @@ class AgentSessionServiceTest(unittest.TestCase):
             session_id="chat_a",
             turn_id="turn_a",
             call_id="tool_a",
-            tool="shell_command",
+            tool="bash",
             arguments={"command": "pwd"},
             permission="shell",
             reason="需要审批",
@@ -78,7 +78,7 @@ class AgentSessionServiceTest(unittest.TestCase):
             "chat_a",
             turn_id="turn_a",
             call_id="tool_read",
-            tool="read_file",
+            tool="read",
             arguments={"path": "README.md"},
             status="running",
         )
@@ -86,7 +86,7 @@ class AgentSessionServiceTest(unittest.TestCase):
             "chat_a",
             turn_id="turn_a",
             call_id="tool_read",
-            tool="read_file",
+            tool="read",
             status="completed",
             output="Nova",
         )

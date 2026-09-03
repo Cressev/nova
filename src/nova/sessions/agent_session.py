@@ -255,7 +255,7 @@ class AgentSessionService:
                     runtime,
                     turn_id=turn_id,
                     call_id=call_id,
-                    tool=existing_tool.tool if existing_tool else "shell_command",
+                    tool=existing_tool.tool if existing_tool else "bash",
                     status="background",
                     data={"job_id": job_id},
                 )

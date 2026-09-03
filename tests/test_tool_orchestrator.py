@@ -11,7 +11,7 @@ class ToolOrchestratorTest(unittest.TestCase):
     def test_parallel_readonly_calls_are_coordinated_in_one_place(self) -> None:
         traced: list[dict] = []
         orchestrator = ToolOrchestrator(
-            tools=_FakeTools(parallel_tools={"read_file"}),
+            tools=_FakeTools(parallel_tools={"read"}),
             executor=_FakeExecutor(),
             permission_mode="workspace_write",
             approval_policy="never",
@@ -23,10 +23,10 @@ class ToolOrchestratorTest(unittest.TestCase):
                 event
                 async for event in orchestrator.run(
                     [
-                        {"tool": "read_file", "arguments": {"path": "README.md"}},
+                        {"tool": "read", "arguments": {"path": "README.md"}},
                         {
                             "function": {
-                                "name": "read_file",
+                                "name": "read",
                                 "arguments": '{"path":"AGENTS.md"}',
                             }
                         },
@@ -52,15 +52,15 @@ class ToolOrchestratorTest(unittest.TestCase):
             approval_policy="never",
         )
 
-        self.assertFalse(orchestrator.requires_permission_request("read_file"))
-        self.assertTrue(orchestrator.requires_permission_request("shell_command"))
+        self.assertFalse(orchestrator.requires_permission_request("read"))
+        self.assertTrue(orchestrator.requires_permission_request("bash"))
 
         orchestrator.permission_mode = "bypass_permissions"
-        self.assertFalse(orchestrator.requires_permission_request("shell_command"))
+        self.assertFalse(orchestrator.requires_permission_request("bash"))
 
         orchestrator.permission_mode = "workspace_write"
         orchestrator.approval_policy = "on_request"
-        self.assertTrue(orchestrator.requires_permission_request("shell_command"))
+        self.assertTrue(orchestrator.requires_permission_request("bash"))
 
     def test_resume_approved_tool_marks_executor_call_as_approved(self) -> None:
         executor = _FakeExecutor()
@@ -74,7 +74,7 @@ class ToolOrchestratorTest(unittest.TestCase):
         events, result_json = asyncio.run(
             orchestrator.resume_approved_tool(
                 "tool_shell",
-                "shell_command",
+                "bash",
                 {"command": "pwd"},
             )
         )

@@ -63,7 +63,6 @@ class ToolExecutor:
     ) -> tuple[list[dict], str]:
         events: list[dict] = []
         current_arguments = dict(arguments)
-        annotation = self._pop_annotation(current_arguments)
         hook_contexts: list[str] = []
         # approved 来自用户在前端点击“允许”后的续跑。它只跳过工具权限二次询问，
         # 仍然保留 Pre/Post hook、黑名单和工具失败兜底。
@@ -199,9 +198,9 @@ class ToolExecutor:
                 "call_id": call_id,
                 "tool": tool_name,
                 "arguments": current_arguments,
-                "title": annotation or self._tool_title(tool_name, current_arguments),
+                "title": self._tool_title(tool_name, current_arguments),
                 "parallel": parallel,
-                "data": self._tool_start_data(tool_name, annotation),
+                "data": self._tool_start_data(tool_name, None),
             }
         )
         try:
@@ -268,7 +267,6 @@ class ToolExecutor:
             started_at=started_at,
             ok=result.ok,
             hook_contexts=hook_contexts,
-            annotation=annotation,
         )
         events.append(
             {
@@ -276,7 +274,7 @@ class ToolExecutor:
                 "call_id": call_id,
                 "tool": tool_name,
                 "ok": result.ok,
-                "title": annotation or result.title,
+                "title": result.title,
                 "output": result.output,
                 "data": done_data,
             }
@@ -319,7 +317,7 @@ class ToolExecutor:
         require_permission: bool = False,
         approved: bool = False,
     ) -> Iterator[dict[str, Any]]:
-        if tool_name != "shell_command":
+        if tool_name != "bash":
             events, result_json = self.run_one(
                 call_id,
                 tool_name,
@@ -334,7 +332,6 @@ class ToolExecutor:
 
         events: list[dict] = []
         current_arguments = dict(arguments)
-        annotation = self._pop_annotation(current_arguments)
         hook_contexts: list[str] = []
         # approved 表示这次执行来自 pending approval 的续跑，不再重复问同一个权限。
         permission_preapproved = approved
@@ -466,13 +463,13 @@ class ToolExecutor:
             "call_id": call_id,
             "tool": tool_name,
             "arguments": current_arguments,
-            "title": annotation or self._tool_title(tool_name, current_arguments),
+            "title": self._tool_title(tool_name, current_arguments),
             "parallel": parallel,
-            "data": self._tool_start_data(tool_name, annotation),
+            "data": self._tool_start_data(tool_name, None),
         }
         yield from events
         yield start_event
-        if bool(current_arguments.get("background")):
+        if bool(current_arguments.get("run_in_background")):
             job = self.process_manager.start_background(
                 command,
                 cwd=workdir,
@@ -484,12 +481,11 @@ class ToolExecutor:
                 started_at=started_at,
                 ok=True,
                 hook_contexts=hook_contexts,
-                annotation=annotation,
-            )
+                )
             result_json = json.dumps(
                 {
                     "tool": tool_name,
-                    "title": annotation or f"后台执行：{command}",
+                    "title": f"后台执行：{command}",
                     "ok": True,
                     "output": f"已在后台启动 {job['id']}：{command}",
                     "data": done_data,
@@ -501,7 +497,7 @@ class ToolExecutor:
                 "call_id": call_id,
                 "tool": tool_name,
                 "ok": True,
-                "title": annotation or f"后台执行：{command}",
+                "title": f"后台执行：{command}",
                 "output": f"已在后台启动 {job['id']}：{command}",
                 "data": done_data,
             }
@@ -515,6 +511,7 @@ class ToolExecutor:
             timeout_ms=timeout_ms,
             call_id=call_id,
             tool=tool_name,
+            title=str(current_arguments.get("description") or "").strip() or None,
         ):
             if event["type"] == "tool_done":
                 done_event = event
@@ -545,10 +542,7 @@ class ToolExecutor:
             ok=bool(done_event.get("ok")),
             failure_reason=None if done_event.get("ok") else str(done_event.get("output") or ""),
             hook_contexts=hook_contexts,
-            annotation=annotation,
         )
-        if annotation:
-            done_event["title"] = annotation
         yield done_event
         result_json = json.dumps(
             {
@@ -790,7 +784,7 @@ class ToolExecutor:
 
     def _normalize_argument_aliases(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """历史别名归一：shell 的 cmd → command（契约只认规范名）。"""
-        if tool_name == "shell_command" and "cmd" in arguments and "command" not in arguments:
+        if tool_name == "bash" and "cmd" in arguments and "command" not in arguments:
             arguments = dict(arguments)
             arguments["command"] = arguments.pop("cmd")
         return arguments
@@ -831,23 +825,23 @@ class ToolExecutor:
             self.tools.permission_mode = original_mode
 
     def _prepare_shell(self, arguments: dict[str, Any], *, approved: bool = False) -> tuple[str, Any, int]:
-        command = str(arguments.get("command") or arguments.get("cmd") or "").strip()
+        command = str(arguments.get("command") or "").strip()
         if not command:
-            raise ToolExecutionError("shell_command 需要 command")
+            raise ToolExecutionError("bash 需要 command")
         if approved and self.tools.permission_mode == "ask":
             original_mode = self.tools.permission_mode
             self.tools.permission_mode = "workspace_write"
             try:
-                self.tools._check_permission("shell_command")
+                self.tools._check_permission("bash")
             finally:
                 self.tools.permission_mode = original_mode
         else:
-            self.tools._check_permission("shell_command")
+            self.tools._check_permission("bash")
         risk = self.tools.shell_command_risk(command)
         if risk["blocked"]:
             raise ToolExecutionError(f"命令命中黑名单，拒绝执行：{risk['reason']}：{command}")
         workdir = self.tools._resolve_workspace_path(str(arguments.get("workdir") or "."))
-        timeout_ms = min(int(arguments.get("timeout_ms") or 10000), 120000)
+        timeout_ms = min(int(arguments.get("timeoutMs") or 30000), 120000)
         return command, workdir, timeout_ms
 
     def _needs_permission_request(self, tool_name: str, arguments: dict[str, Any], require_permission: bool) -> bool:
@@ -855,7 +849,7 @@ class ToolExecutor:
             return False
         if self.tools.permission_mode == "bypass_permissions":
             return False
-        if tool_name != "shell_command":
+        if tool_name != "bash":
             return True
         if self.tools.permission_mode == "ask":
             return True
@@ -863,7 +857,7 @@ class ToolExecutor:
         return bool(risk["blocked"]) is False and str(risk["risk"]) in {"medium", "high"}
 
     def _permission_request_data(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        if tool_name != "shell_command":
+        if tool_name != "bash":
             return {"reason": "ask 模式需要审批"}
         risk = self.tools.shell_command_risk(str(arguments.get("command") or arguments.get("cmd") or ""))
         return {
@@ -878,17 +872,21 @@ class ToolExecutor:
         return str(specs.get(tool_name, {}).get("permission") or "unknown")
 
     def _tool_title(self, tool_name: str, arguments: dict[str, Any]) -> str:
-        target = arguments.get("path") or arguments.get("query") or arguments.get("command") or arguments.get("url") or ""
+        """工具行标题（dsh presentCall 的精简形态）。bash 用必填 description。"""
+        if tool_name == "bash":
+            description = str(arguments.get("description") or "").strip()
+            return description or str(arguments.get("command") or "bash")[:80]
+        target = (
+            arguments.get("file_path")
+            or arguments.get("path")
+            or arguments.get("pattern")
+            or arguments.get("query")
+            or arguments.get("url")
+            or ""
+        )
         return f"{tool_name} {target}".strip()
 
-    def _pop_annotation(self, arguments: dict[str, Any]) -> str:
-        raw = arguments.pop("annotation", "") or arguments.pop("anotation", "")
-        text = str(raw).strip()
-        if len(text) > 80:
-            return text[:80].rstrip() + "..."
-        return text
-
-    def _tool_start_data(self, tool_name: str, annotation: str) -> dict[str, Any]:
+    def _tool_start_data(self, tool_name: str, annotation: str | None = None) -> dict[str, Any]:
         data: dict[str, Any] = {"spec": self._tool_spec_data(tool_name)}
         if annotation:
             data["annotation"] = annotation
@@ -947,7 +945,4 @@ class ToolExecutor:
         if not ok:
             enriched["failure_reason"] = failure_reason or "工具执行失败"
             enriched["retryable"] = True
-            if tool_name == "apply_patch" and "diff" not in enriched and isinstance(arguments, dict):
-                patch_text = str(arguments.get("patch") or "")
-                enriched["diff"] = self.tools._diff_summary(patch_text) if patch_text else None
         return enriched

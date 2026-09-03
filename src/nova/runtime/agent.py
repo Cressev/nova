@@ -371,13 +371,13 @@ class CodexLikeAgentRuntime:
             output = str(result.get("output") or "").strip()
             if not output:
                 continue
-            if tool == "list_files":
+            if tool in {"glob", "list_files"}:
                 return f"已查看当前文件目录。结果如下：\n{self._limit_lines(output, 120)}"
-            if tool == "read_file":
+            if tool in {"read", "read_file"}:
                 return f"已读取文件：{title}\n\n{self._limit_lines(output, 120)}"
-            if tool == "search_text":
+            if tool in {"grep", "search_text"}:
                 return f"已完成搜索：{title}\n\n{self._limit_lines(output, 120)}"
-            if tool == "shell_command":
+            if tool in {"bash", "shell_command"}:
                 return f"{title}：\n{self._limit_lines(output, 120)}"
             return f"{title} 已完成，结果如下：\n{self._limit_lines(output, 120)}"
         if latest_failed is not None:
@@ -415,9 +415,9 @@ class CodexLikeAgentRuntime:
         if explicit_command is not None:
             command = explicit_command.group("command").strip()
             if command:
-                return [{"tool": "shell_command", "arguments": {"command": command, "workdir": ".", "timeout_ms": 120000}}]
+                return [{"tool": "bash", "arguments": {"command": command, "workdir": ".", "timeoutMs": 120000, "description": "Run user requested command"}}]
         if any(intent in normalized for intent in shell_intents):
-            return [{"tool": "shell_command", "arguments": {"command": "pwd", "workdir": ".", "timeout_ms": 5000}}]
+            return [{"tool": "bash", "arguments": {"command": "pwd", "workdir": ".", "timeoutMs": 5000, "description": "Print working directory"}}]
         if self.tools.network_access and self._content_wants_web_search(content):
             return [
                 {
@@ -433,7 +433,7 @@ class CodexLikeAgentRuntime:
             ]
         if "文档目录" in normalized or "文档集" in normalized:
             path = "产品研发文档集" if (self.tools.project_root / "产品研发文档集").is_dir() else "."
-            return [{"tool": "list_files", "arguments": {"path": path, "limit": 120}}]
+            return [{"tool": "glob", "arguments": {"pattern": "*", "path": path}}]
         directory_intents = [
             "查看当前文件目录",
             "查看当前目录",
@@ -445,7 +445,7 @@ class CodexLikeAgentRuntime:
             "ls",
         ]
         if any(intent in normalized for intent in directory_intents):
-            return [{"tool": "list_files", "arguments": {"path": ".", "limit": 120}}]
+            return [{"tool": "glob", "arguments": {"pattern": "*", "path": "."}}]
         return []
 
     async def _run_tool_calls(self, tool_calls: list[dict]) -> AsyncIterator[dict]:
@@ -732,47 +732,58 @@ class CodexLikeAgentRuntime:
                 "- bypass_permissions：跳过权限提示，但仍受工具自身安全校验约束。"
             )
         if command == "/memory":
+            from ..memory import layered
+
             parts = raw_content.split(maxsplit=2)
             subcommand = parts[1].lower() if len(parts) >= 2 else ""
             if subcommand == "search":
                 if len(parts) < 3 or not parts[2].strip():
                     return "用法：/memory search <关键词>"
-                matches = self.memory.search(parts[2].strip())
-                if not matches:
+                needle = parts[2].strip().lower()
+
+                def _match(entry: dict) -> bool:
+                    return needle in entry.get("id", "").lower() or needle in entry.get("title", "").lower()
+
+                global_hits = [e for e in layered.read_index(layered.global_dir()) if _match(e)]
+                project_hits = [e for e in layered.read_index(layered.project_dir(self.tools.project_root)) if _match(e)]
+                if not global_hits and not project_hits:
                     return f"未找到匹配记忆：{parts[2].strip()}"
-                return "记忆搜索结果：\n" + "\n".join(
-                    f"- {item['name']}:{item['line']} {item['text']}" for item in matches
-                )
-            if subcommand in {"summarize", "summary"}:
-                return self.memory.summarize()["summary"]
-            if subcommand == "compact":
-                result = self.memory.compact_memory()
-                return f"已压缩记忆到 {result['path']}，后续会继续注入 project.md。\n\n{result['summary']}"
-            status = self.memory.status()
-            injected_sources = status.get("injected_sources", [])
-            development_sources = status.get("development_state", [])
-            injected_rows = [
-                f"- {item['scope']}：{item['path']}（{'存在' if item['exists'] else '缺失'}）"
-                for item in injected_sources
-            ]
-            ignored_rows = [
-                f"- {item['path']}（{'存在' if item['exists'] else '缺失'}）"
-                for item in development_sources
-            ]
+                rows = [f"- global :: {e['id']} — {e['title']}" for e in global_hits]
+                rows += [f"- project :: {e['id']} — {e['title']}" for e in project_hits]
+                return "分层记忆搜索结果：\n" + "\n".join(rows)
+
+            def _scope_rows(label: str, entries: list[dict]) -> list[str]:
+                return [f"- {label} :: {e['id']} — {e['title']}" for e in entries]
+
+            global_entries = layered.read_index(layered.global_dir())
+            project_entries = layered.read_index(layered.project_dir(self.tools.project_root))
             return (
-                "项目记忆已启用。\n"
-                "注入给开发 Agent：\n"
-                + "\n".join(injected_rows)
-                + "\n\n只给 Nova 开发过程，不注入产品内 Agent：\n"
-                + "\n".join(ignored_rows)
+                "分层记忆（对齐 dsh memory 插件；索引注入系统提示词，详情用 read 读取 items/<id>.md）：\n"
+                + "\n".join(_scope_rows("global", global_entries))
+                + ("\n（global 暂无条目）" if not global_entries else "")
+                + "\n"
+                + "\n".join(_scope_rows("project", project_entries))
+                + ("\n（project 暂无条目）" if not project_entries else "")
+                + "\n\n写入：memory_write（scope/title/content）；删除：memory_remove（scope/id）。"
             )
         if command == "/remember":
-            parts = raw_content.split(maxsplit=1)
-            if len(parts) < 2 or not parts[1].strip():
-                return "用法：/remember 要长期记住的事实或偏好"
-            text = parts[1].strip()
-            candidate = self.memory.propose_fact(text, source="builtin:/remember")
-            return f"已创建待确认记忆候选：{candidate['content']}\n用户确认后才会写入 {candidate['name']}。"
+            parts = raw_content.split(maxsplit=2)
+            scope = parts[1].lower() if len(parts) >= 3 and parts[1].lower() in {"global", "project"} else "project"
+            body = raw_content.split(maxsplit=2)[2].strip() if scope in {"global", "project"} and len(parts) >= 3 else (parts[1].strip() if len(parts) >= 2 else "")
+            if not body:
+                return "用法：/remember [global|project] 要长期记住的事实或偏好"
+            from ..memory import layered
+
+            title = next((line.strip() for line in body.splitlines() if line.strip()), "记忆条目")
+            dir_path = layered.global_dir() if scope == "global" else layered.project_dir(self.tools.project_root)
+            layered.reconcile_index(dir_path)
+            written = layered.write_entry(
+                dir_path,
+                layered.normalize_entry({"scope": scope, "title": title, "content": body}),
+                layered.read_index(dir_path),
+                has_explicit_id=False,
+            )
+            return f"Memory ({scope}) saved: {written['id']} — {title}\n下次会话起随分层索引注入。"
         if command in {"/ps", "/jobs"}:
             jobs = self.process_manager.list_jobs()
             if not jobs:
@@ -865,7 +876,8 @@ class CodexLikeAgentRuntime:
         )
 
     def _system_prompt(self) -> str:
-        memory_context = self.memory.context()
+        from ..memory import layered
+
         skill_context = SkillManager(self.tools.project_root).skill_index_prompt()
         tool_rows = "\n".join(
             f"- {item['name']}: {json.dumps(item['schema'], ensure_ascii=False)}"
@@ -876,26 +888,28 @@ class CodexLikeAgentRuntime:
 
 1. 先理解用户目标和当前代码上下文。
 2. 需要上下文时调用工具，而不是猜测。
-3. 优先使用接口提供的标准 tools/tool_calls 机制选择工具。每个工具 arguments 必须包含 "annotation"，用一句很短的中文说明这次调用目的，便于 UI 展示工具执行卡片。
+3. 优先使用接口提供的标准 tools/tool_calls 机制选择工具。
 4. 只有在当前模型接口没有提供标准 tools/tool_calls 时，才使用下面的兼容文本格式。
 5. 单工具调用兼容格式：
 <tool_call>{"tool":"工具名","arguments":{...}}</tool_call>
 6. 多个只读工具可以并行调用，兼容格式：
-<tool_calls>[{"tool":"read_file","arguments":{...}},{"tool":"search_text","arguments":{...}}]</tool_calls>
+<tool_calls>[{"tool":"read","arguments":{...}},{"tool":"grep","arguments":{...}}]</tool_calls>
 7. 不需要工具时，不要输出工具调用，直接给最终答复。
-8. 不要请求执行破坏性命令；需要修改文件时优先使用 apply_patch，生成或覆盖整文件时才使用 write_file。
-9. 预计耗时较长的 shell 命令可以加 "background": true 后台执行；后台任务可由用户用 /ps 查看、/kill 终止。
-10. 需要长期记住用户偏好、项目事实或阶段总结时，调用 memory_write 提出候选事实；候选必须由用户确认后才会真正写入。查询长期记忆用 memory_read 或 memory_search。
-11. 当用户输入 $技能名 或请求明显匹配某个技能说明时，先引用对应技能；不要凭空假设技能内容，用户也可以用 /skill <技能名> 显式读取 SKILL.md。
-12. 需要最新网络信息时，使用本地 web_search 工具；它会调用 Z.ai Web Search API 返回结构化来源。需要抓取明确 URL 时才使用 web_fetch。
+8. 用 read 工具——不要用 cat 等命令——检查文本文件；结果带行号，大文件用 offset/limit 继续读。
+9. 检查每个 bash 结果上的 [exit code: N] 标记；先调查失败再继续。bash 调用必须填写 description（5-10 个词的主动语态说明）。
+10. 修改文件用 edit（old_string 默认必须唯一；不唯一时提供更多上下文或设 replace_all）；生成或整文件覆盖才用 write。读过的文件才能改。
+11. 预计耗时较长的命令可加 "run_in_background": true 后台执行；后台任务可由用户用 /ps 查看、/kill 终止。
+12. 需要最新网络信息时，使用 web_search；抓取明确 URL 时才使用 web_fetch。
+13. 当用户输入 $技能名 或请求明显匹配某个技能说明时，先引用对应技能；不要凭空假设技能内容，用户也可以用 /skill <技能名> 显式读取 SKILL.md。
 
 可用工具：
 __TOOL_ROWS__
 
 路径必须使用工作区内相对路径。回答使用中文，保持直接、务实。
 """.replace("__TOOL_ROWS__", tool_rows).strip()
+        memory_section = layered.render_section(self.tools.project_root)
         return (
             f"{prompt}\n\n"
             f"可用技能索引：\n{skill_context}\n\n"
-            f"项目记忆：\n{memory_context or '暂无可用项目记忆。'}"
+            f"{memory_section}"
         )

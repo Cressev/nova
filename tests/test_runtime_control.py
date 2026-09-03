@@ -49,7 +49,7 @@ class RuntimeControlTest(unittest.TestCase):
             self.assertIn("permission.requested", body)
             pending = self.client.get("/api/approvals/pending").json()["items"]
             self.assertEqual(len(pending), 1)
-            self.assertEqual(pending[0]["tool"], "shell_command")
+            self.assertEqual(pending[0]["tool"], "bash")
 
             approved = self.client.post(
                 f"/api/approvals/{pending[0]['id']}/approve",
@@ -63,7 +63,7 @@ class RuntimeControlTest(unittest.TestCase):
                 session_id=session["id"],
                 turn_id="turn_test",
                 call_id="tool_deny",
-                tool="shell_command",
+                tool="bash",
                 arguments={"command": "pwd", "workdir": "."},
                 permission="shell",
                 reason="测试拒绝",
@@ -197,7 +197,8 @@ class RuntimeControlTest(unittest.TestCase):
             done = next(event for event in events if event["type"] == "tool_done")
             self.assertFalse(done["ok"])
             self.assertEqual(done["data"]["status"], "cancelled")
-            self.assertIn("命令已取消", done["output"])
+            self.assertIn("[aborted]", done["output"])
+        self.assertTrue(done["output"].index("[aborted]") > done["output"].index("started"))
 
     def test_tool_call_cancel_endpoint_terminates_running_foreground_job(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -389,10 +390,12 @@ class RuntimeControlTest(unittest.TestCase):
 
             self.assertEqual(approved.status_code, 200)
             self.assertEqual(approved.json()["status"], "approved")
-            self.assertIn(
-                "候选确认后再写入",
-                (root / ".nova" / "memory" / "index.md").read_text(encoding="utf-8"),
-            )
+            # 对齐 dsh：确认后写入分层存储（.nova-memory/items/<id>.md）
+            items_dir = root / ".nova-memory" / "items"
+            item_files = list(items_dir.glob("*.md"))
+            self.assertEqual(len(item_files), 1)
+            self.assertIn("候选确认后再写入", item_files[0].read_text(encoding="utf-8"))
+            self.assertIn("候选确认后再写入", (root / ".nova-memory" / "index.md").read_text(encoding="utf-8"))
             self.assertEqual(self.client.get("/api/memory/status").json()["memory_candidates"], [])
 
     def test_memory_candidate_can_be_edited_or_denied_before_writing(self) -> None:
@@ -410,8 +413,10 @@ class RuntimeControlTest(unittest.TestCase):
 
             self.assertEqual(edited.status_code, 200)
             self.assertEqual(edited.json()["status"], "approved")
-            self.assertFalse((root / ".nova" / "memory" / "index.md").exists())
-            self.assertIn("编辑后的事实", (root / ".nova" / "memory" / "project.md").read_text(encoding="utf-8"))
+            items_dir = root / ".nova-memory" / "items"
+            item_files = list(items_dir.glob("*.md"))
+            self.assertEqual(len(item_files), 1)
+            self.assertIn("编辑后的事实", item_files[0].read_text(encoding="utf-8"))
 
             denied_candidate = self.client.post("/api/memory/remember", json={"text": "不要写入"}).json()
             denied = self.client.post(
@@ -421,7 +426,10 @@ class RuntimeControlTest(unittest.TestCase):
 
             self.assertEqual(denied.status_code, 200)
             self.assertEqual(denied.json()["status"], "denied")
-            self.assertNotIn("不要写入", (root / ".nova" / "memory" / "project.md").read_text(encoding="utf-8"))
+            items_dir = root / ".nova-memory" / "items"
+            denied_files = list(items_dir.glob("*.md"))
+            self.assertEqual(len(denied_files), 1, "deny 不应新增条目")
+            self.assertNotIn("不要写入", denied_files[0].read_text(encoding="utf-8"))
 
     def test_memory_status_separates_global_and_project_persona_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

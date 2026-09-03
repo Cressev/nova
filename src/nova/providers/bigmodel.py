@@ -120,9 +120,7 @@ class BigModelProvider:
                 "type": "function",
                 "function": {
                     "name": spec.name,
-                    "description": (
-                        f"{spec.description} 调用时必须填写 annotation，用一句简短中文说明本次工具调用目的。"
-                    ),
+                    "description": spec.description,
                     "parameters": self._tool_parameters_schema(spec),
                 },
             }
@@ -174,26 +172,21 @@ class BigModelProvider:
         从示例 dict 猜出来的宽松 schema。动态 MCP 工具无契约时退回示例
         推断。annotation 在执行器验证前就被弹出，不影响契约闭合性。
         """
-        annotation_schema = {
-            "type": "string",
-            "description": "简短说明这次工具调用要做什么，8 到 20 个中文字符为宜。",
-        }
         if spec.json_schema:
             return {
                 "type": "object",
-                "properties": {**(spec.json_schema.get("properties") or {}), "annotation": annotation_schema},
-                "required": [*(spec.json_schema.get("required") or []), "annotation"],
+                "properties": {**(spec.json_schema.get("properties") or {})},
+                "required": [*(spec.json_schema.get("required") or [])],
                 "additionalProperties": False,
             }
         properties = {
             key: self._json_schema_from_example(value)
             for key, value in spec.schema.items()
         }
-        properties["annotation"] = annotation_schema
         return {
             "type": "object",
             "properties": properties,
-            "required": ["annotation"],
+            "required": [],
             "additionalProperties": True,
         }
 

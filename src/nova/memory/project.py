@@ -307,8 +307,32 @@ class ProjectMemory:
             candidate["updated_at"] = self._timestamp()
             candidate["reason"] = reason
             if write:
-                written = self.append_fact_to_file(str(candidate.get("name") or "index.md"), str(candidate.get("content") or ""))
+                # 对齐 dsh memory 插件：确认后的记忆进入分层存储（唯一注入模型的形式）。
+                from . import layered
+
+                content_text = str(candidate.get("content") or "")
+                title = str(candidate.get("title") or "").strip()
+                if not title:
+                    title = next(
+                        (line.strip() for line in content_text.splitlines() if line.strip()),
+                        "记忆条目",
+                    )
+                dir_path = layered.project_dir(self.project_root)
+                layered.reconcile_index(dir_path)
+                written = layered.write_entry(
+                    dir_path,
+                    layered.normalize_entry(
+                        {
+                            "scope": "project",
+                            "title": title[: layered.DEFAULT_MAX_TITLE_CHARS],
+                            "content": content_text[: layered.DEFAULT_MAX_CONTENT_CHARS],
+                        }
+                    ),
+                    layered.read_index(dir_path),
+                    has_explicit_id=False,
+                )
                 candidate["written_path"] = written["path"]
+                candidate["layered_id"] = written["id"]
             self._write_candidates(candidates)
             return dict(candidate)
         raise KeyError(candidate_id)

@@ -25,7 +25,7 @@ class RunOrchestratorTest(unittest.TestCase):
             phase="started",
             status="running",
             title="读取文件",
-            tool="read_file",
+            tool="read",
             call_id="tool_a",
             arguments={"path": "README.md"},
         )
@@ -61,7 +61,7 @@ class RunOrchestratorTest(unittest.TestCase):
             {
                 "type": "permission_request",
                 "call_id": "tool_shell",
-                "tool": "shell_command",
+                "tool": "bash",
                 "arguments": {"command": "pwd"},
                 "permission": "shell",
                 "message": "需要确认",
@@ -70,7 +70,7 @@ class RunOrchestratorTest(unittest.TestCase):
         )
         cancelled = orchestrator.cancel_turn()
 
-        self.assertEqual(sessions.list_pending_approvals(session_id="chat_a")[0].tool, "shell_command")
+        self.assertEqual(sessions.list_pending_approvals(session_id="chat_a")[0].tool, "bash")
         self.assertTrue(sessions.runtime_state("chat_a")["cancel_requested"])
         self.assertEqual(cancelled["event_type"], "turn.cancelled")
 

@@ -67,7 +67,7 @@ class TraceRecorderTest(unittest.TestCase):
                     phase="requested",
                     status="pending",
                     title="需要审批",
-                    tool="shell_command",
+                    tool="bash",
                     arguments={"command": "git push"},
                     data={"permission": "shell", "risk": "high"},
                 )
@@ -80,7 +80,7 @@ class TraceRecorderTest(unittest.TestCase):
                     event_type="tool.completed",
                     phase="completed",
                     title="执行完成",
-                    tool="shell_command",
+                    tool="bash",
                     output="ok",
                     data={"job_id": "proc_1"},
                 )

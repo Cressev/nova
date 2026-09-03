@@ -5,6 +5,7 @@ import queue
 import signal
 import subprocess
 import threading
+import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -64,7 +65,8 @@ class ProcessManager:
         cwd: Path,
         timeout_ms: int,
         call_id: str | None = None,
-        tool: str = "shell_command",
+        tool: str = "bash",
+        title: str | None = None,
     ) -> Iterator[dict[str, Any]]:
         call_id = call_id or f"tool_{uuid4().hex[:12]}"
         job = self._start(command, cwd=cwd, call_id=call_id)
@@ -130,22 +132,72 @@ class ProcessManager:
                 self._close_pipes(job)
                 break
 
+        # dsh tool-bash render：stdout + [stderr] 段 + 退出标记（标记最后，
+        # 供解析锚定）。非零退出不是工具失败——模型读标记自行决策；只有
+        # 取消/超时属于中断语义。长输出尾部保留 + 全量落盘报路径。
         stdout = "".join(job.stdout)
         stderr = "".join(job.stderr)
-        output = "\n".join(part.strip() for part in [stdout, stderr] if part.strip())
-        if job.status == "cancelled":
-            output = f"{output}\n命令已取消".strip()
-        if len(output) > 24000:
-            output = output[:24000] + "\n...[输出已截断]"
+        out_text, out_trunc, out_spill = self._tail_clip(stdout)
+        err_text, err_trunc, err_spill = self._tail_clip(stderr)
+
+        def with_notice(text: str, truncated: bool, spill) -> str:
+            if not truncated:
+                return text
+            return f"{text}\n[output truncated; full output: {spill if spill else '(unavailable)'}]"
+
+        body = with_notice(out_text.rstrip("\n"), out_trunc, out_spill)
+        err_body = with_notice(err_text.rstrip("\n"), err_trunc, err_spill)
+        if err_body:
+            if body and not body.endswith("\n"):
+                body += "\n"
+            body += f"[stderr]\n{err_body}"
+        cancelled = job.status == "cancelled"
+        if cancelled:
+            body = (body + "\n" if body else "") + "[aborted]"
+        markers: list[str] = []
+        if timed_out:
+            markers.append(f"[timed out after {timeout_ms}ms]")
+        if job.exit_code not in (None, 0) and not cancelled:
+            markers.append(f"[exit code: {job.exit_code}]")
+        if markers:
+            body = (body + "\n" if body else "") + "\n".join(markers)
+        data: dict[str, Any] = {
+            "exit_code": job.exit_code,
+            "workdir": str(cwd),
+            "job_id": job.id,
+            "status": job.status,
+            "timedOut": timed_out,
+            "stdoutTruncated": out_trunc,
+            "stderrTruncated": err_trunc,
+        }
+        if out_spill:
+            data["stdoutSpillPath"] = str(out_spill)
+        if err_spill:
+            data["stderrSpillPath"] = str(err_spill)
         yield {
             "type": "tool_done",
             "call_id": call_id,
             "tool": tool,
-            "ok": job.exit_code == 0 and not timed_out and job.status == "completed",
-            "title": f"执行命令：{command}",
-            "output": output or ("命令已取消" if job.status == "cancelled" else f"命令退出码：{job.exit_code}"),
-            "data": {"exit_code": job.exit_code, "workdir": str(cwd), "job_id": job.id, "status": job.status},
+            "ok": not cancelled,
+            "title": title or f"执行命令：{command}",
+            "output": body or "(no output)",
+            "data": data,
         }
+
+    _BASH_MAX_STREAM_CHARS = 30000
+
+    def _tail_clip(self, text: str) -> tuple[str, bool, "Path | None"]:
+        """bash 输出尾部保留 + 全量落盘（dsh 语义：截断保最新，报 spill 路径）。"""
+        if len(text) <= self._BASH_MAX_STREAM_CHARS:
+            return text, False, None
+        spill_dir = Path(tempfile.gettempdir()) / "nova-spill"
+        spill_dir.mkdir(parents=True, exist_ok=True)
+        path = spill_dir / f"bash-{int(time.time() * 1000)}-{uuid4().hex[:6]}.log"
+        try:
+            path.write_text(text, encoding="utf-8", errors="replace")
+        except OSError:
+            path = None  # type: ignore[assignment]
+        return text[-self._BASH_MAX_STREAM_CHARS:], True, path
 
     def start_background(
         self,
