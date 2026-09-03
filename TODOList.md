@@ -1902,3 +1902,39 @@ api 就不能再拆了吗？拆。
 [x] schedule 到期送达（turn 开头注入）+ subagent send 续聊支持
 [x] 测试（新增 26 用例，全量 242 绿）+ 服务实测 + 提交 5471b29
 ------ todo-list end at 2026/09/03/10:35:00 -----
+
+------ todo-list begin at 2026/09/03/11:11:07 -----
+用户请求原文：你给我检查我自己的项目nova  和 dsh的差距，你看我nova 在工具设计层面上是否像dsh稳定可靠
+
+[x] 登记 user-queries 和 TODOList
+[x] 精读 Nova 当前工具层实现（契约/管线/超时/取消/输出治理/安全边界/接线）
+[x] 提取 dsh 工具层可靠性设计事实（本地一手验证 + subagent 完整报告双源核对：execute 管线/FS_NOT_OBSERVED/Seatbelt+Landlock fail-closed 沙箱/MCP 60s 超时/bash 120s-600s-64000B 尾保留/output schema 强制验证/并发 fail-closed+cap10/tool-catalog CI 金标准）
+[x] 运行 Nova 全量测试核实当前状态（242 tests OK）
+[x] 逐维度对比并输出稳定性判定与差距结论（对话交付：12 项已对齐 + 12 项差距按严重度排序）
+[x] 收尾 durable 更新（TODOList/log/user-queries Done）
+
+------ todo-list end at 2026/09/03/11:18:07 -----
+
+------ todo-list begin at 2026/09/03/11:12:45 -----
+用户请求原文：各个工具相应的前端显示和交互都要对齐啊，消息中的工具调用不要用这种卡片式的了，我说了要个dsh一模一样你耳朵聋吗
+
+[] 登记 user-queries 和 TODOList
+[] 精读 dsh web 工具调用渲染源码（DOM 结构/类名/交互）
+[] CDP 实测 dsh GUI 工具行样式
+[] 重写 Nova 消息流工具渲染为 dsh 形态
+[] 每工具的显示与交互对齐（bash/read/edit/grep/todo/memory/…）
+[] 测试 + 浏览器验证 + 提交
+
+------ todo-list begin at 2026/09/03/11:12:45 -----
+用户请求原文：各个工具相应的前端显示和交互都要对齐啊，消息中的工具调用不要用这种卡片式的了，我说了要个dsh一模一样你耳朵聋吗
+
+[x] 精读 dsh ui-tool 源码（ToolRow/tool-call-model/toolviews 各行视图）
+[x] 行模型推导对齐：变体表（search/read/bash/write/edit/others）+ VARIANT_TITLES + SUMMARY_KEYS + annotation 优先
+[x] 消息流工具渲染重写：单行 disclosure 行（图标·标题·点·摘要·chevron），移除卡片式 meta-grid/schema/key-params/取消重试按钮
+[x] 展开体块族：TerminalBlock（bash）/DiffBlock（write·edit）/ReadBlock（read）/SearchBlock（grep·glob）/WebBlock（web）/IN-OUT 卡（其他）；取消/重试入口移入展开体
+[x] 权限与提问事件行式化（.permission-row + 展开详情 + 状态角标）
+[x] ask_user_question 完整回路：Ask 行 + 选项 + /answer 端点 + 回答合成工具结果 + 模型续答落库
+[x] 前端测试更新（4 个旧卡片断言改为行式断言）
+[x] 浏览器实测：Bash 行展开终端块、Ask 行回答后续答；242 后端 + 23 前端测试全绿
+[x] 提交并推送
+------ todo-list end at 2026/09/03/11:30:00 -----
