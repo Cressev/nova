@@ -2248,6 +2248,17 @@ function appendStoredEvent(event) {
     );
     return;
   }
+  if (event.type === "user_question" || event.type === "user.question" || event.event_type === "user.question") {
+    appendUserQuestionEvent({
+      call_id: event.call_id || event.id,
+      tool: event.tool,
+      title: event.title,
+      message: event.message,
+      questions: event.data?.questions || event.questions || [],
+      data: event.data || {},
+    });
+    return;
+  }
   if (event.type === "permission" || event.event_type === "permission.requested") {
     appendPermissionEvent(
       {
@@ -2642,6 +2653,24 @@ const TOOL_DISPLAY_NAMES = {
   web_search: "WebSearch",
   memory_write: "MemoryWrite",
   memory_remove: "MemoryRemove",
+  read_image: "ReadImage",
+  skill: "Skill",
+  job_output: "JobOutput",
+  job_list: "JobList",
+  job_kill: "JobKill",
+  ask_user_question: "AskUser",
+  subagent: "Subagent",
+  list_agents: "ListAgents",
+  send_message: "SendMessage",
+  interrupt_agent: "InterruptAgent",
+  create_goal: "CreateGoal",
+  get_goal: "GetGoal",
+  update_goal: "UpdateGoal",
+  schedule_create: "ScheduleCreate",
+  schedule_list: "ScheduleList",
+  schedule_delete: "ScheduleDelete",
+  lsp: "LSP",
+  session_search: "SessionSearch",
 };
 
 // dsh ToolRow 五件套行：[16px 图标位] [工具名] [2px 分隔点] [摘要 flex 截断] [14px chevron]
@@ -2964,6 +2993,105 @@ function appendToolOutput(node, event) {
   const label = event.stream === "stderr" ? "stderr" : "stdout";
   output.textContent += `[${label}] ${event.chunk || ""}`;
   output.scrollTop = output.scrollHeight;
+}
+
+function appendUserQuestionEvent(event) {
+  const callId = event.call_id || "";
+  const questions = Array.isArray(event.questions) ? event.questions : [];
+  const node = document.createElement("article");
+  node.className = "user-question-event pending";
+  node.dataset.callId = callId;
+  const fields = questions.map((question, index) => {
+    const id = question.id || `q${index + 1}`;
+    const header = question.header ? `<div class="question-head">${escapeHtml(question.header)}</div>` : "";
+    const options = Array.isArray(question.options) && question.options.length
+      ? question.options.map((option) => `
+          <label class="question-option">
+            <input type="${question.multi_select ? "checkbox" : "radio"}" name="opt-${escapeHtml(id)}" value="${escapeHtml(option.label)}" />
+            <span><strong>${escapeHtml(option.label)}</strong>${option.description ? ` — ${escapeHtml(option.description)}` : ""}</span>
+          </label>`).join("")
+      : "";
+    return `
+      <div class="question-item" data-question-id="${escapeHtml(id)}">
+        ${header}
+        <div class="question-text">${escapeHtml(question.question || "")}</div>
+        ${options ? `<div class="question-options">${options}</div>` : ""}
+        ${options ? "" : `<input type="text" class="question-answer" data-question-id="${escapeHtml(id)}" placeholder="输入回答…" />`}
+      </div>`;
+  }).join("");
+  node.innerHTML = `
+    <div class="permission-event-head">
+      <span>向用户提问</span>
+      <strong>${escapeHtml(event.title || "ask_user_question")}</strong>
+      <em>待回答</em>
+    </div>
+    <p>${escapeHtml(event.message || "等待用户回答后继续。")}</p>
+    <div class="question-list">${fields}</div>
+    <div class="permission-actions">
+      <button type="button" data-action="answer">提交回答</button>
+      <small>回答会作为工具结果续跑该调用</small>
+    </div>
+  `;
+  node.querySelector('[data-action="answer"]').addEventListener("click", () => submitUserAnswers(node));
+  messagesEl.appendChild(node);
+  scrollMessagesToBottom();
+  return node;
+}
+
+async function submitUserAnswers(node) {
+  const callId = node.dataset.callId;
+  if (!callId) {
+    return;
+  }
+  const answers = {};
+  let answered = false;
+  node.querySelectorAll(".question-item").forEach((item) => {
+    const id = item.dataset.questionId || "";
+    const checked = Array.from(item.querySelectorAll("input[type=radio]:checked, input[type=checkbox]:checked")).map((input) => input.value);
+    if (checked.length) {
+      answers[id] = checked.length > 1 || item.querySelector('input[type="checkbox"]') ? checked : checked[0];
+      answered = true;
+      return;
+    }
+    const text = item.querySelector(".question-answer")?.value?.trim();
+    if (text) {
+      answers[id] = text;
+      answered = true;
+    }
+  });
+  if (!answered) {
+    streamStateEl.textContent = "请至少回答一个问题";
+    return;
+  }
+  node.querySelectorAll("button, input").forEach((element) => {
+    element.disabled = true;
+  });
+  try {
+    const response = await api(`/api/approvals/${encodeURIComponent(callId)}/answer`, {
+      method: "POST",
+      body: JSON.stringify({ answers }),
+    });
+    node.classList.remove("pending");
+    node.classList.add("answered");
+    node.querySelector(".permission-event-head em").textContent = "已回答";
+    const activeToolNodes = new Map();
+    for (const evt of response.events || []) {
+      if (evt.type === "tool_start") {
+        activeToolNodes.set(evt.call_id || evt.tool || "tool", appendToolEvent(evt, node));
+      }
+      if (evt.type === "tool_done") {
+        finishToolEvent(activeToolNodes.get(evt.call_id || evt.tool || "tool"), evt);
+      }
+    }
+    await Promise.all([loadRuntimeShell(), refreshStatusline()]);
+    streamStateEl.textContent = "回答已提交，Nova 继续执行";
+  } catch (error) {
+    node.querySelector(".permission-event-head em").textContent = "提交失败";
+    node.querySelectorAll("button, input").forEach((element) => {
+      element.disabled = false;
+    });
+    streamStateEl.textContent = `提交失败：${error instanceof Error ? error.message : "未知错误"}`;
+  }
 }
 
 function appendPermissionEvent(event, beforeNode = null, options = {}) {

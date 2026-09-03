@@ -95,6 +95,16 @@ class PendingApprovalStore:
         with self._lock:
             return self._items.get(approval_id)
 
+    def update_arguments(self, approval_id: str, arguments: dict[str, Any]) -> PendingApproval | None:
+        """ask_user_question 场景：回答后把 _answers 挂进 arguments，approve 续跑时带回执行器。"""
+        with self._lock:
+            item = self._items.get(approval_id)
+            if item is None:
+                return None
+            item.arguments = dict(arguments)
+            item.updated_at = _now()
+            return item
+
     def approve(self, approval_id: str) -> PendingApproval | None:
         return self._finish(approval_id, "approved")
 

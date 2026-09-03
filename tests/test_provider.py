@@ -65,6 +65,7 @@ class BigModelProviderTest(unittest.TestCase):
 
         expected = {
             "read",
+            "read_image",
             "write",
             "edit",
             "glob",
@@ -75,6 +76,23 @@ class BigModelProviderTest(unittest.TestCase):
             "web_search",
             "memory_write",
             "memory_remove",
+            "skill",
+            "job_output",
+            "job_list",
+            "job_kill",
+            "ask_user_question",
+            "subagent",
+            "list_agents",
+            "send_message",
+            "interrupt_agent",
+            "create_goal",
+            "get_goal",
+            "update_goal",
+            "schedule_create",
+            "schedule_list",
+            "schedule_delete",
+            "lsp",
+            "session_search",
         }
         self.assertEqual(function_names, expected)
         for retired in {

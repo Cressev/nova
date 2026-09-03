@@ -27,6 +27,22 @@ async def approve_tool_call(approval_id: str) -> dict:
     return result
 
 
+@router.post("/api/approvals/{approval_id}/answer")
+async def answer_question(approval_id: str, payload: dict | None = None) -> dict:
+    """ask_user_question 的用户回答：记录答案并按 approve 续跑（答案随 arguments 回到执行器）。"""
+    answers = (payload or {}).get("answers")
+    if not isinstance(answers, dict) or not answers:
+        raise ctx.HTTPException(status_code=400, detail="answers map is required")
+    runner = _session_runner()
+    item = runner.deps.agent_sessions.answer_pending_approval(approval_id, answers)
+    if item is None:
+        raise ctx.HTTPException(status_code=404, detail="Approval not found")
+    result = await runner.approve_tool_call(approval_id)
+    if result is None:
+        raise ctx.HTTPException(status_code=404, detail="Approval not found")
+    return result
+
+
 @router.post("/api/approvals/{approval_id}/deny")
 async def deny_tool_call(approval_id: str, payload: dict | None = None) -> dict:
     reason = str((payload or {}).get("reason") or "用户拒绝执行")

@@ -317,6 +317,26 @@ class ToolExecutor:
         require_permission: bool = False,
         approved: bool = False,
     ) -> Iterator[dict[str, Any]]:
+        if tool_name == "ask_user_question":
+            # dsh ask-user：未回答 → 发 user_question 事件挂起本轮（同 permission_request
+            # 机制注册 pending approval）；用户回答后续跑时 arguments 携带 _answers。
+            raw_arguments = dict(arguments)
+            answers = raw_arguments.pop("_answers", None)
+            if answers is None:
+                yield from self._ask_user_first_pass(call_id, raw_arguments)
+                return
+            events, result_json = self.run_one(call_id, "ask_user_question", raw_arguments)
+            # run_one 走通用管线（验证 questions 契约 + hooks）；结果由 answers 合成
+            synthesized = self._synthesize_question_result_json(call_id, raw_arguments, answers)
+            answer_output = str(json.loads(synthesized).get("output") or "")
+            for event in events:
+                if event.get("type") == "tool_done" and event.get("ok"):
+                    event["title"] = "ask_user_question (answered)"
+                    event["output"] = answer_output
+                yield event
+            yield {"type": "tool_result_json", "result_json": synthesized}
+            return
+
         if tool_name != "bash":
             events, result_json = self.run_one(
                 call_id,
@@ -823,6 +843,80 @@ class ToolExecutor:
             return self.tools.run(tool_name, arguments)
         finally:
             self.tools.permission_mode = original_mode
+
+    def _ask_user_first_pass(self, call_id: str, arguments: dict[str, Any]) -> Iterator[dict]:
+        """ask_user_question 首轮：验证契约 → user_question 事件（挂起等待回答）。
+
+        事件结构与 permission_request 同形（call_id/tool/arguments/data），
+        session_runner 据此注册 pending approval；用户经 /api/approvals/{id}/answer
+        回答后 approve 流程带 _answers 续跑。
+        """
+        from .validation import validate_arguments
+        from .workspace import TOOL_SPECS
+
+        schema = TOOL_SPECS["ask_user_question"].json_schema
+        violations = validate_arguments(schema, arguments)
+        if violations:
+            failed_events, result_json = self._failed_tool(
+                [], call_id, "ask_user_question", arguments,
+                "参数违反 ask_user_question 契约：" + "；".join(violations),
+                {"error_code": "INVALID_ARGS", "violations": violations},
+            )
+            yield from failed_events
+            yield {"type": "tool_result_json", "result_json": result_json}
+            return
+        questions = arguments.get("questions") if isinstance(arguments.get("questions"), list) else []
+        event = {
+            "type": "user_question",
+            "call_id": call_id,
+            "tool": "ask_user_question",
+            "title": "向用户提问",
+            "ok": False,
+            "arguments": arguments,
+            "message": "等待用户回答后继续。",
+            "data": {
+                "reason": "ask_user_question 需要用户输入",
+                "questions": questions,
+                "user_question": True,
+            },
+        }
+        yield event
+        yield {"type": "tool_result_json", "result_json": self._question_pending_json(event)}
+
+    def _question_pending_json(self, event: dict) -> str:
+        return json.dumps(
+            {
+                "tool": event.get("tool"),
+                "ok": False,
+                "user_question": True,
+                "permission": "ask",
+                "title": event.get("title"),
+                "output": event.get("message"),
+                "arguments": event.get("arguments") if isinstance(event.get("arguments"), dict) else {},
+                "data": event.get("data") if isinstance(event.get("data"), dict) else {},
+            },
+            ensure_ascii=False,
+        )
+
+    def _synthesize_question_result_json(self, call_id: str, arguments: dict[str, Any], answers: Any) -> str:
+        """续跑路径：把用户回答合成工具结果（dsh：回答即工具结果）。"""
+        questions = arguments.get("questions") if isinstance(arguments.get("questions"), list) else []
+        ids = [str(q.get("id")) for q in questions if isinstance(q, dict)]
+        if isinstance(answers, dict):
+            payload = {qid: answers.get(qid) for qid in ids}
+        else:
+            payload = {"answers": answers}
+        return json.dumps(
+            {
+                "tool": "ask_user_question",
+                "title": "ask_user_question (answered)",
+                "ok": True,
+                "output": "User answers:\n"
+                + "\n".join(f"- {qid}: {json.dumps(payload.get(qid), ensure_ascii=False)}" for qid in ids),
+                "data": {"answers": payload},
+            },
+            ensure_ascii=False,
+        )
 
     def _prepare_shell(self, arguments: dict[str, Any], *, approved: bool = False) -> tuple[str, Any, int]:
         command = str(arguments.get("command") or "").strip()

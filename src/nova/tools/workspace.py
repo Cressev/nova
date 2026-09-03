@@ -30,6 +30,13 @@ class ToolExecutionError(RuntimeError):
         self.code = code
 
 
+def _now_iso() -> str:
+    """会话级状态（goal/schedule）使用的 UTC ISO 时间戳。"""
+    import datetime as _dt
+
+    return _dt.datetime.now(_dt.timezone.utc).isoformat()
+
+
 @dataclass(frozen=True)
 class ToolResult:
     tool: str
@@ -176,6 +183,237 @@ TOOL_SPECS: dict[str, ToolSpec] = {
         category="memory",
         risk="medium",
     ),
+    "read_image": ToolSpec(
+        name="read_image",
+        description=(
+            "Read a PNG/JPEG/WebP/GIF file and return the image itself. "
+            "Use this tool directly instead of installing image libraries or creating thumbnails merely to inspect an image. "
+            "Independent files may be read concurrently in small batches. Requires the current model to accept image input."
+        ),
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={"file_path": "images/shot.png"},
+        category="filesystem",
+        risk="low",
+        interrupt_behavior="cancel",
+    ),
+    "skill": ToolSpec(
+        name="skill",
+        description=(
+            "Load the full instructions for an available skill. Call this with the exact skill name "
+            "from the session skill catalog before acting on a task that names or clearly matches that skill."
+        ),
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={"name": "skill-name"},
+        category="skill",
+        risk="low",
+        interrupt_behavior="cancel",
+    ),
+    "job_output": ToolSpec(
+        name="job_output",
+        description=(
+            "Read a background job. Stream jobs return only output since the previous read; "
+            "final-output jobs return their result after settlement. Reads are non-blocking unless wait: true."
+        ),
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={"job_id": "job_xxx", "wait": False, "timeout_ms": 5000},
+        category="jobs",
+        risk="low",
+        interrupt_behavior="cancel",
+    ),
+    "job_list": ToolSpec(
+        name="job_list",
+        description="List your background jobs (running and finished) with their ids, kinds, and statuses.",
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={},
+        category="jobs",
+        risk="low",
+        interrupt_behavior="cancel",
+    ),
+    "job_kill": ToolSpec(
+        name="job_kill",
+        description=(
+            "Request cancellation of a running background job by job id. "
+            "Returns immediately; the job settles as killed once its work actually stops."
+        ),
+        read_only=False,
+        supports_parallel=False,
+        permission="write",
+        schema={"job_id": "job_xxx"},
+        category="jobs",
+        risk="medium",
+    ),
+    "ask_user_question": ToolSpec(
+        name="ask_user_question",
+        description=(
+            "Questions to ask the user before continuing. Send one or more questions, each with a stable id "
+            "that will be echoed in the answer. Use when you need confirmation, a choice, or missing information."
+        ),
+        read_only=True,
+        supports_parallel=False,
+        permission="ask",
+        schema={"questions": [{"id": "q1", "question": "…", "options": []}]},
+        category="interaction",
+        risk="low",
+        interrupt_behavior="block",
+    ),
+    "subagent": ToolSpec(
+        name="subagent",
+        description=(
+            "Delegate a self-contained task to a subagent that works in its own context and returns only its result. "
+            "This tool runs in the background by default and immediately returns a durable subagent id. "
+            "Set run_in_background: false only when your next action depends on receiving the result."
+        ),
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={"description": "Research auth flow", "prompt": "完整独立任务说明", "run_in_background": True},
+        category="subagent",
+        risk="low",
+        interrupt_behavior="block",
+    ),
+    "list_agents": ToolSpec(
+        name="list_agents",
+        description=(
+            "List your continuable background subagents by durable id and label. Use it to recall which ones "
+            "you started, not to poll for completion — you are told when one finishes."
+        ),
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={"scope": "children"},
+        category="subagent",
+        risk="low",
+        interrupt_behavior="cancel",
+    ),
+    "send_message": ToolSpec(
+        name="send_message",
+        description=(
+            "Send a message to a background subagent by its subagent id, continuing the same conversation. "
+            "It becomes the subagent's next turn: if it is still working, the message waits until its current turn finishes."
+        ),
+        read_only=True,
+        supports_parallel=False,
+        permission="read",
+        schema={"subagent_id": "subagent_xxx", "message": "后续指示"},
+        category="subagent",
+        risk="low",
+        interrupt_behavior="block",
+    ),
+    "interrupt_agent": ToolSpec(
+        name="interrupt_agent",
+        description=(
+            "Request cancellation of a background agent's current turn by its agent id. Only the current turn stops: "
+            "messages already queued stay parked until a later send_message, and the agent itself stays available for follow-ups."
+        ),
+        read_only=False,
+        supports_parallel=False,
+        permission="write",
+        schema={"agent_id": "subagent_xxx"},
+        category="subagent",
+        risk="medium",
+    ),
+    "create_goal": ToolSpec(
+        name="create_goal",
+        description=(
+            "Create one same-session completion goal when the current direct human request is a long-running objective "
+            "that should continue across autonomous rounds. Do not use this for trivial single-turn work."
+        ),
+        read_only=False,
+        supports_parallel=False,
+        permission="write",
+        schema={"objective": "完成目标描述", "max_goal_rounds": 10},
+        category="goal",
+        risk="low",
+    ),
+    "get_goal": ToolSpec(
+        name="get_goal",
+        description="Read the current same-session goal, including its exact id/revision, objective, phase, completed continuation rounds, round limit, blocker reason when present, and whether another continuation is armed.",
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={},
+        category="goal",
+        risk="low",
+        interrupt_behavior="cancel",
+    ),
+    "update_goal": ToolSpec(
+        name="update_goal",
+        description=(
+            "Update the exact current goal revision. edit, pause, and resume require a direct top-level human request. "
+            "During an automatic continuation of the current goal, complete and blocked are also allowed."
+        ),
+        read_only=False,
+        supports_parallel=False,
+        permission="write",
+        schema={"goal_id": "goal_xxx", "revision": 1, "action": "complete"},
+        category="goal",
+        risk="low",
+    ),
+    "schedule_create": ToolSpec(
+        name="schedule_create",
+        description=(
+            "Create one reminder in the current session. Supply exactly one selector: a positive after_seconds delay, "
+            "an absolute at date-time, or an every_seconds fixed rate of at least 300 seconds. "
+            "Delivery is session-local: the reminder runs on time only while this session is live and otherwise becomes overdue until the session is resumed."
+        ),
+        read_only=False,
+        supports_parallel=False,
+        permission="write",
+        schema={"prompt": "提醒内容", "after_seconds": 300},
+        category="schedule",
+        risk="low",
+    ),
+    "schedule_list": ToolSpec(
+        name="schedule_list",
+        description="List every active reminder in the current session in creation order, including its exact id, UTC target, scheduled or overdue state, and session-local delivery mode.",
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={},
+        category="schedule",
+        risk="low",
+        interrupt_behavior="cancel",
+    ),
+    "schedule_delete": ToolSpec(
+        name="schedule_delete",
+        description="Delete one active reminder in the current session by the exact id returned by schedule_create. Unknown or already-finished ids return deleted false.",
+        read_only=False,
+        supports_parallel=False,
+        permission="write",
+        schema={"id": "rem_xxx"},
+        category="schedule",
+        risk="low",
+    ),
+    "lsp": ToolSpec(
+        name="lsp",
+        description="Query the language server for precise code intelligence: diagnostics for a file or the project, or goToDefinition for a symbol in a file.",
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={"operation": "diagnostics", "path": "src/app.py", "symbol": "main"},
+        category="lsp",
+        risk="low",
+        interrupt_behavior="cancel",
+    ),
+    "session_search": ToolSpec(
+        name="session_search",
+        description="Search prior sessions in the caller workspace and return the strongest matching message from each session.",
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={"query": "关键词"},
+        category="sessions",
+        risk="low",
+        interrupt_behavior="cancel",
+    ),
 }
 
 # ---------------------------------------------------------------------------
@@ -300,6 +538,202 @@ _TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         "required": ["scope", "id"],
         "additionalProperties": False,
     },
+    "read_image": {
+        "type": "object",
+        "properties": {
+            "file_path": {"type": "string", "description": "Path to the image file, resolved by the filesystem backend."},
+        },
+        "required": ["file_path"],
+        "additionalProperties": False,
+    },
+    "skill": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Exact skill name from the session skill catalog."},
+        },
+        "required": ["name"],
+        "additionalProperties": False,
+    },
+    "job_output": {
+        "type": "object",
+        "properties": {
+            "job_id": {"type": "string", "description": "Job id returned by the tool that started the background work."},
+            "wait": {"type": "boolean", "description": "Block until the job reaches a terminal status or the timeout expires. A timed-out wait returns [status: running] and leaves the job alive."},
+            "timeout_ms": {"type": "integer", "description": "Max wait in milliseconds (only meaningful with wait: true). Defaults to 5000."},
+        },
+        "required": ["job_id"],
+        "additionalProperties": False,
+    },
+    "job_list": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": False,
+    },
+    "job_kill": {
+        "type": "object",
+        "properties": {
+            "job_id": {"type": "string", "description": "Job id returned by the tool that started the background work."},
+        },
+        "required": ["job_id"],
+        "additionalProperties": False,
+    },
+    "ask_user_question": {
+        "type": "object",
+        "properties": {
+            "questions": {
+                "type": "array",
+                "description": "Questions to ask the user before continuing.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string", "description": "Stable id for this question; echoed in the answer."},
+                        "question": {"type": "string", "description": "The specific question to ask the user."},
+                        "header": {"type": "string", "description": "Optional short heading for the question, such as 'Confirm' or 'Choose Mode'."},
+                        "multi_select": {"type": "boolean", "description": "Whether the user may select more than one option. Defaults to false."},
+                        "options": {
+                            "type": "array",
+                            "description": "Optional choices to show the user. If you recommend one, put it first and append '(Recommended)' to that label.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "label": {"type": "string", "description": "Short user-facing option label."},
+                                    "description": {"type": "string", "description": "One sentence explaining the tradeoff or impact."},
+                                },
+                                "required": ["label"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    },
+                    "required": ["id", "question"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["questions"],
+        "additionalProperties": False,
+    },
+    "subagent": {
+        "type": "object",
+        "properties": {
+            "description": {"type": "string", "description": "A short (3-5 word) description of the delegated task, for display."},
+            "prompt": {"type": "string", "description": "The complete, self-contained task for the subagent. It does not see this conversation, so include everything it needs."},
+            "run_in_background": {"type": "boolean", "description": "Whether to run in the background and return a durable subagent id immediately. Defaults to true."},
+        },
+        "required": ["description", "prompt"],
+        "additionalProperties": False,
+    },
+    "list_agents": {
+        "type": "object",
+        "properties": {
+            "scope": {"type": "string", "enum": ["children", "descendants"], "description": "children (default) lists direct children only; descendants walks the complete tree below you."},
+        },
+        "required": [],
+        "additionalProperties": False,
+    },
+    "send_message": {
+        "type": "object",
+        "properties": {
+            "subagent_id": {"type": "string", "description": "The subagent id returned when the background subagent was started."},
+            "message": {"type": "string", "description": "The message to deliver to the subagent."},
+        },
+        "required": ["subagent_id", "message"],
+        "additionalProperties": False,
+    },
+    "interrupt_agent": {
+        "type": "object",
+        "properties": {
+            "agent_id": {"type": "string", "description": "The agent id of the running agent to interrupt."},
+        },
+        "required": ["agent_id"],
+        "additionalProperties": False,
+    },
+    "create_goal": {
+        "type": "object",
+        "properties": {
+            "objective": {"type": "string", "description": "The concrete completion objective inferred from the direct human request."},
+            "max_goal_rounds": {"type": "integer", "description": "Optional positive safe-integer limit on automatic continuation rounds."},
+        },
+        "required": ["objective"],
+        "additionalProperties": False,
+    },
+    "get_goal": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": False,
+    },
+    "update_goal": {
+        "type": "object",
+        "properties": {
+            "goal_id": {"type": "string", "description": "Exact id returned by get_goal."},
+            "revision": {"type": "integer", "description": "Exact positive revision returned by get_goal."},
+            "action": {"type": "string", "enum": ["edit", "pause", "resume", "complete", "blocked"], "description": "edit | pause | resume | complete | blocked"},
+            "objective": {"type": "string", "description": "Replacement objective; valid only with action edit."},
+            "max_goal_rounds": {"type": "integer", "description": "Replacement cap; valid only with action edit."},
+            "blocked_reason": {"type": "string", "description": "Concrete blocking condition; required only with action blocked."},
+        },
+        "required": ["goal_id", "revision", "action"],
+        "additionalProperties": False,
+    },
+    "schedule_create": {
+        "type": "object",
+        "properties": {
+            "prompt": {"type": "string", "description": "Reminder content to present when the target becomes due."},
+            "after_seconds": {"type": "integer", "description": "Positive safe-integer delay in seconds."},
+            "every_seconds": {"type": "integer", "description": "Fixed-rate safe-integer interval in seconds, at least 300."},
+            "at": {
+                "oneOf": [
+                    {"type": "string"},
+                    {
+                        "type": "object",
+                        "properties": {
+                            "date": {"type": "string"},
+                            "time": {"type": "string"},
+                            "time_zone": {"type": "string"},
+                        },
+                        "required": ["date", "time", "time_zone"],
+                        "additionalProperties": False,
+                    },
+                ],
+                "description": "Absolute target as strict offset RFC 3339 or local date/time with an explicit IANA zone.",
+            },
+        },
+        "required": ["prompt"],
+        "additionalProperties": False,
+    },
+    "schedule_list": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": False,
+    },
+    "schedule_delete": {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "description": "Exact session-local schedule id returned by schedule_create."},
+        },
+        "required": ["id"],
+        "additionalProperties": False,
+    },
+    "lsp": {
+        "type": "object",
+        "properties": {
+            "operation": {"type": "string", "enum": ["diagnostics", "goToDefinition"], "description": "diagnostics reports problems for a file or the project; goToDefinition resolves a symbol in a file."},
+            "path": {"type": "string", "description": "Workspace-relative file path."},
+            "symbol": {"type": "string", "description": "Symbol name to resolve (goToDefinition only)."},
+        },
+        "required": ["operation"],
+        "additionalProperties": False,
+    },
+    "session_search": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Search text matched against prior session messages."},
+        },
+        "required": ["query"],
+        "additionalProperties": False,
+    },
 }
 
 # 每工具超时预算（毫秒）：读类 30s；bash 钳 120s；网络 60s；todo 10s。
@@ -315,6 +749,24 @@ _TOOL_TIMEOUTS: dict[str, int] = {
     "web_search": 60000,
     "memory_write": 30000,
     "memory_remove": 30000,
+    "read_image": 30000,
+    "skill": 10000,
+    "job_output": 120000,
+    "job_list": 10000,
+    "job_kill": 10000,
+    "ask_user_question": 10000,
+    "subagent": 120000,
+    "list_agents": 10000,
+    "send_message": 30000,
+    "interrupt_agent": 10000,
+    "create_goal": 10000,
+    "get_goal": 10000,
+    "update_goal": 10000,
+    "schedule_create": 10000,
+    "schedule_list": 10000,
+    "schedule_delete": 10000,
+    "lsp": 30000,
+    "session_search": 30000,
 }
 
 # read 工具的渲染上限（dsh read-render 同值）
@@ -364,6 +816,20 @@ class WorkspaceTools:
         self.zai_api_key = zai_api_key
         self.web_search_client_factory = web_search_client_factory
         self._file_snapshots: dict[str, dict[str, Any]] = {}
+        # ---- dsh 对齐的会话级支撑状态（运行时注入共享管理器）----
+        # 后台任务（bash run_in_background 产生，job_* 工具读取/终止）
+        self.process_manager: Any = None
+        # 子 Agent（subagent/list_agents/send_message/interrupt_agent）
+        self.subagent_manager: Any = None
+        # 会话存储（session_search；运行时注入 SessionStore）
+        self.session_store: Any = None
+        # job_output 增量游标：每次读取返回自上次以来的新增输出（dsh 流式语义）
+        self._job_cursors: dict[str, int] = {}
+        # 同会话目标（dsh goal：单一活动目标 + revision 状态机）
+        self._goal: dict[str, Any] | None = None
+        # 同会话提醒（dsh schedule：会话内存活，过期转 overdue）
+        self._schedules: dict[str, dict[str, Any]] = {}
+        self._schedule_seq = 0
 
     def run(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         if name.startswith("mcp__"):
@@ -380,6 +846,24 @@ class WorkspaceTools:
             "web_search": self.web_search,
             "memory_write": self.memory_write,
             "memory_remove": self.memory_remove,
+            "read_image": self.read_image,
+            "skill": self.skill,
+            "job_output": self.job_output,
+            "job_list": self.job_list,
+            "job_kill": self.job_kill,
+            "ask_user_question": self.ask_user_question_direct,
+            "subagent": self.subagent,
+            "list_agents": self.list_agents,
+            "send_message": self.send_message,
+            "interrupt_agent": self.interrupt_agent,
+            "create_goal": self.create_goal,
+            "get_goal": self.get_goal,
+            "update_goal": self.update_goal,
+            "schedule_create": self.schedule_create,
+            "schedule_list": self.schedule_list,
+            "schedule_delete": self.schedule_delete,
+            "lsp": self.lsp,
+            "session_search": self.session_search,
         }
         handler = handlers.get(name)
         if handler is None:
@@ -956,6 +1440,601 @@ class WorkspaceTools:
             title=f"Remove memory: {entry_id}",
             output=f"Memory ({scope}) removed: {entry_id} ({removed['total']} entries remain) — was {removed['path']}",
             data={"scope": scope, "id": entry_id, "path": removed["path"], "total": removed["total"]},
+        )
+
+    # ------------------------------------------------------------------
+    # dsh 对齐的扩展工具：read_image / skill / job_* / ask_user_question /
+    # subagent 家族 / goal 三件 / schedule 三件 / lsp / session_search
+    # ------------------------------------------------------------------
+
+    _IMAGE_MAX_BYTES = 8 * 1024 * 1024
+    # 后台任务终态集合（ProcessManager 词汇：completed/failed/cancelled/killed/timeout）
+    _JOB_TERMINAL_STATUSES = {"completed", "failed", "cancelled", "killed", "timeout"}
+
+    def read_image(self, arguments: dict[str, Any]) -> ToolResult:
+        """read_image（dsh tool-fs/read_image）：读图片文件本体。
+
+        校验魔数（PNG/JPEG/WebP/GIF）+ 尺寸上限；解析宽高；data 内带
+        base64 数据 URL，供支持图像输入的模型提供方直接注入上下文。
+        """
+        import base64
+        import struct
+
+        raw_path = str(arguments.get("file_path") or "").strip()
+        if not raw_path:
+            raise ToolExecutionError("file_path must be a non-empty string")
+        path = self._resolve_read_path(raw_path)
+        if not path.is_file():
+            raise ToolExecutionError(f"文件不存在：{self._display(path)}")
+        size = path.stat().st_size
+        if size > self._IMAGE_MAX_BYTES:
+            raise ToolExecutionError(
+                f"cannot read \"{raw_path}\": image exceeds the {self._IMAGE_MAX_BYTES}-byte limit ({size} bytes)"
+            )
+        blob = path.read_bytes()
+        media_type, width, height = self._image_signature(blob)
+        if media_type is None:
+            raise ToolExecutionError(
+                f'cannot read "{raw_path}": read_image only accepts PNG/JPEG/WebP/GIF paths'
+            )
+        data_url = "data:" + media_type + ";base64," + base64.b64encode(blob).decode("ascii")
+        dims = f", {width}x{height}" if width else ""
+        return ToolResult(
+            tool="read_image",
+            title=f"read_image {raw_path}",
+            output=(
+                f"Image read: {self._display(path)} ({media_type}{dims}, {size} bytes). "
+                "The image itself is attached for image-capable models; "
+                "text-only models receive this summary only."
+            ),
+            data={
+                "path": self._display(path),
+                "media_type": media_type,
+                "width": width,
+                "height": height,
+                "bytes": size,
+                "data_url": data_url,
+            },
+        )
+
+    @staticmethod
+    def _image_signature(blob: bytes) -> tuple[str | None, int | None, int | None]:
+        """魔数识别 + 纯 stdlib 宽高解析（PNG IHDR / JPEG SOF / GIF 头 / WebP VP8X）。"""
+        import struct
+
+        if blob.startswith(b"\x89PNG\r\n\x1a\n") and len(blob) >= 24:
+            w, h = struct.unpack(">II", blob[16:24])
+            return "image/png", w, h
+        if blob.startswith((b"GIF87a", b"GIF89a")) and len(blob) >= 10:
+            w, h = struct.unpack("<HH", blob[6:10])
+            return "image/gif", w, h
+        if blob.startswith(b"\xff\xd8\xff"):
+            # JPEG：扫描 SOF0..SOF15（跳过 SOI/EOI/RST）
+            i = 2
+            while i + 9 < len(blob):
+                if blob[i] != 0xFF:
+                    i += 1
+                    continue
+                marker = blob[i + 1]
+                if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
+                    i += 2
+                    continue
+                seg_len = int.from_bytes(blob[i + 2 : i + 4], "big")
+                if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                    h, w = struct.unpack(">HH", blob[i + 5 : i + 9])
+                    return "image/jpeg", w, h
+                i += 2 + seg_len
+            return "image/jpeg", None, None
+        if blob.startswith(b"RIFF") and blob[8:12] == b"WEBP":
+            if blob[12:16] == b"VP8X" and len(blob) >= 30:
+                w = int.from_bytes(blob[24:27], "little") + 1
+                h = int.from_bytes(blob[27:30], "little") + 1
+                return "image/webp", w, h
+            return "image/webp", None, None
+        return None, None, None
+
+    def skill(self, arguments: dict[str, Any]) -> ToolResult:
+        """skill（dsh tool-skill）：按目录里的精确名称加载 SKILL.md 全文。"""
+        from ..skills import SkillManager
+
+        name = str(arguments.get("name") or "").strip()
+        if not name:
+            raise ToolExecutionError("name must be a non-empty string")
+        manager = SkillManager(self.project_root)
+        card = manager.find(name)
+        if card is None:
+            raise ToolExecutionError(f'skill "{name}" is unknown or no longer available')
+        content = Path(card.file_path).read_text(encoding="utf-8", errors="replace")
+        return ToolResult(
+            tool="skill",
+            title=f"Load skill {name}",
+            output=content,
+            data={"name": card.name, "scope": card.scope, "path": card.file_path},
+        )
+
+    def _require_process_manager(self) -> Any:
+        if self.process_manager is None:
+            raise ToolExecutionError("no background process manager is mounted in this runtime")
+        return self.process_manager
+
+    def job_output(self, arguments: dict[str, Any]) -> ToolResult:
+        """job_output（dsh tool-jobs）：读后台任务；流式增量 + 可选阻塞等待。"""
+        import time as _time
+
+        manager = self._require_process_manager()
+        job_id = str(arguments.get("job_id") or "").strip()
+        if not job_id:
+            raise ToolExecutionError("job_id must be a non-empty string")
+        wait = bool(arguments.get("wait") or False)
+        timeout_ms = min(int(arguments.get("timeout_ms") or 5000), 60000)
+        if wait:
+            deadline = _time.monotonic() + timeout_ms / 1000
+            while _time.monotonic() < deadline:
+                job = manager.get(job_id)
+                if job is None or job.get("status") in self._JOB_TERMINAL_STATUSES:
+                    break
+                _time.sleep(0.05)
+        job = manager.get(job_id)
+        if job is None:
+            raise ToolExecutionError(f'unknown job id "{job_id}"')
+        stdout_text = str(job.get("stdout") or "")
+        stderr_text = str(job.get("stderr") or "")
+        full_output = stdout_text + (("\n[stderr]\n" + stderr_text) if stderr_text.strip() else "")
+        cursor = self._job_cursors.get(job_id, 0)
+        new_output = full_output[cursor:]
+        self._job_cursors[job_id] = len(full_output)
+        body = new_output if new_output.strip() else "(no new output)"
+        status = str(job.get("status") or "unknown")
+        if status in self._JOB_TERMINAL_STATUSES:
+            exit_code = job.get("exit_code")
+            body += f"\n[status: {status}]" + (f" (exit code: {exit_code})" if exit_code is not None else "")
+        else:
+            body += "\n[status: running]"
+        return ToolResult(
+            tool="job_output",
+            title=f"job_output {job_id}",
+            output=body,
+            data={
+                "job_id": job_id,
+                "status": status,
+                "exit_code": job.get("exit_code"),
+                "command": job.get("command"),
+                "read_chars": len(new_output),
+                "total_chars": len(full_output),
+                "wait": wait,
+                "timedOut": wait and status not in self._JOB_TERMINAL_STATUSES,
+            },
+        )
+
+    def job_list(self, arguments: dict[str, Any]) -> ToolResult:
+        """job_list（dsh tool-jobs）：列出全部后台任务（运行中+已结束）。"""
+        manager = self._require_process_manager()
+        jobs = manager.list_jobs()
+        if not jobs:
+            return ToolResult(tool="job_list", title="job_list", output="(no jobs)", data={"items": []})
+        lines = []
+        for job in jobs:
+            lines.append(
+                f"- {job.get('id')} [{job.get('status')}] {job.get('command', '')[:100]}"
+            )
+        return ToolResult(
+            tool="job_list",
+            title="job_list",
+            output="\n".join(lines),
+            data={"items": jobs},
+        )
+
+    def job_kill(self, arguments: dict[str, Any]) -> ToolResult:
+        """job_kill（dsh tool-jobs）：请求取消一个后台任务（立即返回，异步生效）。"""
+        manager = self._require_process_manager()
+        job_id = str(arguments.get("job_id") or "").strip()
+        if not job_id:
+            raise ToolExecutionError("job_id must be a non-empty string")
+        result = manager.kill(job_id)
+        return ToolResult(
+            tool="job_kill",
+            title=f"job_kill {job_id}",
+            output=f"Cancellation requested for job {job_id}; current status: {result.get('status')}",
+            data={"job_id": job_id, "status": result.get("status")},
+        )
+
+    def ask_user_question_direct(self, arguments: dict[str, Any]) -> ToolResult:
+        """ask_user_question 的直连兜底：执行器通常在派发前拦下发问事件；
+        直接调用（无暂停机制的场景）时返回结构化问题清单并说明等待回答。"""
+        questions = arguments.get("questions") if isinstance(arguments.get("questions"), list) else []
+        lines = []
+        for item in questions:
+            if isinstance(item, dict):
+                label = str(item.get("header") or item.get("id") or "question")
+                lines.append(f"[{label}] {item.get('question')}")
+        return ToolResult(
+            tool="ask_user_question",
+            title="ask_user_question",
+            output=(
+                "Questions sent to the user:\n" + "\n".join(lines)
+                + "\n(awaiting answer — the turn pauses until the user replies)"
+            ),
+            data={"questions": questions, "awaiting_answer": True},
+        )
+
+    def _require_subagent_manager(self) -> Any:
+        if self.subagent_manager is None:
+            from ..subagents import SubAgentManager
+
+            self.subagent_manager = SubAgentManager(self.project_root)
+        return self.subagent_manager
+
+    def subagent(self, arguments: dict[str, Any]) -> ToolResult:
+        """subagent（dsh tool-subagent）：后台委派自包含任务，返回持久 id。"""
+        description = str(arguments.get("description") or "").strip()
+        prompt = str(arguments.get("prompt") or "").strip()
+        if not prompt:
+            raise ToolExecutionError("prompt must be a non-empty string")
+        run_in_background = bool(arguments.get("run_in_background") if arguments.get("run_in_background") is not None else True)
+        manager = self._require_subagent_manager()
+        created = manager.spawn(prompt=prompt, name=description or "worker", project_root=self.project_root)
+        if run_in_background:
+            return ToolResult(
+                tool="subagent",
+                title=description or f"subagent {created['id']}",
+                output=(
+                    f"Subagent started in background: {created['id']} ({created['name']}). "
+                    "Its result arrives as a continuation notice; use list_agents to recall it."
+                ),
+                data={"run": created, "run_in_background": True},
+            )
+        settled = manager.wait(str(created["id"]), timeout_ms=110000) or created
+        return ToolResult(
+            tool="subagent",
+            title=description or f"subagent {created['id']}",
+            output=str(settled.get("output") or settled.get("result") or "(no result)"),
+            data={"run": settled, "run_in_background": False},
+        )
+
+    def list_agents(self, arguments: dict[str, Any]) -> ToolResult:
+        """list_agents（dsh tool-subagent-control）：列出可续聊的后台子 Agent。"""
+        manager = self._require_subagent_manager()
+        runs = manager.list()
+        if not runs:
+            return ToolResult(tool="list_agents", title="list_agents", output="(no background agents)", data={"items": []})
+        lines = [
+            f"- {run.get('id')} [{run.get('status')}] {run.get('name')}" for run in runs
+        ]
+        return ToolResult(
+            tool="list_agents",
+            title="list_agents",
+            output="\n".join(lines),
+            data={"items": runs, "scope": str(arguments.get("scope") or "children")},
+        )
+
+    def send_message(self, arguments: dict[str, Any]) -> ToolResult:
+        """send_message（dsh tool-subagent-control）：向子 Agent 追加一轮消息。"""
+        manager = self._require_subagent_manager()
+        subagent_id = str(arguments.get("subagent_id") or "").strip()
+        message = str(arguments.get("message") or "").strip()
+        if not subagent_id or not message:
+            raise ToolExecutionError("subagent_id and message must be non-empty strings")
+        result = manager.send(subagent_id, message)
+        if result is None:
+            raise ToolExecutionError(f'unknown subagent id "{subagent_id}"')
+        return ToolResult(
+            tool="send_message",
+            title=f"send_message {subagent_id}",
+            output=f"Message delivered to subagent {subagent_id}; it becomes the subagent's next turn.",
+            data={"run": result},
+        )
+
+    def interrupt_agent(self, arguments: dict[str, Any]) -> ToolResult:
+        """interrupt_agent（dsh tool-subagent-control）：请求取消子 Agent 当前轮。"""
+        manager = self._require_subagent_manager()
+        agent_id = str(arguments.get("agent_id") or "").strip()
+        if not agent_id:
+            raise ToolExecutionError("agent_id must be a non-empty string")
+        result = manager.close(agent_id)
+        if result is None:
+            raise ToolExecutionError(f'unknown agent id "{agent_id}"')
+        return ToolResult(
+            tool="interrupt_agent",
+            title=f"interrupt_agent {agent_id}",
+            output=f"Stop request accepted for agent {agent_id}; current status: {result.get('status')}",
+            data={"run": result},
+        )
+
+    def create_goal(self, arguments: dict[str, Any]) -> ToolResult:
+        """create_goal（dsh tool-goal）：为长任务建立同会话续跑目标。"""
+        import uuid
+
+        objective = str(arguments.get("objective") or "").strip()
+        if not objective:
+            raise ToolExecutionError("objective must be a non-empty string")
+        if self._goal is not None and self._goal.get("phase") not in {"complete", "blocked"}:
+            raise ToolExecutionError(
+                f"a goal is already active ({self._goal.get('goal_id')}); update it with update_goal instead"
+            )
+        max_rounds = arguments.get("max_goal_rounds")
+        goal = {
+            "goal_id": f"goal_{uuid.uuid4().hex[:12]}",
+            "revision": 1,
+            "objective": objective,
+            "phase": "active",
+            "completed_rounds": 0,
+            "max_goal_rounds": int(max_rounds) if max_rounds else None,
+            "blocked_reason": None,
+            "created_at": _now_iso(),
+        }
+        self._goal = goal
+        return ToolResult(
+            tool="create_goal",
+            title="create_goal",
+            output=f"Goal created: {goal['goal_id']} (revision 1) — {objective}",
+            data=dict(goal),
+        )
+
+    def get_goal(self, arguments: dict[str, Any]) -> ToolResult:
+        """get_goal（dsh tool-goal）：读当前目标（id/revision/phase/轮次）。"""
+        if self._goal is None:
+            return ToolResult(
+                tool="get_goal",
+                title="get_goal",
+                output="(no active goal)",
+                data={"goal": None},
+            )
+        return ToolResult(
+            tool="get_goal",
+            title="get_goal",
+            output=json.dumps(self._goal, ensure_ascii=False),
+            data={"goal": dict(self._goal)},
+        )
+
+    def update_goal(self, arguments: dict[str, Any]) -> ToolResult:
+        """update_goal（dsh tool-goal）：按 revision 精确更新目标状态机。"""
+        if self._goal is None:
+            raise ToolExecutionError("no current goal to update")
+        goal = self._goal
+        if str(arguments.get("goal_id") or "") != goal["goal_id"]:
+            raise ToolExecutionError(f'goal_id mismatch: current goal is {goal["goal_id"]}')
+        try:
+            revision = int(arguments.get("revision"))
+        except (TypeError, ValueError):
+            raise ToolExecutionError("revision must be a positive integer")
+        if revision != goal["revision"]:
+            raise ToolExecutionError(
+                f"revision mismatch: current revision is {goal['revision']} (expected {revision})"
+            )
+        action = str(arguments.get("action") or "").strip()
+        if action == "edit":
+            objective = str(arguments.get("objective") or "").strip()
+            if objective:
+                goal["objective"] = objective
+            if arguments.get("max_goal_rounds") is not None:
+                goal["max_goal_rounds"] = int(arguments["max_goal_rounds"])
+        elif action == "pause":
+            if goal["phase"] != "active":
+                raise ToolExecutionError(f"cannot pause a goal in phase {goal['phase']}")
+            goal["phase"] = "paused"
+        elif action == "resume":
+            if goal["phase"] not in {"paused", "blocked"}:
+                raise ToolExecutionError(f"cannot resume a goal in phase {goal['phase']}")
+            goal["phase"] = "active"
+            goal["blocked_reason"] = None
+        elif action == "complete":
+            goal["phase"] = "complete"
+        elif action == "blocked":
+            reason = str(arguments.get("blocked_reason") or "").strip()
+            if not reason:
+                raise ToolExecutionError("blocked_reason is required with action blocked")
+            goal["phase"] = "blocked"
+            goal["blocked_reason"] = reason
+        else:
+            raise ToolExecutionError(f"unknown action \"{action}\"")
+        goal["revision"] += 1
+        goal["updated_at"] = _now_iso()
+        self._goal = goal
+        return ToolResult(
+            tool="update_goal",
+            title=f"update_goal {action}",
+            output=f"Goal {goal['goal_id']} updated (revision {goal['revision']}): {action} — phase {goal['phase']}",
+            data=dict(goal),
+        )
+
+    def schedule_create(self, arguments: dict[str, Any]) -> ToolResult:
+        """schedule_create（dsh schedule）：会话内提醒；恰好一个时间选择器。"""
+        import datetime as _dt
+        import uuid
+
+        prompt = str(arguments.get("prompt") or "").strip()
+        if not prompt:
+            raise ToolExecutionError("prompt must be a non-empty string")
+        selectors = [
+            key
+            for key in ("after_seconds", "every_seconds", "at")
+            if arguments.get(key) is not None
+        ]
+        if len(selectors) != 1:
+            raise ToolExecutionError(
+                "supply exactly one selector: after_seconds, every_seconds, or at"
+            )
+        now = _dt.datetime.now(_dt.timezone.utc)
+        repeat = None
+        if selectors[0] == "after_seconds":
+            seconds = int(arguments["after_seconds"])
+            if seconds <= 0:
+                raise ToolExecutionError("after_seconds must be a positive integer")
+            next_due = now + _dt.timedelta(seconds=seconds)
+        elif selectors[0] == "every_seconds":
+            seconds = int(arguments["every_seconds"])
+            if seconds < 300:
+                raise ToolExecutionError("every_seconds must be at least 300")
+            repeat = seconds
+            next_due = now + _dt.timedelta(seconds=seconds)
+        else:
+            at = arguments["at"]
+            if isinstance(at, dict):
+                try:
+                    local = _dt.datetime.strptime(
+                        f"{at['date']} {at['time']}", "%Y-%m-%d %H:%M:%S"
+                    )
+                except ValueError as exc:
+                    raise ToolExecutionError(f"invalid at value: {exc}") from exc
+                zone = _dt.timezone(_dt.timedelta(hours=8), name=str(at.get("time_zone") or "UTC+8"))
+                next_due = local.replace(tzinfo=zone).astimezone(_dt.timezone.utc)
+            else:
+                text = str(at).strip()
+                try:
+                    next_due = _dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+                except ValueError as exc:
+                    raise ToolExecutionError(f"invalid at value: {exc}") from exc
+                if next_due.tzinfo is None:
+                    next_due = next_due.replace(tzinfo=_dt.timezone.utc)
+        self._schedule_seq += 1
+        schedule = {
+            "id": f"rem_{self._schedule_seq:03d}_{uuid.uuid4().hex[:4]}",
+            "prompt": prompt,
+            "next_due_utc": next_due.isoformat(),
+            "every_seconds": repeat,
+            "state": "scheduled",
+            "created_at": _now_iso(),
+        }
+        self._schedules[schedule["id"]] = schedule
+        return ToolResult(
+            tool="schedule_create",
+            title="schedule_create",
+            output=(
+                f"Reminder created: {schedule['id']} due {schedule['next_due_utc']}"
+                + (f" (fixed rate every {repeat}s)" if repeat else "")
+                + ". Delivery is session-local."
+            ),
+            data=dict(schedule),
+        )
+
+    def schedule_list(self, arguments: dict[str, Any]) -> ToolResult:
+        """schedule_list（dsh schedule）：按创建序列出全部提醒与到期状态。"""
+        import datetime as _dt
+
+        if not self._schedules:
+            return ToolResult(tool="schedule_list", title="schedule_list", output="(no active reminders)", data={"items": []})
+        now = _dt.datetime.now(_dt.timezone.utc)
+        items = []
+        lines = []
+        for schedule in self._schedules.values():
+            due = _dt.datetime.fromisoformat(schedule["next_due_utc"])
+            state = "overdue" if due <= now else "scheduled"
+            schedule["state"] = state
+            items.append(dict(schedule))
+            lines.append(f"- {schedule['id']} [{state}] due {schedule['next_due_utc']}: {schedule['prompt'][:60]}")
+        return ToolResult(
+            tool="schedule_list",
+            title="schedule_list",
+            output="\n".join(lines),
+            data={"items": items},
+        )
+
+    def schedule_delete(self, arguments: dict[str, Any]) -> ToolResult:
+        """schedule_delete（dsh schedule）：按 id 删除提醒；未知 id 返回 deleted false。"""
+        schedule_id = str(arguments.get("id") or "").strip()
+        removed = self._schedules.pop(schedule_id, None)
+        return ToolResult(
+            tool="schedule_delete",
+            title=f"schedule_delete {schedule_id}",
+            output=f"Reminder {schedule_id} {'removed' if removed else 'not found (already finished or unknown)'}",
+            data={"id": schedule_id, "deleted": removed is not None},
+        )
+
+    def pop_due_schedule_prompts(self) -> list[str]:
+        """取出到期提醒的提示词（dsh 语义：固定率跳过错过点、每规则批一次）。"""
+        import datetime as _dt
+
+        prompts: list[str] = []
+        now = _dt.datetime.now(_dt.timezone.utc)
+        for schedule in list(self._schedules.values()):
+            due = _dt.datetime.fromisoformat(schedule["next_due_utc"])
+            if due > now:
+                continue
+            prompts.append(schedule["prompt"])
+            if schedule.get("every_seconds"):
+                rate = int(schedule["every_seconds"])
+                # 固定率：跳过错过的触发点，对齐创建时间
+                while due <= now:
+                    due = due + _dt.timedelta(seconds=rate)
+                schedule["next_due_utc"] = due.isoformat()
+                schedule["state"] = "scheduled"
+            else:
+                self._schedules.pop(schedule["id"], None)
+        return prompts
+
+    def lsp(self, arguments: dict[str, Any]) -> ToolResult:
+        """lsp（dsh tool-lsp 形态）：语言服务查询（诊断/符号定义）。"""
+        from ..lsp import LspManager
+
+        operation = str(arguments.get("operation") or "").strip()
+        manager = LspManager(self.project_root)
+        if operation == "diagnostics":
+            payload = manager.diagnostics(str(arguments.get("path") or "") or None)
+            summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+            body = json.dumps(payload, ensure_ascii=False)
+            return ToolResult(
+                tool="lsp",
+                title=f"lsp diagnostics {arguments.get('path') or '(project)'}",
+                output=body,
+                data=payload,
+            )
+        if operation == "goToDefinition":
+            path = str(arguments.get("path") or "").strip()
+            symbol = str(arguments.get("symbol") or "").strip()
+            if not path or not symbol:
+                raise ToolExecutionError("goToDefinition requires path and symbol")
+            payload = manager.definition(path=path, symbol=symbol)
+            return ToolResult(
+                tool="lsp",
+                title=f"lsp goToDefinition {symbol}",
+                output=json.dumps(payload, ensure_ascii=False),
+                data=payload,
+            )
+        raise ToolExecutionError(f'unknown lsp operation "{operation}"')
+
+    def session_search(self, arguments: dict[str, Any]) -> ToolResult:
+        """session_search（dsh session-query）：跨历史会话关键词检索。"""
+        if self.session_store is None:
+            raise ToolExecutionError("no session store is mounted in this runtime")
+        query = str(arguments.get("query") or "").strip().lower()
+        if not query:
+            raise ToolExecutionError("query must be a non-empty string")
+        results: list[dict[str, Any]] = []
+        for session in self.session_store.list_chat_sessions(workspace=str(self.project_root)):
+            best: dict[str, Any] | None = None
+            best_count = 0
+            for message in self.session_store.list_chat_messages(session.id):
+                content = str(getattr(message, "content", "") or "")
+                count = content.lower().count(query)
+                if count > best_count:
+                    best_count = count
+                    first = content.lower().find(query)
+                    start = max(0, first - 40)
+                    best = {
+                        "session_id": session.id,
+                        "role": str(getattr(getattr(message, "role", ""), "value", "")),
+                        "snippet": content[start : first + len(query) + 80].replace("\n", " "),
+                        "matches": count,
+                        "created_at": str(getattr(message, "created_at", "") or ""),
+                    }
+            if best is not None:
+                results.append(best)
+        if not results:
+            return ToolResult(
+                tool="session_search",
+                title=f"session_search {arguments.get('query')}",
+                output="(no matching sessions)",
+                data={"query": query, "results": []},
+            )
+        lines = [
+            f"- session {item['session_id']} ({item['matches']} hits, {item['created_at']}): {item['snippet']}"
+            for item in results[:10]
+        ]
+        return ToolResult(
+            tool="session_search",
+            title=f"session_search {arguments.get('query')}",
+            output="\n".join(lines),
+            data={"query": query, "results": results[:20]},
         )
 
     def _resolve_workspace_path(self, value: str) -> Path:

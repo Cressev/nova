@@ -116,6 +116,32 @@ class SubAgentManager:
                 )
             return run.as_dict()
 
+    def send(self, run_id: str, message: str) -> dict[str, Any] | None:
+        """向子 Agent 投递后续消息（dsh send_message）。
+
+        运行中：消息进入收件箱，本轮结束后由下次续跑消费；
+        已结束（completed/failed/cancelled/closed）：携带累计消息续跑一轮。
+        """
+        with self._condition:
+            run = self._runs.get(run_id)
+            if run is None:
+                return None
+            run.inbox = getattr(run, "inbox", []) + [message.strip()]
+            run.add_event("message", "收到后续消息", message.strip()[:200])
+            if run.status in {"completed", "failed", "cancelled", "closed"}:
+                combined = run.prompt + "\n\n--- 后续消息 ---\n" + "\n".join(run.inbox)
+                run.prompt = combined
+                run.inbox = []
+                run.status = "running"
+                run.cancel_requested = False
+                run.updated_at = utc_now().isoformat()
+                thread = threading.Thread(
+                    target=self._run, args=(run_id, self.default_runner), daemon=True
+                )
+                self._threads[run_id] = thread
+                thread.start()
+            return run.as_dict()
+
     def close(self, run_id: str) -> dict[str, Any] | None:
         with self._condition:
             run = self._runs.get(run_id)

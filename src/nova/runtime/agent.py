@@ -45,6 +45,8 @@ class CodexLikeAgentRuntime:
         tool_hooks_file: Path | None = None,
         process_manager: ProcessManager | None = None,
         trace_recorder: object | None = None,
+        subagent_manager: object | None = None,
+        session_store: object | None = None,
     ) -> None:
         tool_api_key = None
         api_key_for_tools = getattr(provider, "api_key_for_tools", None)
@@ -63,6 +65,10 @@ class CodexLikeAgentRuntime:
         # dsh 语义：取消权威在会话层（AgentSessionRegistry 在 runtime 上置
         # cancel_requested 标志），执行器每个工具派发前只读检查；body 已
         # 启动后的 shell 取消走 process_manager.cancel_call。
+        # dsh 对齐扩展工具的支撑管理器：job_* / subagent 家族 / session_search
+        self.tools.process_manager = self.process_manager
+        self.tools.subagent_manager = subagent_manager
+        self.tools.session_store = session_store
         self.executor = ToolExecutor(
             self.tools,
             hooks=self.hooks,
@@ -90,6 +96,20 @@ class CodexLikeAgentRuntime:
         *,
         trace_turn_id: str | None = None,
     ) -> AsyncIterator[dict]:
+        # dsh schedule：会话内存活的提醒到期即在下一轮 turn 开头送达（固定率
+        # 跳过错过的触发点，一次性提醒送达后移除）。
+        due_prompts = []
+        try:
+            due_prompts = list(self.tools.pop_due_schedule_prompts())
+        except Exception:
+            due_prompts = []
+        if due_prompts:
+            reminder_text = "\n\n".join(f"【定时提醒】{prompt}" for prompt in due_prompts)
+            messages = [
+                *messages,
+                ChatMessage(session_id="agent", role=ChatRole.USER, content=reminder_text),
+            ]
+            yield {"type": "agent_status", "status": f"送达 {len(due_prompts)} 条到期提醒"}
         latest_user = self._latest_user_content(messages)
         active_trace_turn_id = self._trace_start(
             messages,
@@ -900,6 +920,13 @@ class CodexLikeAgentRuntime:
 10. 修改文件用 edit（old_string 默认必须唯一；不唯一时提供更多上下文或设 replace_all）；生成或整文件覆盖才用 write。读过的文件才能改。
 11. 预计耗时较长的命令可加 "run_in_background": true 后台执行；后台任务可由用户用 /ps 查看、/kill 终止。
 12. 需要最新网络信息时，使用 web_search；抓取明确 URL 时才使用 web_fetch。
+13. 查看图片用 read_image（PNG/JPEG/WebP/GIF）；加载技能全文用 skill（先看技能索引）。
+14. 后台任务用 job_output 读取（流式任务只返回上次读取之后的新输出；wait: true 可阻塞到终态）、job_list 列出、job_kill 终止。
+15. 需要用户确认、选择或缺失信息时，用 ask_user_question 一次发多个带稳定 id 的问题；回答会作为工具结果返回。
+16. 自包含的调研/实现/审查任务委派给 subagent（默认后台，返回持久 id）；list_agents 回忆已启动的，send_message 续聊，interrupt_agent 打断。
+17. 长任务先 create_goal 建立同会话目标；每轮用 get_goal 校准，完成用 update_goal complete，被阻塞用 blocked 并写明原因。
+18. 会话内定时提醒用 schedule_create（after_seconds/at/every_seconds 恰选其一）、schedule_list、schedule_delete。
+19. 精确代码智能用 lsp（diagnostics / goToDefinition）；跨历史会话检索用 session_search。
 13. 当用户输入 $技能名 或请求明显匹配某个技能说明时，先引用对应技能；不要凭空假设技能内容，用户也可以用 /skill <技能名> 显式读取 SKILL.md。
 
 可用工具：

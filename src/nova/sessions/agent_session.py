@@ -402,3 +402,12 @@ class AgentSessionService:
 
     def deny_pending_approval(self, approval_id: str, *, reason: str = "") -> PendingApproval | None:
         return self.pending_approvals.deny(approval_id, reason=reason)
+
+    def answer_pending_approval(self, approval_id: str, answers: dict) -> PendingApproval | None:
+        """ask_user_question 的用户回答：仍保持 pending，approve 续跑时带回答案。"""
+        item = self.pending_approvals.get(approval_id)
+        if item is None:
+            return None
+        arguments = dict(item.arguments)
+        arguments["_answers"] = answers
+        return self.pending_approvals.update_arguments(approval_id, arguments)

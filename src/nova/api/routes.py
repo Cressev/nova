@@ -166,6 +166,8 @@ def _agent_runtime() -> CodexLikeAgentRuntime:
         trace_recorder=LangfuseTraceRecorder(
             load_langfuse_config(_workspace_runtime_secret_file())
         ),
+        subagent_manager=subagent_manager,
+        session_store=store,
     )
 
 
@@ -615,6 +617,30 @@ def _runtime_event_from_agent_event(event: dict, build_event) -> dict | None:
             data={
                 "stream": stream,
                 **(event.get("data") if isinstance(event.get("data"), dict) else {}),
+            },
+        )
+    if event_type == "user_question":
+        return build_event(
+            "user.question",
+            category="permission",
+            phase="requested",
+            status="pending",
+            title=str(event.get("title") or "向用户提问"),
+            message=str(event.get("message") or "等待用户回答后继续。"),
+            tool=str(event.get("tool") or "ask_user_question"),
+            call_id=str(event.get("call_id") or new_id("tool")),
+            arguments=(
+                event.get("arguments")
+                if isinstance(event.get("arguments"), dict)
+                else {}
+            ),
+            data={
+                "user_question": True,
+                "questions": (
+                    event.get("data", {}).get("questions")
+                    if isinstance(event.get("data"), dict)
+                    else []
+                ),
             },
         )
     if event_type == "permission_request":

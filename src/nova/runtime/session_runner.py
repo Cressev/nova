@@ -280,7 +280,7 @@ class SessionRunner:
                         )
                         if runtime_event is not None:
                             yield {"type": "runtime_event", "event": runtime_event}
-                        if event["type"] == "permission_request":
+                        if event["type"] in {"permission_request", "user_question"}:
                             orchestrator.register_permission_request(
                                 event,
                                 runtime_event=runtime_event,
