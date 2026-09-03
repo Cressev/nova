@@ -718,6 +718,7 @@ function renderRuntimeOverviewFromDom(turnStatus = "") {
 }
 
 function renderRuntimeStatePanel(runtimeState = {}) {
+  hookRuntimePanelsForHeader();
   if (!runtimeStatePanelEl) {
     return;
   }
@@ -1924,9 +1925,9 @@ async function loadSessions({ refreshMessages = true } = {}) {
     const activeInGroup = group.sessions.some((session) => session.id === state.selectedSessionId);
     groupNode.innerHTML = `
       <button class="session-group-head ${activeInGroup ? "active" : ""}" type="button" aria-expanded="${!collapsed}">
-        <span aria-hidden="true">${collapsed ? "▸" : "▾"}</span>
+        <span class="folder-icon ${collapsed ? "" : "open"}" aria-hidden="true">▤</span>
         <strong>${escapeHtml(group.name)}</strong>
-        <em>${group.sessions.length}</em>
+        <em aria-hidden="true">${collapsed ? "▸" : "▾"}</em>
       </button>
       <div class="session-group-items" ${collapsed ? "hidden" : ""}></div>
     `;
@@ -2012,9 +2013,12 @@ function toggleSessionGroup(groupNode, workspace) {
 }
 
 function renderSessionGroupMore(group, expanded) {
+  /* dsh 形态：无「展开全部」按钮——列表容器滚到底时自动展开该组（懒加载）。 */
   const button = document.createElement("button");
   button.type = "button";
   button.className = "session-more";
+  button.hidden = true;
+  button.dataset.lazyExpand = group.workspace;
   button.textContent = expanded
     ? "收起历史"
     : `展开全部 ${group.sessions.length} 条`;
@@ -2124,6 +2128,7 @@ function updateChatHeader(session) {
 async function selectSession(session) {
   const headerTitle = document.getElementById("header-session-title");
   if (headerTitle) headerTitle.textContent = session.title || "新会话";
+  refreshStatsLine();
   if (session.workspace && session.workspace !== projectRootEl.textContent.trim()) {
     streamStateEl.textContent = "正在切换到历史线程所属项目";
     try {
@@ -2141,7 +2146,7 @@ async function selectSession(session) {
   state.selectedSessionTitle = session.title || "Nova Chat";
   chatTitleEl.textContent = state.selectedSessionTitle;
   await Promise.all([loadSessions({ refreshMessages: false }), loadMessages(), refreshStatusline()]);
-  streamStateEl.textContent = "历史线程已加载";
+  streamStateEl.textContent = "历史线程已加载"; setTimeout(() => { if (streamStateEl.textContent === "历史线程已加载") streamStateEl.textContent = ""; }, 2500);
 }
 
 function renderEmptyState() {
@@ -2513,8 +2518,23 @@ function appendMessage(message, options = {}) {
       ${message.role === "assistant" ? '<button class="turn-tools-toggle" type="button" hidden>收起过程</button>' : ""}
     </div>
     <div class="message-content">${renderMarkdown(message.content || "")}</div>
+    <div class="message-actions" data-role="${message.role}">
+      ${message.role === "assistant" && message.created_at ? `<span class="message-clock">${formatTime(message.created_at)}</span>` : ""}
+      <button class="message-copy" type="button" aria-label="复制内容" title="复制内容">⧉</button>
+    </div>
     <div class="message-time">${message.created_at ? formatTime(message.created_at) : "生成中"}</div>
   `;
+  if (message.role === "user") node.dataset.rawContent = message.content || "";
+  node.querySelector(".message-copy")?.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(message.content || "");
+      const btn = node.querySelector(".message-copy");
+      btn.textContent = "✓";
+      setTimeout(() => { btn.textContent = "⧉"; }, 1200);
+    } catch {
+      streamStateEl.textContent = "复制失败";
+    }
+  });
   if (message.role === "assistant") {
     setupTurnToolToggle(node);
   }
@@ -3148,7 +3168,8 @@ function appendUserQuestionEvent(event) {
     rowHead.setAttribute("aria-expanded", String(open));
   });
   node.querySelector('[data-action="answer"]').addEventListener("click", () => submitUserAnswers(node));
-  messagesEl.appendChild(node);
+  const dock = document.getElementById("takeover-dock");
+  (dock || messagesEl).appendChild(node);
   scrollMessagesToBottom();
   return node;
 }
@@ -3259,7 +3280,10 @@ function appendPermissionEvent(event, beforeNode = null, options = {}) {
   });
   node.querySelector('[data-action="approve"]').addEventListener("click", () => processApproval(node, true));
   node.querySelector('[data-action="deny"]').addEventListener("click", () => processApproval(node, false));
-  if (beforeNode?.parentElement === messagesEl) {
+  const dock = document.getElementById("takeover-dock");
+  if (dock) {
+    dock.appendChild(node);
+  } else if (beforeNode?.parentElement === messagesEl) {
     messagesEl.insertBefore(node, beforeNode);
   } else {
     messagesEl.appendChild(node);
@@ -4110,6 +4134,10 @@ function isTurnActive() {
   return Boolean(state.sending || state.sessionActive);
 }
 
+function hookRuntimePanelsForHeader() {
+  renderHeaderBackgroundTasks();
+}
+
 function syncComposerRunState() {
   setSendButtonMode(isTurnActive() ? "queue" : "send");
 }
@@ -4430,6 +4458,7 @@ async function streamAssistant(sessionId, content, assistantNode) {
     if (event.event_type === "turn.completed") {
       streamStateEl.textContent = event.title || "回复完成";
       renderRuntimeOverviewFromDom("completed");
+      refreshStatsLine();
       return;
     }
     if (event.event_type === "turn.cancelled") {
@@ -4698,6 +4727,69 @@ loadHealth();
 loadCommands();
 loadWorkspaceStatus({ quick: true, includePicker: false });
 
+// dsh StatsLine：输入卡下方会话统计（真实数据，来自 /trace 事件时间戳）
+async function refreshStatsLine() {
+  const line = document.getElementById("stats-line");
+  if (!line) return;
+  if (!state.selectedSessionId) {
+    line.hidden = true;
+    return;
+  }
+  try {
+    const trace = await api(`/api/chat/sessions/${encodeURIComponent(state.selectedSessionId)}/trace`);
+    const items = Array.isArray(trace) ? trace : (trace.items || []);
+    let turns = 0, steps = 0, toolMs = 0;
+    const turnSpans = [];
+    let openAt = null;
+    for (const e of items) {
+      const ts = e.created_at ? Date.parse(e.created_at) : NaN;
+      if (Number.isNaN(ts)) continue;
+      if (e.event_type === "turn.started") { turns += 1; openAt = ts; }
+      if (e.event_type === "turn.completed" && openAt !== null) { turnSpans.push(ts - openAt); openAt = null; }
+      if (e.event_type === "tool.completed") {
+        steps += 1;
+        const d = e.data?.duration_ms ?? e.duration_ms;
+        if (typeof d === "number") toolMs += d;
+      }
+    }
+    if (openAt !== null) turnSpans.push(Date.now() - openAt);
+    if (turns === 0) { line.hidden = true; return; }
+    const wallMs = turnSpans.reduce((a, b) => a + b, 0);
+    const llmMs = Math.max(0, wallMs - toolMs);
+    const fmt = (ms) => {
+      const sec = Math.round(ms / 1000);
+      if (sec < 60) return `${sec}s`;
+      return `${Math.floor(sec / 60)}m${String(sec % 60).padStart(2, "0")}s`;
+    };
+    line.hidden = false;
+    line.textContent = `${turns} 轮 · ${steps} 步 | LLM ${fmt(llmMs)} · 工具调用 ${fmt(toolMs)} | 平均每轮 ${fmt(wallMs / turns)}`;
+  } catch {
+    line.hidden = true;
+  }
+}
+
+// dsh 重生成：取最后一条用户消息重发一轮
+function bindRegenerate() {
+  const button = document.getElementById("regenerate-button");
+  if (!button) return;
+  button.addEventListener("click", () => {
+    const users = [...messagesEl.querySelectorAll(".message.user")];
+    const last = users[users.length - 1];
+    const text = last?.dataset.rawContent || last?.querySelector(".message-content")?.textContent?.trim();
+    if (!text) {
+      streamStateEl.textContent = "没有可重新生成的消息";
+      return;
+    }
+    if (state.sending || state.sessionActive) {
+      streamStateEl.textContent = "本轮仍在运行，稍后再试";
+      return;
+    }
+    messageEl.value = text;
+    chatFormEl.requestSubmit();
+  });
+}
+bindRegenerate();
+
 // dsh 标签页：对话 / 轨迹（runtime events 时间线视图）
 (function bindHeaderTabs() {
   const tabs = document.querySelectorAll(".header-tab");
@@ -4748,6 +4840,51 @@ async function renderTraceView(refresh = false) {
   }
 }
 
+// dsh 头部「N 个后台任务 ▾」：运行中后台进程计数 + 下拉列表
+function renderHeaderBackgroundTasks() {
+  const mode = document.getElementById("header-mode");
+  if (!mode) return;
+  const existing = document.getElementById("header-bg-tasks");
+  const running = (state.processes || []).filter((p) => p.status === "running");
+  const label = running.length ? `· ${running.length} 个后台任务` : "";
+  if (!running.length) {
+    existing?.remove();
+    mode.dataset.bgTasks = "";
+    return;
+  }
+  let trigger = existing;
+  if (!trigger) {
+    trigger = document.createElement("button");
+    trigger.id = "header-bg-tasks";
+    trigger.type = "button";
+    trigger.className = "header-bg-tasks";
+    mode.parentElement.appendChild(trigger);
+  }
+  trigger.innerHTML = `${running.length} 个后台任务 <span aria-hidden="true">▾</span>`;
+  const menuId = "header-bg-menu";
+  trigger.onclick = () => {
+    const old = document.getElementById(menuId);
+    if (old) { old.remove(); return; }
+    const menu = document.createElement("div");
+    menu.id = menuId;
+    menu.className = "header-bg-menu";
+    menu.innerHTML = running.slice(0, 8).map((p) => `
+      <div class="header-bg-item">
+        <code>${escapeHtml(shortId(p.id || ""))}</code>
+        <span>${escapeHtml(shortText(p.command || p.title || "", 40))}</span>
+      </div>`).join("");
+    trigger.appendChild(menu);
+    setTimeout(() => {
+      document.addEventListener("click", function close(ev) {
+        if (!menu.contains(ev.target) && ev.target !== trigger) {
+          menu.remove();
+          document.removeEventListener("click", close);
+        }
+      });
+    }, 0);
+  };
+}
+
 // dsh Session log：下载本会话完整事件日志
 (function bindSessionLog() {
   const button = document.getElementById("session-log-open");
@@ -4784,6 +4921,27 @@ async function renderTraceView(refresh = false) {
   permission.addEventListener("change", sync);
   sync();
   trigger.addEventListener("click", () => permission.focus());
+})();
+
+// dsh 侧栏懒加载：滚到底自动展开被折叠的组（替代「展开全部」按钮）
+(function bindSessionListLazyExpand() {
+  if (!sessionListEl) return;
+  sessionListEl.addEventListener("scroll", () => {
+    const nearBottom = sessionListEl.scrollTop + sessionListEl.clientHeight >= sessionListEl.scrollHeight - 40;
+    if (!nearBottom) return;
+    const lazy = sessionListEl.querySelector('button[data-lazy-expand]:not([hidden])') || sessionListEl.querySelector("button[data-lazy-expand]");
+    lazy?.click();
+  }, { passive: true });
+})();
+
+// dsh 工作区 +：打开工作区切换/新建对话框
+(function bindWorkspaceCreate() {
+  const button = document.getElementById("workspace-create");
+  const dialog = document.getElementById("workspace-dialog");
+  if (!button || !dialog) return;
+  button.addEventListener("click", () => {
+    if (typeof dialog.showModal === "function") dialog.showModal();
+  });
 })();
 
 // dsh 侧栏搜索：过滤会话行

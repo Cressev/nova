@@ -252,10 +252,27 @@ button:disabled {
   flex-shrink: 0;
   width: 279px;
   gap: 10px;
-  padding: 16px 14px 12px;
+  padding: 16px 14px 0;
   overflow: hidden;
   background: #f9fafb; /* dsh sidebarCol 实测值 */
   transition: width 180ms ease;
+}
+
+/* 会话列表独占滚动空间；底部设置行固定实底，列表不得穿透 */
+.sidebar-sessions {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.sidebar-foot {
+  flex: none;
+  position: sticky;
+  bottom: 0;
+  margin: 0 -14px;
+  padding: 8px 14px 10px;
+  background: #f9fafb;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 body.sidebar-collapsed .sidebar {
@@ -583,10 +600,42 @@ body.sidebar-collapsed .sidebar-foot-button {
   display: flex;
   flex-direction: column;
   height: 100%;
-  max-width: 780px; /* dsh composer card 上限 = 内容 748 + 32 */
-  margin: 0 auto;
-  padding: 12px 16px 16px;
-  gap: 10px;
+  padding: 0 0 16px;
+  gap: 0;
+}
+
+/* dsh：header 通栏（仅受主区 padding 约束），消息流与 composer 居中内容列 */
+.chat-header {
+  max-width: none;
+  margin: 0;
+}
+
+.messages,
+.empty-hero,
+.takeover-dock,
+#chat-form,
+.stats-line {
+  width: 100%;
+  max-width: 780px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.messages {
+  padding: 12px 16px 8px;
+}
+
+.takeover-dock {
+  padding: 0 16px;
+}
+
+#chat-form {
+  margin-top: 10px;
+}
+
+.stats-line {
+  padding-left: 16px;
+  padding-right: 16px;
 }
 
 /* 空状态 Hero */
@@ -2617,10 +2666,10 @@ body.inspector-collapsed .inspector-toggle {
 .header-session-title {
   overflow: hidden;
   max-width: 220px;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 500;
+  color: var(--dsw-alias-label-primary, var(--text));
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2844,4 +2893,281 @@ body.inspector-collapsed .inspector-toggle {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---- dsh StatsLine：输入卡下方居中统计行 ---- */
+.stats-line {
+  flex: none;
+  margin: 0 auto;
+  padding: 4px 32px 0;
+  max-width: var(--dsw-chat-content, 748px);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stats-line[hidden] {
+  display: none;
+}
+
+/* ---- dsh 消息操作行：时间 + 复制图标，hover 显现 ---- */
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.message:hover .message-actions,
+.message-actions:focus-within {
+  opacity: 1;
+}
+
+.message-actions[data-role="user"] {
+  justify-content: flex-end;
+}
+
+.message-clock {
+  color: var(--dsw-alias-label-quaternary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.message-copy {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  padding: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-quaternary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.message-copy:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* ---- dsh takeover dock：审批/提问卡停在输入卡上方 ---- */
+.takeover-dock {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.takeover-dock:empty {
+  display: none;
+}
+
+.takeover-dock .permission-event,
+.takeover-dock .user-question-event {
+  width: 100%;
+  max-width: 780px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 16px;
+  padding: 10px 12px;
+  background: #fff;
+  box-shadow: rgba(0, 0, 0, 0.02) 0 4px 12px 0, rgba(0, 0, 0, 0.04) 0 2px 8px 0;
+}
+
+.takeover-dock .permission-event.pending {
+  border-color: var(--dsw-static-amber-400, #f59e0b);
+}
+
+.takeover-dock .permission-detail {
+  max-height: none;
+}
+
+/* ---- dsh 头部后台任务下拉 ---- */
+.header-bg-tasks {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-quaternary);
+  font-size: 12px;
+  line-height: 20px;
+  cursor: pointer;
+  position: relative;
+}
+
+.header-bg-tasks:hover {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.header-bg-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  min-width: 280px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  padding: 6px;
+  background: #fff;
+  box-shadow: rgba(0, 0, 0, 0.08) 0 8px 24px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.header-bg-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.header-bg-item:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.header-bg-item code {
+  color: var(--dsw-static-deepseek-500);
+  font-size: 11px;
+}
+
+.header-bg-item span {
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- dsh 侧栏：删除按钮 hover 显现（去常驻视觉噪音） ---- */
+.session-item .session-delete {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.session-item:hover .session-delete,
+.session-item.active .session-delete {
+  opacity: 0.6;
+}
+
+.session-item .session-delete:hover {
+  opacity: 1;
+}
+
+.session-more[hidden] {
+  display: none;
+}
+
+/* ---- dsh composer：幽灵圆按钮（重生成）与权限触发形态 ---- */
+.round-button.ghost {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 999px;
+  padding: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.round-button.ghost:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 权限选择器 → dsh「🛡 Full access ▾」触发器形态 */
+.toolbar-select.permission-select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.toolbar-select.permission-select:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.toolbar-select.permission-select .select-icon {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.toolbar-select.permission-select::after {
+  content: "▾";
+  color: var(--dsw-alias-label-quaternary);
+  font-size: 10px;
+}
+
+/* dsh 头部模式项：◎ 图标前缀 */
+.header-mode::before {
+  content: "◎ ";
+  color: var(--dsw-alias-label-quaternary);
+}
+
+/* dsh 头部模式项：◎ 图标前缀 */
+.header-mode::before {
+  content: "◎ ";
+  color: var(--dsw-alias-label-quaternary);
+}
+
+/* stream-state 在右下：收敛为小灰字 */
+.toolbar-right .stream-state {
+  font-size: 11px;
+  color: var(--dsw-alias-label-quaternary);
+  margin-right: 4px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* dsh 工作区分组头：文件夹图标 + 名称 + 尾部展开箭头（无计数胶囊） */
+.session-group-head .folder-icon {
+  flex: none;
+  width: 16px;
+  color: var(--dsw-alias-label-quaternary);
+  font-size: 12px;
+  text-align: center;
+}
+
+.session-group-head.active .folder-icon {
+  color: var(--dsw-static-deepseek-500);
+}
+
+.session-group-head em {
+  flex: none;
+  margin-left: auto;
+  color: var(--dsw-alias-label-quaternary);
+  font-size: 10px;
+  font-style: normal;
+}
+
+/* 选中行不显示删除钮（仅 hover） */
+.session-item.active .session-delete {
+  opacity: 0;
+}
+
+.session-item.active:hover .session-delete {
+  opacity: 0.6;
+}
+
+/* 盾牌图标：单色描边（dsh 图标语言，非彩色 emoji） */
+.toolbar-select.permission-select .shield-icon {
+  color: var(--dsw-alias-label-secondary);
+  flex: none;
 }
