@@ -2064,3 +2064,26 @@ api 就不能再拆了吗？拆。
 [x] 视觉复验：85%→四轮 diff 逐项消差；252 后端 + 23 前端测试绿
 [x] 提交推送 d095fb0
 ------ todo-list end at 2026/09/03/15:40:00 -----
+
+------ todo-list begin at 2026/09/03 16:52:55 -----
+用户请求原文：改了给我，直接用他们的框架来做，哪还有这么原始的直接操作js源码的
+
+[] 脚手架 frontend/：Vite + React 18 + TypeScript（与 dsh 同框架）
+[] 移植全部 UI：侧栏/会话头/消息流/工具行家族/takeover/composer/统计行/设置
+[] NDJSON 流式客户端 React 化
+[] 构建产物接入 FastAPI 静态服务
+[] 前端测试改写 + 后端回归
+[] 浏览器实测 + 提交
+
+------ todo-list begin at 2026/09/03/16:53:00 -----
+用户请求原文：改了给我，直接用他们的框架来做，哪还有这么原始的直接操作js源码的
+
+[x] 脚手架 frontend/：Vite 6 + React 18 + TypeScript（与 dsh 同技术栈）
+[x] 组件化移植：App/Sidebar/ChatHeader/MessageView/ToolEventRow/Takeover（Permission/Question）/TraceView/StatsLine/Markdown/CopyButton/Disclosure
+[x] NDJSON 流式协议 React 化（assistant_delta/tool_start|output|done/permission_request/runtime_event/queued/error + isComposing 拦截）
+[x] 会话恢复：runtime-state timeline 折叠（message/tool/permission/question/checkpoint 五类条目）+ 待审批停靠 takeover dock
+[x] 样式迁移：tokens.css（dsw 设计令牌）+ app.css（全部既有规则 + React 结构适配）
+[x] 后端：system.py 去 app.js mtime 版本参数（Vite hash 自带破缓存）；index 测试改 Vite 断言
+[x] 测试：后端 252 全绿 + React 冒烟测试（结构/产物/锚点/tsc）；旧 vanilla 前端测试退役归档 legacy-static/
+[x] 浏览器实测：空态/会话恢复/发消息流式/权限位/模型位/统计行 全通过；提交推送 cd80dd5
+------ todo-list end at 2026/09/03/17:50:00 -----
