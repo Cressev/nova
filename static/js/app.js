@@ -2064,16 +2064,27 @@ function groupSessionsByProject(sessions) {
   return groups.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
 }
 
+function relativeTime(iso) {
+  if (!iso) return "";
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return "";
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return "刚刚";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}分钟`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}小时`;
+  if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)}天`;
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
 function renderSessionItem(session) {
     const item = document.createElement("button");
     item.type = "button";
     item.className = `session-item ${session.id === state.selectedSessionId ? "active" : ""}`;
     item.innerHTML = `
-      <span class="session-main">
-        <strong>${shortText(session.title)}</strong>
-        <small>${shortText(workspaceDisplayName(session.workspace), 28)}</small>
-        <span>${formatTime(session.updated_at)}</span>
-      </span>
+      <span class="session-dot" aria-hidden="true"></span>
+      <strong>${shortText(session.title)}</strong>
+      <span class="session-time">${relativeTime(session.updated_at)}</span>
       <button class="session-delete" type="button" aria-label="删除对话" title="删除对话">×</button>
     `;
     item.addEventListener("click", () => selectSession(session));
@@ -2096,7 +2107,23 @@ async function deleteSession(sessionId) {
   await loadSessions();
 }
 
+
+
+function updateChatHeader(session) {
+  const header = document.getElementById("chat-header");
+  if (!header) return;
+  const hero = document.getElementById("empty-hero");
+  const blank = !session || !session.hasMessages;
+  header.hidden = Boolean(blank || !session);
+  if (session) {
+    const titleEl = document.getElementById("header-session-title");
+    if (titleEl) titleEl.textContent = session.title || "新会话";
+  }
+  if (hero) hero.hidden = Boolean(session && session.hasMessages);
+}
 async function selectSession(session) {
+  const headerTitle = document.getElementById("header-session-title");
+  if (headerTitle) headerTitle.textContent = session.title || "新会话";
   if (session.workspace && session.workspace !== projectRootEl.textContent.trim()) {
     streamStateEl.textContent = "正在切换到历史线程所属项目";
     try {
@@ -3664,12 +3691,15 @@ if (workspaceEntryEl && workspaceOpenEl) {
   workspaceEntryEl.addEventListener("click", () => workspaceOpenEl.click());
 }
 
-// 空状态 hero：会话有消息时隐藏，清空时回归（dsh 空态引导页行为）
+// 空状态 hero：会话有消息时隐藏，清空时回归（dsh 空态引导页行为）；
+// 同时联动 dsh 会话头——有消息的会话展示标题行 + 标签页。
 function syncEmptyHero() {
   if (!emptyHeroEl || !messagesEl) return;
   const hasContent = messagesEl.childElementCount > 0;
   emptyHeroEl.hidden = hasContent;
   emptyHeroEl.style.display = hasContent ? "none" : "";
+  const header = document.getElementById("chat-header");
+  if (header) header.hidden = !hasContent;
 }
 
 if (emptyHeroEl && messagesEl) {
@@ -4667,6 +4697,112 @@ async function loadCommands() {
 loadHealth();
 loadCommands();
 loadWorkspaceStatus({ quick: true, includePicker: false });
+
+// dsh 标签页：对话 / 轨迹（runtime events 时间线视图）
+(function bindHeaderTabs() {
+  const tabs = document.querySelectorAll(".header-tab");
+  if (!tabs.length) return;
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      tabs.forEach((t) => {
+        t.classList.toggle("active", t === tab);
+        t.setAttribute("aria-selected", String(t === tab));
+      });
+      const isChat = tab.dataset.tab === "chat";
+      messagesEl.style.display = isChat ? "" : "none";
+      const traceView = document.getElementById("trace-view");
+      if (!isChat && !traceView) {
+        renderTraceView();
+      } else if (traceView) {
+        traceView.style.display = isChat ? "none" : "";
+      }
+      if (!isChat) renderTraceView(true);
+    });
+  });
+})();
+
+async function renderTraceView(refresh = false) {
+  let view = document.getElementById("trace-view");
+  if (!view) {
+    view = document.createElement("section");
+    view.id = "trace-view";
+    view.className = "trace-view";
+    messagesEl.parentElement.insertBefore(view, messagesEl.nextSibling);
+  }
+  view.style.display = "";
+  if (!refresh && view.childElementCount > 0) return;
+  view.innerHTML = '<p class="trace-loading">读取轨迹…</p>';
+  try {
+    const events = await api(`/api/chat/sessions/${encodeURIComponent(state.selectedSessionId)}/trace`);
+    const items = Array.isArray(events) ? events : (events.items || []);
+    view.innerHTML = items.length === 0
+      ? '<p class="trace-loading">本会话暂无轨迹事件</p>'
+      : `<ol class="trace-list">${items.slice().reverse().map((e) => `
+          <li>
+            <span class="trace-time">${escapeHtml((e.created_at || "").slice(11, 19))}</span>
+            <span class="trace-type">${escapeHtml(e.event_type || e.type || "")}</span>
+            <span class="trace-title">${escapeHtml(e.title || e.message || "")}</span>
+          </li>`).join("")}</ol>`;
+  } catch (error) {
+    view.innerHTML = `<p class="trace-loading">轨迹读取失败：${error instanceof Error ? error.message : "未知错误"}</p>`;
+  }
+}
+
+// dsh Session log：下载本会话完整事件日志
+(function bindSessionLog() {
+  const button = document.getElementById("session-log-open");
+  if (!button) return;
+  button.addEventListener("click", async () => {
+    if (!state.selectedSessionId) {
+      streamStateEl.textContent = "尚无会话可导出";
+      return;
+    }
+    try {
+      const events = await api(`/api/chat/sessions/${encodeURIComponent(state.selectedSessionId)}/trace`);
+      const items = Array.isArray(events) ? events : (events.items || []);
+      const blob = new Blob([JSON.stringify(items, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `nova-session-log-${state.selectedSessionId}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      streamStateEl.textContent = `导出失败：${error instanceof Error ? error.message : "未知错误"}`;
+    }
+  });
+})();
+
+// dsh hero 模式触发器：跟随权限下拉展示当前模式
+(function bindHeroMode() {
+  const trigger = document.getElementById("hero-mode-trigger");
+  const label = document.getElementById("hero-mode-label");
+  const permission = document.getElementById("permission-select");
+  if (!trigger || !label || !permission) return;
+  const names = { read_only: "只读模式", ask: "询问模式", workspace_write: "标准模式", plan: "计划模式", bypass: "完全访问" };
+  const sync = () => { label.textContent = names[permission.value] || "标准模式"; };
+  permission.addEventListener("change", sync);
+  sync();
+  trigger.addEventListener("click", () => permission.focus());
+})();
+
+// dsh 侧栏搜索：过滤会话行
+(function bindSessionSearch() {
+  const toggle = document.getElementById("session-search-toggle");
+  const input = document.getElementById("session-search");
+  if (!toggle || !input) return;
+  toggle.addEventListener("click", () => {
+    input.hidden = !input.hidden;
+    if (!input.hidden) input.focus();
+  });
+  input.addEventListener("input", () => {
+    const keyword = input.value.trim().toLowerCase();
+    for (const item of sessionListEl.querySelectorAll(".session-item")) {
+      const title = item.querySelector("strong")?.textContent?.toLowerCase() || "";
+      item.style.display = !keyword || title.includes(keyword) ? "" : "none";
+    }
+  });
+})();
 loadSessions();
 scheduleRuntimeShellLoad();
 activateInspectorPanel("workspace");

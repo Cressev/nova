@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Nova</title>
     <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="%2318212f"/><text x="32" y="41" font-size="30" font-family="Arial" font-weight="700" text-anchor="middle" fill="white">N</text></svg>' />
-    <link rel="stylesheet" href="/static/css/styles.css" />
+    <link rel="stylesheet" href="/static/css/styles.css?v=3" />
   </head>
   <body>
     <!-- dsh 形态：单侧栏 + 对话主区；砍掉右栏 Inspector / 模式卡 / 技能卡 / 状态卡 / 状态线 -->
@@ -17,7 +17,6 @@
             <h1>Nova</h1>
           </div>
           <span class="version-badge" id="nova-version">nova</span>
-          <button id="theme-toggle" class="icon-ghost theme-toggle" type="button" aria-label="切换明暗主题" title="切换明暗主题">◐</button>
           <button id="sidebar-toggle" class="icon-ghost collapse-toggle" type="button" aria-label="收起侧栏">‹</button>
         </header>
 
@@ -29,8 +28,12 @@
         <div class="sidebar-group">
           <div class="group-label">
             <span>工作区</span>
-            <button id="workspace-open" class="icon-ghost" type="button" aria-label="切换工作区" title="切换工作区">⇄</button>
+            <div class="group-actions">
+              <button id="session-search-toggle" class="icon-ghost" type="button" aria-label="搜索会话" title="搜索会话">⌕</button>
+              <button id="workspace-open" class="icon-ghost" type="button" aria-label="切换工作区" title="切换工作区">⌗</button>
+            </div>
           </div>
+          <input id="session-search" class="session-search" type="search" placeholder="搜索会话…" hidden />
           <button class="workspace-entry" type="button" data-workspace-open title="切换工作区">
             <span class="workspace-icon" aria-hidden="true">▭</span>
             <span id="project-name">读取中</span>
@@ -52,11 +55,41 @@
 
       <main class="main">
         <div class="main-inner">
+          <!-- dsh 会话头：标题行（会话名 + 模式 + Session log）+ 标签页；空会话隐藏 -->
+          <header id="chat-header" class="chat-header" hidden>
+            <div class="header-title-row">
+              <div class="header-title-cluster">
+                <span id="header-session-title" class="header-session-title">新会话</span>
+                <span class="header-mode" id="header-mode">标准模式</span>
+              </div>
+              <div class="header-utilities">
+                <button id="session-log-open" class="session-log-button" type="button">Session log ⤓</button>
+              </div>
+            </div>
+            <div class="header-tabs" role="tablist">
+              <button class="header-tab active" type="button" role="tab" aria-selected="true" data-tab="chat">对话</button>
+              <button class="header-tab" type="button" role="tab" aria-selected="false" data-tab="trace">轨迹</button>
+            </div>
+          </header>
           <!-- 空状态 Hero：新会话时展示 -->
           <section id="empty-hero" class="empty-hero">
-            <div class="hero-mark" aria-hidden="true"><span>N</span></div>
-            <h2 class="hero-title">探索未至之境</h2>
-            <p class="hero-sub">Nova 个人开发 Agent · 本地网关</p>
+            <div class="hero-headline">
+              <div class="hero-mark" aria-hidden="true"><span>N</span></div>
+              <h2 class="hero-title">探索未至之境</h2>
+              <span class="hero-preview-badge">预览版</span>
+            </div>
+            <div class="hero-selector-row">
+              <button class="hero-workspace" type="button" data-workspace-open>
+                <span class="hero-selector-icon" aria-hidden="true">▤</span>
+                <span id="hero-workspace-name">读取中</span>
+                <span class="hero-selector-chevron" aria-hidden="true">▾</span>
+              </button>
+              <button class="hero-workspace" type="button" id="hero-mode-trigger">
+                <span class="hero-selector-icon" aria-hidden="true">⚙</span>
+                <span id="hero-mode-label">标准模式</span>
+                <span class="hero-selector-chevron" aria-hidden="true">▾</span>
+              </button>
+            </div>
           </section>
 
           <section id="messages" class="messages"></section>
@@ -70,6 +103,7 @@
             ></textarea>
             <div class="composer-toolbar">
               <div class="toolbar-left">
+                <button id="composer-add" class="composer-add" type="button" aria-label="添加附件" title="添加附件">＋</button>
                 <span id="stream-state" class="stream-state" aria-live="polite"></span>
               </div>
               <div class="toolbar-right">
@@ -105,6 +139,18 @@
         <div class="dialog-title">
           <strong>设置</strong>
           <button id="settings-close" type="button" aria-label="关闭">×</button>
+        </div>
+        <div class="settings-section">
+          <button class="settings-section-head" type="button" data-settings-section="appearance">
+            <span>外观</span>
+            <em>明暗主题</em>
+          </button>
+          <div class="settings-list">
+            <button id="theme-toggle" class="sidebar-foot-button" type="button">
+              <span class="foot-icon" aria-hidden="true">◐</span>
+              <span class="foot-label">切换明暗主题</span>
+            </button>
+          </div>
         </div>
         <div class="settings-section">
           <button class="settings-section-head" type="button" data-settings-section="runtime">
