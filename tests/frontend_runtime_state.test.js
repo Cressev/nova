@@ -46,8 +46,8 @@ assert(
   "后台 shell 工具完成后应主动刷新 Processes 面板和状态线",
 );
 assert(
-  app.includes('["后台任务", data.background && jobId ? shortId(jobId) : ""]'),
-  "工具卡元信息应展示后台任务 job id，方便用户从工具卡追到 Processes 面板",
+  app.includes("syncBackgroundProcessFromToolDone"),
+  "后台 shell 工具完成后应同步进程面板（dsh 行式下 job 追踪走 Processes 面板，不做行内元数据卡）",
 );
 assert(
   app.includes("process.call_id") && app.includes("shortId(process.call_id)"),

@@ -102,6 +102,89 @@ class SessionRunner:
             "result_json": result_json,
         }
 
+    async def answer_question(self, approval_id: str, answers: dict) -> dict | None:
+        """ask_user_question 的回答链路（dsh 语义）。
+
+        回答合成工具结果后，模型基于该结果继续本轮：续答复用 agent 的
+        tool-result 应答形态（历史 + 结果提示词），产物落库并随响应返回，
+        前端原地渲染，不需要用户再发一条消息。
+        """
+        item = self.deps.agent_sessions.answer_pending_approval(approval_id, answers)
+        if item is None:
+            return None
+        events, result_json = await self.deps.tool_orchestrator_factory().resume_approved_tool(
+            item.call_id,
+            item.tool,
+            item.arguments,
+        )
+        build_event = self.deps.event_builder_for_existing_turn(
+            item.session_id,
+            item.turn_id,
+        )
+        answered_event = build_event(
+            "permission.approved",
+            category="permission",
+            phase="approved",
+            title="ask_user_question (answered)",
+            message="用户已回答问题，回答将作为工具结果继续本轮。",
+            tool=item.tool,
+            call_id=item.call_id,
+            arguments=item.arguments,
+            data={"permission": item.permission, "risk": item.risk},
+        )
+        self._persist_existing_runtime_event(answered_event)
+        runtime_events: list[dict[str, Any]] = [answered_event]
+        for event in events:
+            runtime_event = self.deps.runtime_event_from_agent_event(event, build_event)
+            if runtime_event is None:
+                continue
+            self._persist_existing_runtime_event(runtime_event)
+            runtime_events.append(runtime_event)
+
+        # 模型续答：工具结果（含答案）作为提示喂给模型，产物作为 assistant 消息落库。
+        assistant_message: dict[str, Any] | None = None
+        runtime = self.deps.runtime_factory()
+        if runtime.provider.is_configured():
+            history = [
+                message
+                for message in self.deps.store.list_chat_messages(item.session_id)
+                if message.role != ChatRole.ASSISTANT or message.content.strip()
+            ]
+            continuation = ChatMessage(
+                session_id=item.session_id,
+                role=ChatRole.USER,
+                content=(
+                    "你刚才调用了 ask_user_question 向用户提问，用户已经回答。"
+                    "请基于真实工具结果继续完成本轮任务，中文直接回答，不要编造，"
+                    "不要再输出 <tool_call>。\n\n工具结果 JSON：\n" + str(result_json)
+                ),
+            )
+            parts: list[str] = []
+            try:
+                async for event in runtime.provider.stream([*history, continuation]):
+                    if isinstance(event, str):
+                        parts.append(event)
+            except ProviderError as error:
+                parts = [f"续答失败：{error}"]
+            text = "".join(parts).strip() or "（模型没有返回续答内容）"
+            message = ChatMessage(
+                session_id=item.session_id,
+                role=ChatRole.ASSISTANT,
+                content=text,
+            )
+            self.deps.store.add_chat_message(message)
+            assistant_message = message.model_dump(mode="json")
+
+        return {
+            "ok": True,
+            "status": "answered",
+            "approval": item.as_dict(),
+            "events": events,
+            "runtime_events": runtime_events,
+            "result_json": result_json,
+            "message": assistant_message,
+        }
+
     def deny_tool_call(self, approval_id: str, *, reason: str) -> dict | None:
         """拒绝 pending tool call，并把拒绝结果写回会话上下文。"""
 

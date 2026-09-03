@@ -2512,9 +2512,56 @@ function updateMessageMeta(node, message) {
     : "生成中";
 }
 
-function toolPurposeText(event) {
-  const purpose = event.data?.annotation || event.annotation || event.title || "";
-  return String(purpose || "").trim() || "工具执行中";
+/* ---- dsh ToolRow 行模型（tool-call-model.ts 对齐）----
+   变体 → 标题/摘要键/展开块；running 扫光；error 摘要=失败首行。 */
+const TOOL_ROW_VARIANTS = {
+  bash: "bash", pwsh: "bash",
+  read: "read", read_image: "read", web_fetch: "read", skill: "read",
+  web_search: "search", grep: "search", glob: "search", session_search: "search",
+  write: "write", edit: "edit",
+};
+const TOOL_VARIANT_TITLES = {
+  search: "Search", read: "Read", bash: "Bash", write: "Write", edit: "Edit", others: "Tool call",
+};
+/* 工具特化标题（dsh TOOL_TITLES + 检索行/网络行细化） */
+const TOOL_ROW_TITLES = {
+  grep: "Grep", glob: "Glob",
+  web_search: "Search", web_fetch: "Fetch",
+  pwsh: "Pwsh",
+  ask_user_question: "Ask",
+};
+const TOOL_SUMMARY_KEYS = {
+  bash: ["description", "command"],
+  read: ["path", "file_path", "url"],
+  search: ["query", "pattern", "url"],
+  write: ["path", "file_path"],
+  edit: ["path", "file_path"],
+  others: [],
+};
+function classifyToolVariant(tool) {
+  return TOOL_ROW_VARIANTS[String(tool || "")] || "others";
+}
+function firstLine(text) {
+  const nl = String(text || "").indexOf("\n");
+  return nl === -1 ? String(text || "") : String(text || "").slice(0, nl);
+}
+function deriveToolSummary(tool, args = {}, annotation = null) {
+  if (typeof annotation === "string" && annotation !== "") return firstLine(annotation);
+  const variant = classifyToolVariant(tool);
+  const keys = TOOL_SUMMARY_KEYS[variant] || [];
+  for (const key of keys) {
+    const value = args[key];
+    if (typeof value === "string" && value !== "") return firstLine(value);
+  }
+  for (const value of Object.values(args)) {
+    if (typeof value === "string" && value !== "") return firstLine(value);
+  }
+  return "";
+}
+function toolRowFilePath(tool, args = {}) {
+  if (!["read", "write", "edit"].includes(classifyToolVariant(tool))) return null;
+  const value = args.file_path || args.path;
+  return typeof value === "string" && value !== "" ? value : null;
 }
 
 function toolCallId(event = {}) {
@@ -2541,8 +2588,16 @@ function findPermissionNodeByCallId(callId) {
 function bindToolRowToggle(node) {
   const head = node.querySelector(".tool-row");
   if (!head) return;
+  const hasBody = () => {
+    const wrap = node.querySelector(".tool-body-wrap");
+    return Boolean(wrap && wrap.innerHTML.trim() !== "");
+  };
   const toggle = () => {
-    const open = node.classList.toggle("expanded");
+    if (!hasBody()) return;
+    const wrap = node.querySelector(".tool-body-wrap");
+    const open = !node.classList.contains("expanded");
+    node.classList.toggle("expanded", open);
+    if (wrap) wrap.hidden = !open;
     head.setAttribute("aria-expanded", String(open));
   };
   head.addEventListener("click", (event) => {
@@ -2674,14 +2729,18 @@ const TOOL_DISPLAY_NAMES = {
 };
 
 // dsh ToolRow 五件套行：[16px 图标位] [工具名] [2px 分隔点] [摘要 flex 截断] [14px chevron]
-function renderToolRowHead(tool, summary, extra = "") {
-  const name = String(tool || "tool");
-  const label = TOOL_DISPLAY_NAMES[name] || name.replaceAll("_", " ");
+function renderToolRowHead(tool, summary, state = "running") {
+  const variant = classifyToolVariant(tool);
+  const label = TOOL_ROW_TITLES[tool] || TOOL_VARIANT_TITLES[variant];
+  const isError = state === "error";
+  const isStopped = state === "stopped";
+  const leading = toolLeadingIcon(tool);
+  const summaryClass = `tool-summary${isError ? " tool-summary-error" : ""}`;
   return `<div class="tool-row" role="button" tabindex="0" aria-expanded="false">
-    <span class="tool-leading">${toolLeadingIcon(tool)}</span>
+    <span class="tool-leading" aria-hidden="true">${leading}</span>
     <span class="tool-title">${escapeHtml(label)}</span>
     <span class="tool-sep" aria-hidden="true"></span>
-    <span class="tool-summary">${escapeHtml(summary || "")}${extra}</span>
+    <span class="${summaryClass}">${escapeHtml(summary || "")}</span>
     <svg class="tool-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${DSH_TOOL_ICONS.chevron}</svg>
   </div>`;
 }
@@ -2692,26 +2751,23 @@ function appendToolEvent(event, beforeNode = null, options = {}) {
   const existingPermissionNode = findPermissionNodeByCallId(callId);
   const node = existingToolNode || existingPermissionNode || document.createElement("article");
   const wasInserted = Boolean(node.parentElement);
+  const args = event.arguments || {};
+  const summary = deriveToolSummary(event.tool, args, event.data?.annotation);
   node.className = `tool-event running${existingPermissionNode && !existingToolNode ? " approval-linked" : ""}`;
   node.dataset.callId = callId;
   node.dataset.tool = event.tool || "";
-  node.dataset.arguments = JSON.stringify(event.arguments || {}, null, 2);
-  node.dataset.argumentsRaw = JSON.stringify(event.arguments || {});
+  node.dataset.variant = classifyToolVariant(event.tool);
+  node.dataset.argumentsRaw = JSON.stringify(args);
   node.dataset.toolData = JSON.stringify(event.data || {});
   node.innerHTML = `
-    ${renderToolRowHead(event.tool, toolPurposeText(event))}
-    <div class="tool-event-head" hidden>${''}</div>
-    ${renderToolMetadata(event.data || {})}
-    ${renderToolKeyParams(event.arguments || {})}
-    <div class="tool-actions">
-      <button class="tool-cancel" type="button" data-action="cancel-tool">取消</button>
+    ${renderToolRowHead(event.tool, summary, "running")}
+    <div class="tool-body-wrap" hidden>
+      <div class="tool-running-actions">
+        <button type="button" data-action="cancel-tool">取消执行</button>
+      </div>
     </div>
-    <details class="tool-args">
-      <summary>调用参数</summary>
-      <pre>${escapeHtml(node.dataset.arguments)}</pre>
-    </details>
   `;
-  node.querySelector('[data-action="cancel-tool"]').addEventListener("click", () => cancelToolCall(node));
+  node.querySelector('[data-action="cancel-tool"]')?.addEventListener("click", () => cancelToolCall(node));
   bindToolRowToggle(node);
   if (!wasInserted) {
     if (beforeNode?.parentElement === messagesEl) {
@@ -2738,17 +2794,13 @@ async function cancelToolCall(node) {
   }
   try {
     await api(`/api/tool-calls/${encodeURIComponent(callId)}/cancel`, { method: "POST" });
-    node.className = "tool-event failed";
-    const status = node.querySelector(".tool-event-head em");
-    if (status) {
-      status.textContent = "已取消";
-    }
-    streamStateEl.textContent = "已请求取消工具调用";
-    renderRuntimeOverviewFromDom("cancelled");
+    const actions = node.querySelector(".tool-running-actions");
+    if (actions) actions.remove();
+    node.querySelector(".tool-row")?.setAttribute("aria-expanded", "false");
   } catch (error) {
     if (button) {
       button.disabled = false;
-      button.textContent = "取消";
+      button.textContent = "取消执行";
     }
     streamStateEl.textContent = `取消失败：${error instanceof Error ? error.message : "未知错误"}`;
   }
@@ -2783,31 +2835,25 @@ function finishToolEvent(node, event, options = {}) {
   if (!node) {
     node = findToolNodeByCallId(toolCallId(event)) || findPermissionNodeByCallId(toolCallId(event)) || appendToolEvent(event);
   }
-  node.className = `tool-event ${event.ok ? "ok" : "failed"}`;
-  const args = node.dataset.arguments || "{}";
-  const rawArgs = node.dataset.argumentsRaw || args;
   const data = event.data || {};
-  const retryButton = !event.ok && data.retryable
-    ? '<button class="tool-retry" type="button" data-action="retry-tool">重试</button>'
-    : "";
-  const statusLabel = event.data?.status === "cancelled" ? "已取消" : (event.ok ? "完成" : "失败");
-  const failSummary = !event.ok && data.failure_reason ? String(data.failure_reason).split("\n")[0].slice(0, 120) : "";
-  const doneSummary = failSummary || toolPurposeText(event) || "";
-  node.innerHTML = `
-    ${renderToolRowHead(event.tool, doneSummary)}
-    <div class="tool-event-head" hidden>${''}</div>
-    ${renderToolMetadata(data)}
-    ${renderToolKeyParams(parseToolArguments(rawArgs))}
-    ${renderHookContexts(data.hook_contexts)}
-    ${data.failure_reason ? `<div class="tool-failure">${escapeHtml(data.failure_reason)}</div>` : ""}
-    <div class="tool-actions">
-      ${retryButton}
-    </div>
-    ${renderDiffPreview(data.diff)}
-    ${renderToolExecutionDetails(args, event.output || "", data)}
-  `;
-  node.dataset.argumentsRaw = rawArgs;
+  const cancelled = data.status === "cancelled";
+  const state = event.ok ? "ok" : (cancelled ? "stopped" : "error");
+  const args = parseToolArguments(node.dataset.argumentsRaw || "{}");
+  const output = String(event.output || "");
+  const failureLine = state === "error" && data.failure_reason ? firstLine(data.failure_reason) : "";
+  const summary = failureLine || deriveToolSummary(event.tool, args, data.annotation);
+
+  node.className = `tool-event ${state}`;
   node.dataset.toolData = JSON.stringify(data);
+  const retryable = state === "error" && data.retryable;
+  node.innerHTML = `
+    ${renderToolRowHead(event.tool, summary, state)}
+    <div class="tool-body-wrap" hidden>
+      ${renderToolBody(event.tool, args, output, data, state)}
+      ${renderHookContexts(data.hook_contexts)}
+      ${retryable ? '<div class="tool-running-actions"><button type="button" data-action="retry-tool">重试</button></div>' : ""}
+    </div>
+  `;
   node.querySelector('[data-action="retry-tool"]')?.addEventListener("click", () => retryToolCall(node));
   bindToolRowToggle(node);
   syncBackgroundProcessFromToolDone(data);
@@ -2817,31 +2863,90 @@ function finishToolEvent(node, event, options = {}) {
   renderRuntimeOverviewFromDom(state.sending || state.sessionActive ? "running" : "completed");
 }
 
-function renderToolMetadata(data = {}) {
-  const spec = data.spec || {};
-  const job = data.job || {};
-  const jobId = data.job_id || job.id || "";
-  const items = [
-    ["权限", spec.permission || data.permission],
-    ["风险", spec.risk],
-    ["分类", spec.category],
-    ["后台任务", data.background && jobId ? shortId(jobId) : ""],
-    ["耗时", typeof data.duration_ms === "number" ? `${data.duration_ms} ms` : ""],
-  ].filter(([, value]) => value !== undefined && value !== null && value !== "");
-  if (items.length === 0 && !spec.schema) {
-    return "";
-  }
-  const meta = items.map(([label, value]) => `
-    <div>
-      <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(String(value))}</strong>
-    </div>
-  `).join("");
-  const schema = spec.schema
-    ? `<details class="tool-schema"><summary>输入 Schema</summary><pre>${escapeHtml(JSON.stringify(spec.schema, null, 2))}</pre></details>`
-    : "";
-  return `<div class="tool-meta-grid">${meta}</div>${schema}`;
+/* ---- dsh 展开体：按变体路由到块族（Terminal/Diff/Read/Search/Web/IN-OUT）---- */
+function renderToolBody(tool, args, output, data, state) {
+  const variant = classifyToolVariant(tool);
+  const name = String(tool || "");
+  if (name === "bash" || name === "pwsh") return renderTerminalBlockBody(args, output);
+  if (variant === "write" || variant === "edit") return renderDiffBlockBody(data.diff, output, state);
+  if (variant === "read") return renderReadBlockBody(output, state);
+  if (variant === "search") return renderSearchBlockBody(name, output, data, state);
+  if (name === "web_fetch" || name === "web_search") return renderWebBlockBody(output, data, state);
+  return renderIoCardBody(args, output, state);
 }
+
+/* 终端块（dsh TerminalBlock）：命令横幅固定 + 输出区内滚动（224px cap）。 */
+function renderTerminalBlockBody(args, output) {
+  const command = String(args.command || "");
+  const text = output && output.trim() ? output : "(no output)";
+  return `<div class="terminal-block" data-terminal="1">
+    <div class="terminal-banner"><span class="terminal-dollar" aria-hidden="true">$</span><code>${escapeHtml(command)}</code></div>
+    <div class="terminal-output"><pre>${escapeHtml(text)}</pre></div>
+  </div>`;
+}
+
+/* Diff 块（dsh DiffBlock）：+/- 行 + 文件级增删统计。 */
+function renderDiffBlockBody(diff, output, state) {
+  if (!diff || !Array.isArray(diff.files) || diff.files.length === 0) {
+    return renderIoCardBody({}, output, state);
+  }
+  const stat = `+${diff.additions ?? 0} −${diff.deletions ?? 0}`;
+  const preview = String(diff.preview || "").split("\n").slice(0, 40)
+    .map((line) => {
+      const cls = line.startsWith("+") ? "diff-add" : line.startsWith("-") ? "diff-del" : "diff-ctx";
+      return `<span class="${cls}">${escapeHtml(line) || " "}</span>`;
+    }).join("");
+  return `<div class="diff-block">
+    <div class="diff-head">
+      <span class="diff-file">${escapeHtml(diff.files.join(", "))}</span>
+      <span class="diff-stat">${escapeHtml(stat)}</span>
+    </div>
+    <pre class="diff-lines">${preview}</pre>
+  </div>`;
+}
+
+/* Read 块（dsh ReadBlock）：等宽窗口承载 read 的行号信封文本。 */
+function renderReadBlockBody(output, state) {
+  const text = output && output.trim() ? output : state === "error" ? "" : "(empty)";
+  return `<div class="read-block"><pre>${escapeHtml(text)}</pre></div>`;
+}
+
+/* Search 块（dsh SearchBlock）：grep 分组匹配 / glob 路径列表；cap 的恢复定位脚注。 */
+function renderSearchBlockBody(tool, output, data, state) {
+  const text = output && output.trim() ? output : state === "error" ? "" : "(no matches)";
+  const recovery = data && typeof data.spill_path === "string" && data.spill_path
+    ? `<div class="search-recovery">Full output stored at ${escapeHtml(data.spill_path)}</div>`
+    : "";
+  return `<div class="search-block"><pre>${escapeHtml(text)}</pre></div>${recovery}`;
+}
+
+/* Web 块（dsh WebBlock）：引用来源列表（标题 + URL）。 */
+function renderWebBlockBody(output, data, state) {
+  const sources = Array.isArray(data?.sources) ? data.sources : Array.isArray(data?.results) ? data.results : [];
+  if (sources.length > 0) {
+    const items = sources.slice(0, 12).map((source) => {
+      const title = source.title || source.name || source.url || "";
+      const url = source.url || source.link || "";
+      return `<li><span class="web-title">${escapeHtml(title)}</span>${url ? `<a class="web-url" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(url)}</a>` : ""}</li>`;
+    }).join("");
+    return `<ol class="web-block">${items}</ol>`;
+  }
+  return `<div class="read-block"><pre>${escapeHtml(output || "")}</pre></div>`;
+}
+
+/* IN/OUT 卡（dsh ioCard）：IN=pretty args，OUT=结果；各段 150px 内滚，sticky 标签。 */
+function renderIoCardBody(args, output, state) {
+  const keys = Object.keys(args || {});
+  const input = keys.length > 0 ? JSON.stringify(args, null, 2) : null;
+  const hasOutput = output !== null && output !== undefined && String(output).trim() !== "";
+  if (!input && !hasOutput) return "";
+  return `<div class="io-card">
+    ${input ? `<div class="io-section"><span class="io-label">IN</span><span class="io-text">${escapeHtml(input)}</span></div>` : ""}
+    ${input && hasOutput ? `<span class="io-divider" aria-hidden="true"></span>` : ""}
+    ${hasOutput ? `<div class="io-section"><span class="io-label">OUT</span><span class="io-text"${state === "error" ? ' data-error=""' : ""}>${escapeHtml(String(output))}</span></div>` : ""}
+  </div>`;
+}
+
 
 function parseToolArguments(rawArgs) {
   try {
@@ -2851,45 +2956,7 @@ function parseToolArguments(rawArgs) {
   }
 }
 
-function renderToolKeyParams(args = {}) {
-  const entries = Object.entries(args)
-    .filter(([key, value]) => key !== "annotation" && value !== undefined && value !== null && value !== "")
-    .slice(0, 4);
-  if (entries.length === 0) {
-    return "";
-  }
-  return `
-    <div class="tool-key-params">
-      ${entries.map(([key, value]) => `
-        <span title="${escapeHtml(String(value))}">
-          <em>${escapeHtml(key)}</em>
-          <strong>${escapeHtml(shortText(String(value), 46))}</strong>
-        </span>
-      `).join("")}
-    </div>
-  `;
-}
 
-function renderToolExecutionDetails(args, output, data = {}) {
-  const stdout = data.stdout || data.output || output || "";
-  const stderr = data.stderr || "";
-  const resultJson = data.result_json || data.result || null;
-  return `
-    <details class="tool-args">
-      <summary>完整 args</summary>
-      <pre>${escapeHtml(args || "{}")}</pre>
-    </details>
-    <details class="tool-result">
-      <summary>stdout / stderr / result_json</summary>
-      <pre>${escapeHtml([
-        stdout ? `stdout:\n${shortText(String(stdout), 4000)}` : "",
-        stderr ? `stderr:\n${shortText(String(stderr), 4000)}` : "",
-        resultJson ? `result_json:\n${JSON.stringify(resultJson, null, 2)}` : "",
-        !stdout && !stderr && !resultJson ? "暂无结构化输出" : "",
-      ].filter(Boolean).join("\n\n"))}</pre>
-    </details>
-  `;
-}
 
 function syncBackgroundProcessFromToolDone(data = {}) {
   const job = data.job || {};
@@ -2918,19 +2985,6 @@ function renderHookContexts(contexts = []) {
   `;
 }
 
-function renderDiffPreview(diff) {
-  if (!diff || !Array.isArray(diff.files)) {
-    return "";
-  }
-  const files = diff.files.length > 0 ? diff.files.join(", ") : "未知文件";
-  const summary = `${files} · +${diff.additions || 0} / -${diff.deletions || 0}`;
-  return `
-    <details class="tool-diff-preview" open>
-      <summary>Diff preview：${escapeHtml(summary)}</summary>
-      <pre>${escapeHtml(shortText(diff.preview || "", 6000))}</pre>
-    </details>
-  `;
-}
 
 async function retryToolCall(node) {
   const tool = node.dataset.tool;
@@ -2984,15 +3038,21 @@ function appendToolOutput(node, event) {
   if (!node) {
     return;
   }
-  let output = node.querySelector(".tool-stream-output");
-  if (!output) {
-    output = document.createElement("pre");
-    output.className = "tool-stream-output";
-    node.appendChild(output);
+  let terminal = node.querySelector(".terminal-block");
+  if (!terminal) {
+    const wrap = node.querySelector(".tool-body-wrap");
+    if (!wrap) return;
+    const args = parseToolArguments(node.dataset.argumentsRaw || "{}");
+    wrap.hidden = false;
+    node.classList.add("expanded");
+    wrap.innerHTML = renderTerminalBlockBody(args, "");
+    terminal = wrap.querySelector(".terminal-block");
   }
-  const label = event.stream === "stderr" ? "stderr" : "stdout";
-  output.textContent += `[${label}] ${event.chunk || ""}`;
-  output.scrollTop = output.scrollHeight;
+  const outputArea = terminal.querySelector(".terminal-output pre");
+  if (!outputArea) return;
+  const label = event.stream === "stderr" ? "[stderr] " : "";
+  outputArea.textContent += (outputArea.textContent && !outputArea.textContent.endsWith("\n") ? "\n" : "") + label + (event.chunk || "");
+  terminal.querySelector(".terminal-output").scrollTop = outputArea.scrollHeight;
 }
 
 function appendUserQuestionEvent(event) {
@@ -3001,6 +3061,9 @@ function appendUserQuestionEvent(event) {
   const node = document.createElement("article");
   node.className = "user-question-event pending";
   node.dataset.callId = callId;
+  const headline = questions.length === 1
+    ? (questions[0].question || questions[0].header || "问题")
+    : `${questions.length} 个问题待回答`;
   const fields = questions.map((question, index) => {
     const id = question.id || `q${index + 1}`;
     const header = question.header ? `<div class="question-head">${escapeHtml(question.header)}</div>` : "";
@@ -3020,18 +3083,29 @@ function appendUserQuestionEvent(event) {
       </div>`;
   }).join("");
   node.innerHTML = `
-    <div class="permission-event-head">
-      <span>向用户提问</span>
-      <strong>${escapeHtml(event.title || "ask_user_question")}</strong>
-      <em>待回答</em>
+    <div class="tool-row permission-row" role="button" tabindex="0" aria-expanded="false">
+      <span class="tool-leading">${toolLeadingIcon("ask_user_question")}</span>
+      <span class="tool-title">Ask</span>
+      <span class="tool-sep" aria-hidden="true"></span>
+      <span class="tool-summary">${escapeHtml(headline)}</span>
+      <em class="permission-state">待回答</em>
     </div>
-    <p>${escapeHtml(event.message || "等待用户回答后继续。")}</p>
-    <div class="question-list">${fields}</div>
-    <div class="permission-actions">
-      <button type="button" data-action="answer">提交回答</button>
-      <small>回答会作为工具结果续跑该调用</small>
+    <div class="permission-detail" hidden>
+      <p>${escapeHtml(event.message || "等待用户回答后继续。")}</p>
+      <div class="question-list">${fields}</div>
+      <div class="permission-actions">
+        <button type="button" data-action="answer">提交回答</button>
+      </div>
     </div>
   `;
+  const rowHead = node.querySelector(".permission-row");
+  const detail = node.querySelector(".permission-detail");
+  rowHead.addEventListener("click", (clickEvent) => {
+    if (clickEvent.target.closest("button, input, label")) return;
+    const open = detail.hidden;
+    detail.hidden = !open;
+    rowHead.setAttribute("aria-expanded", String(open));
+  });
   node.querySelector('[data-action="answer"]').addEventListener("click", () => submitUserAnswers(node));
   messagesEl.appendChild(node);
   scrollMessagesToBottom();
@@ -3073,7 +3147,8 @@ async function submitUserAnswers(node) {
     });
     node.classList.remove("pending");
     node.classList.add("answered");
-    node.querySelector(".permission-event-head em").textContent = "已回答";
+    const answeredBadge = node.querySelector(".permission-state");
+    if (answeredBadge) answeredBadge.textContent = "已回答";
     const activeToolNodes = new Map();
     for (const evt of response.events || []) {
       if (evt.type === "tool_start") {
@@ -3083,10 +3158,14 @@ async function submitUserAnswers(node) {
         finishToolEvent(activeToolNodes.get(evt.call_id || evt.tool || "tool"), evt);
       }
     }
+    if (response.message) {
+      appendMessage(response.message);
+    }
     await Promise.all([loadRuntimeShell(), refreshStatusline()]);
-    streamStateEl.textContent = "回答已提交，Nova 继续执行";
+    streamStateEl.textContent = response.message ? "Nova 已根据你的回答继续" : "回答已提交";
   } catch (error) {
-    node.querySelector(".permission-event-head em").textContent = "提交失败";
+    const failBadge = node.querySelector(".permission-state");
+    if (failBadge) failBadge.textContent = "提交失败";
     node.querySelectorAll("button, input").forEach((element) => {
       element.disabled = false;
     });
@@ -3106,24 +3185,37 @@ function appendPermissionEvent(event, beforeNode = null, options = {}) {
   node.className = "permission-event pending";
   node.dataset.callId = callId;
   node.dataset.tool = event.tool || "";
+  /* dsh 行语言：图标位 + 标题（工具名）+ 分隔点 + 摘要（审批原因）+ 状态角标 */
+  const summary = deriveToolSummary(event.tool, event.arguments || {}) || event.message || "执行该工具前需要用户确认。";
   node.innerHTML = `
-    <div class="permission-event-head">
-      <span>${escapeHtml(event.permission || event.data?.permission || "审批")}</span>
-      <strong>${escapeHtml(event.title || `需要审批：${event.tool || "工具"}`)}</strong>
-      <em>待确认</em>
+    <div class="tool-row permission-row" role="button" tabindex="0" aria-expanded="false">
+      <span class="tool-leading">${toolLeadingIcon(event.tool)}</span>
+      <span class="tool-title">${escapeHtml(event.tool || "工具")}</span>
+      <span class="tool-sep" aria-hidden="true"></span>
+      <span class="tool-summary">${escapeHtml(summary)}</span>
+      <em class="permission-state">待确认</em>
     </div>
-    <p>${escapeHtml(event.message || "执行该工具前需要用户确认。")}</p>
-    ${renderHookContexts(hookContexts)}
-    <details open>
-      <summary>请求参数</summary>
-      <pre>${escapeHtml(args)}</pre>
-    </details>
-    <div class="permission-actions">
-      <button type="button" data-action="approve">允许</button>
-      <button type="button" data-action="deny">拒绝</button>
-      <small>approve/deny 会真实续跑该工具调用</small>
+    <div class="permission-detail" hidden>
+      <p>${escapeHtml(event.message || "执行该工具前需要用户确认。")}</p>
+      ${renderHookContexts(hookContexts)}
+      <details>
+        <summary>请求参数</summary>
+        <pre>${escapeHtml(args)}</pre>
+      </details>
+      <div class="permission-actions">
+        <button type="button" data-action="approve">允许</button>
+        <button type="button" data-action="deny">拒绝</button>
+      </div>
     </div>
   `;
+  const rowHead = node.querySelector(".permission-row");
+  const detail = node.querySelector(".permission-detail");
+  rowHead.addEventListener("click", (clickEvent) => {
+    if (clickEvent.target.closest("button")) return;
+    const open = detail.hidden;
+    detail.hidden = !open;
+    rowHead.setAttribute("aria-expanded", String(open));
+  });
   node.querySelector('[data-action="approve"]').addEventListener("click", () => processApproval(node, true));
   node.querySelector('[data-action="deny"]').addEventListener("click", () => processApproval(node, false));
   if (beforeNode?.parentElement === messagesEl) {
@@ -3153,7 +3245,8 @@ async function processApproval(node, approved) {
     });
     node.classList.toggle("approved", approved);
     node.classList.toggle("denied", !approved);
-    node.querySelector(".permission-event-head em").textContent = approved ? "已允许" : "已拒绝";
+    const stateBadge = node.querySelector(".permission-state");
+    if (stateBadge) stateBadge.textContent = approved ? "已允许" : "已拒绝";
     if (approved) {
       const activeToolNodes = new Map();
       for (const event of response.events || []) {
@@ -3175,7 +3268,8 @@ async function processApproval(node, approved) {
     await Promise.all([loadRuntimeShell(), refreshStatusline()]);
     renderRuntimeOverviewFromDom(state.sending || state.sessionActive ? "running" : "completed");
   } catch (error) {
-    node.querySelector(".permission-event-head em").textContent = "审批失败";
+    const failBadge = node.querySelector(".permission-state");
+    if (failBadge) failBadge.textContent = "审批失败";
     node.querySelectorAll("button").forEach((button) => {
       button.disabled = false;
     });
@@ -4269,6 +4363,19 @@ async function streamAssistant(sessionId, content, assistantNode) {
   let currentAssistantNode = assistantNode;
   const handleRuntimeEvent = (event) => {
     // runtime_event 是后端统一运行时协议；旧事件仍负责渲染工具详情，避免实时视图重复。
+    if (event.event_type === "user.question" || event.type === "user_question") {
+      streamStateEl.textContent = "等待你的回答";
+      appendUserQuestionEvent({
+        call_id: event.call_id || event.id,
+        tool: event.tool,
+        title: event.title,
+        message: event.message,
+        questions: event.data?.questions || event.questions || [],
+        data: event.data || {},
+      });
+      updateTurnToolControl(currentAssistantNode);
+      return;
+    }
     if (event.event_type === "turn.started") {
       streamStateEl.textContent = event.title || "Nova 正在处理";
       appendStatusEvent(event.title || "开始处理用户请求", { beforeNode: currentAssistantNode });
