@@ -1938,3 +1938,37 @@ api 就不能再拆了吗？拆。
 [x] 浏览器实测：Bash 行展开终端块、Ask 行回答后续答；242 后端 + 23 前端测试全绿
 [x] 提交并推送
 ------ todo-list end at 2026/09/03/11:30:00 -----
+
+------ todo-list begin at 2026/09/03/11:40:01 -----
+用户请求原文：能不能搞好流式输出啊，现在完全没有流式输出
+
+[] 排查流式链路断点（provider → agent → session_runner → API NDJSON → 前端 onDelta）
+[] 修复并实测逐字输出
+
+------ todo-list begin at 2026/09/03/11:43:46 -----
+用户请求原文：详细说说沙箱这层怎么实现的 dsh
+
+[] 登记 user-queries 和 TODOList
+[] 精读 dsh 沙箱层源码（sandbox-policy / sandbox 抽象 / sandbox-local profiles / bash-sandbox / escalation 升级流）
+[] 输出分层讲解（面向 Nova 借鉴）
+[] 收尾 durable 更新
+
+[x] 登记 user-queries 和 TODOList
+[x] 精读 dsh 沙箱层源码（sandbox 抽象 / sandbox-local 后端链与探针 / profiles 三平台 / roots 共享 / escalation 升级流 / session-mode / bash-sandbox 消费端）
+[x] 输出分层讲解（面向 Nova 借鉴）
+[x] 收尾 durable 更新
+
+------ todo-list end at 2026/09/03/11:45:00 -----
+
+------ todo-list begin at 2026/09/03/11:40:00 -----
+用户请求原文：能不能搞好流式输出啊，现在完全没有流式输出
+
+[x] 排查断点：provider.stream 是好的，主决策阶段 complete_with_tools 非流式 + _stream_final 攒完回放是病灶
+[x] provider 新增 stream_with_tools：文本增量即时下发 + tool_calls 分片按 index 跨块聚合
+[x] agent 新增 _stream_tool_decision + _ToolCallGate（<tool_call>/<tool_calls> 双标记门控，最多扣 11 字符）
+[x] loop 主循环决策阶段改流式消费：纯文本即时逐字下发，工具轮 XML 不外露
+[x] _stream_final 改真流式（同样走门控）
+[x] 测试：门控 4 例 + 流式决策/loop 穿透/原生分片聚合 4 例；全量 250 绿
+[x] HTTP 层逐行时间戳实测（3.42s 起分批到达）+ 浏览器打字机实测（0.4s 采样稳定增长）
+[x] 提交推送 958c88a
+------ todo-list end at 2026/09/03/11:55:00 -----
