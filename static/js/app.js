@@ -2633,6 +2633,20 @@ function toolLeadingIcon(tool) {
 // ---- 轻量 Markdown 渲染（dsh AssistantMarkdown 的最小等价物）----
 // 先整体转义再生成标签，代码块内容二次保护，避免注入。
 function renderMarkdown(raw) {
+  // 防护一：历史数据可能带漏网的工具标签（后端已清扫，前端双保险），
+  // 原始 <tool_call>/<tool_calls> XML 绝不进入 markdown 管线。
+  const sanitized = String(raw || "").replace(/<tool_calls?>[\s\S]*?(?:<\/tool_calls?>|$)/g, "").trim();
+  try {
+    return renderMarkdownInner(sanitized);
+  } catch (error) {
+    console.error("markdown 渲染失败，降级纯文本", error);
+    const text = document.createElement("span");
+    text.textContent = sanitized;
+    return text.innerHTML;
+  }
+}
+
+function renderMarkdownInner(raw) {
   const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const inline = (t) => esc(t)
     .replace(/`([^`\n]+)`/g, '<code class="md-code">$1</code>')

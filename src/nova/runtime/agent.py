@@ -343,11 +343,11 @@ class CodexLikeAgentRuntime:
             *[message for message in original_messages if message.role != ChatRole.ERROR],
             prompt,
         ]
-        parts: list[str] = []
+        gate = _ToolCallGate()
         try:
             async for delta in self.provider.stream(messages):
-                parts.append(delta)
-                yield {"type": "assistant_delta", "delta": delta}
+                for safe in gate.feed(delta):
+                    yield {"type": "assistant_delta", "delta": safe}
         except ProviderError:
             yield {"type": "agent_status", "status": "模型最终回答失败，使用工具结果兜底"}
             for chunk in self._chunk_text(fallback, 36):
@@ -355,7 +355,21 @@ class CodexLikeAgentRuntime:
             yield {"type": "assistant_done_content", "content": fallback}
             return
 
-        text = "".join(parts).strip()
+        for safe in gate.flush():
+            yield {"type": "assistant_delta", "delta": safe}
+        text = gate.full_text.strip()
+        # 模型在续答阶段违规输出工具标签（例如工具失败后想重试）：
+        # 门控已拦住不外流；这里把标签剥掉，剩余文本为空则落到工具结果兜底。
+        if gate.tool_detected:
+            stripped = self._strip_final_tags(text).strip()
+            if stripped:
+                text = stripped
+            else:
+                text = fallback
+                for chunk in self._chunk_text(text, 36):
+                    yield {"type": "assistant_delta", "delta": chunk}
+                yield {"type": "assistant_done_content", "content": text}
+                return
         if not text:
             text = fallback
             for chunk in self._chunk_text(text, 36):

@@ -4,7 +4,14 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Any
 
+import re
+
 from ..compaction import CompactionEngine, is_context_overflow_error
+
+# 漏网工具标签清扫：<tool_call>...</tool_call>、<tool_calls>...</tool_calls>（含未闭合）。
+TOOL_TAG_PATTERN = re.compile(
+    r"<tool_calls?>\s*[\s\S]*?(?:</tool_calls?>|$)",
+)
 from ..context_budget import ContextBudgetPlan
 from ..models import ChatMessage, ChatRole
 from ..providers.bigmodel import ProviderError
@@ -413,10 +420,13 @@ class SessionRunner:
                             continue
                     raise
 
+            # 保险带：任何漏网的工具标签都不允许进入持久化消息
+            # （前端渲染器遇到原始 XML 会崩，历史气泡全部丢失）。
+            answer_text = TOOL_TAG_PATTERN.sub("", "".join(answer_parts)).strip()
             assistant_message = ChatMessage(
                 session_id=session_id,
                 role=ChatRole.ASSISTANT,
-                content="".join(answer_parts),
+                content=answer_text,
             )
             self.deps.store.add_chat_message(assistant_message)
             completed = orchestrator.complete_turn(

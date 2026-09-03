@@ -201,3 +201,48 @@ class ProviderStreamWithToolsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ToolResultAnswerGateTest(unittest.TestCase):
+    """回归：续答阶段模型违规输出 <tool_call> 时不得外流、不得落库。"""
+
+    def _runtime(self, chunks: list[str]) -> CodexLikeAgentRuntime:
+        import tempfile
+        from pathlib import Path
+
+        from nova.tools.workspace import WorkspaceTools
+
+        root = Path(tempfile.mkdtemp())
+        runtime = CodexLikeAgentRuntime.__new__(CodexLikeAgentRuntime)
+        runtime.provider = _FakeProvider(chunks)
+        runtime.tools = WorkspaceTools(root, permission_mode="bypass_permissions")
+        return runtime
+
+    def test_tool_result_answer_withholds_tool_xml(self) -> None:
+        chunks = ["我需要重新查询天气信息。<tool_ca", 'll>{"tool":"web_search","arguments":{"query":"今天天气"}}</tool_call>']
+        runtime = self._runtime(chunks)
+        events: list[dict] = []
+
+        async def collect() -> None:
+            async for event in runtime._stream_tool_result_answer([], ['{"ok": false, "error": "搜索失败"}']):
+                events.append(event)
+
+        runtime._system_prompt = lambda: "sys"  # type: ignore[method-assign]
+        asyncio.run(collect())
+        deltas = "".join(e["delta"] for e in events if e["type"] == "assistant_delta")
+        done = next(e for e in events if e["type"] == "assistant_done_content")
+        self.assertNotIn("<tool_call>", deltas, "工具 XML 不得流向前端")
+        self.assertNotIn("<tool_call>", done["content"], "工具 XML 不得进入落库内容")
+        self.assertIn("我需要重新查询天气信息", deltas)
+
+    def test_persist_sanitizer_strips_dangling_tags(self) -> None:
+        from nova.runtime.session_runner import TOOL_TAG_PATTERN
+
+        raw = '前文 <tool_call>{"tool":"bash"}</tool_call> 后文'
+        self.assertEqual(" ".join(TOOL_TAG_PATTERN.sub("", raw).split()), "前文 后文")
+        dangling = "只有开头 <tool_calls> {\"a\": 1}"
+        self.assertEqual(" ".join(TOOL_TAG_PATTERN.sub("", dangling).split()), "只有开头")
+
+
+if __name__ == "__main__":
+    unittest.main()
