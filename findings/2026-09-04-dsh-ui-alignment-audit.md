@@ -33,14 +33,14 @@
 |---|---|---|---|---|
 | 1.1 | 布局 | 侧栏 279px(#f9fafb 无右边框) + 主列 | 同 | ✅ |
 | 1.2 | 主列画布 | 极淡冷色径向渐变 + 白 | 已实现 | ✅ |
-| 1.3 | 侧栏折叠 | 「收起侧边栏」按钮，折叠成图标栏 | 无 | ❌ |
+| 1.3 | 侧栏折叠 | 「收起侧边栏」按钮，折叠成图标栏 | 有按钮但是**死按钮**（无 onClick；body.sidebar-collapsed CSS 为孤儿规则），26/09/04 实测点击 279→279 | ❌ 假对齐 |
 | 1.4 | 侧栏组操作 | 搜索会话/视图选项/添加工作区（三按钮） | 只有搜索 | 🟡 |
 | 1.5 | 会话行 hover | 「…」菜单（重命名/分叉/归档）+ tooltip(路径+创建时间) | ✕ 删除钮 | ❌ |
 | 1.6 | 会话树 | 工作区文件夹树，组可折叠，含「未分组」 | 有树、无折叠交互 | 🟡 |
 | 1.7 | 设置菜单 | 通用设置/模型/插件/Agent预设/打开配置文件 + 快捷偏好行 | settings dialog 另一套 | ❌ |
 | 1.8 | 版本徽章 | 品牌行黑底等宽白字 | 同 | ✅ |
 | 1.9 | 新会话按钮 | ⊕+文字，白底描边 33px | 已对齐 | ✅ |
-| 1.10 | 会话搜索 | 点击「搜索会话」展开输入框，按名称过滤 | 常驻输入框 | 🟡 |
+| 1.10 | 会话搜索 | 点击「搜索会话」展开输入框，按名称过滤 | 已改为按钮展开式（searchOpen toggle） | ✅ |
 
 ## 2. 空态（hero）
 
@@ -48,7 +48,7 @@
 |---|---|---|---|---|
 | 2.1 | 构图 | hero(36px logo+28px 标题+预览徽章)+chips+composer 组团悬于上中部 | 已对齐(390=390) | ✅ |
 | 2.2 | 无 header/tabs | 空态纯画布 | 同 | ✅ |
-| 2.3 | chips | 白底描边 pill：folder+工作区名+▾ / 盾+模式+▾ | 同 | ✅ |
+| 2.3 | chips | 白底描边 pill：folder+工作区名+▾ / 盾+模式+▾，**▾ 可点开菜单** | 外观同款，但 ▾ 是**死 chevron**（实测点击不开菜单），26/09/04 | 🟡 假对齐 |
 | 2.4 | composer 质感 | 半透明+blur+双层阴影 | 同 | ✅ |
 
 ## 3. 会话态（对话 tab）
@@ -72,7 +72,7 @@
 | 4.1 | 工具条 | Duration / 实际时间(switch) / ⊟Turns / ⊟Calls + 搜索框(放大镜) | 32px 工具条+switch+折叠开关+计数 | ✅ |
 | 4.2 | ⊟Turns/Calls | 全部分组折叠开关(26→11 行，剩组头+…N steps·M calls) | 15→0 行+摘要行+再点还原 | ✅ |
 | 4.3 | 时间线 | 三泳道 tile(Input绿/Model紫/Tools橙/错误红)+横排小标签+网格+拖拽缩放 | 50px 高/14px 泳道距/横排标签(纠正竖排误解)；拖拽缩放未做 | 🟡 |
-| 4.4 | 表格 | 原生 table；行=TOOL/ASSISTANT/USER/System 徽章行+等宽工具行；Turn 组头行「Turn N #seq」 | div 列表 | 🟡 |
+| 4.4 | 表格 | 原生 table；kindTag 徽章行；Turn=首行左上 8px 小标签+发丝线（无组头按钮行） | 已按源码移植（4cf9477+563f890+bdf4d00：tt-* 结构/turnLabel/折叠摘要/滚动 pane+底部让位） | ✅ |
 | 4.5 | 分页 | 顶部「Load earlier history」行 | 无 | ❌ |
 | 4.6 | **行选中** | 点击行→右选中(bg rgba(38,49,72,.1))+右侧详情面板展开 | 同款选中色+381px 面板 | ✅ |
 | 4.7 | **详情面板** | 381px aside：头部(类型+Turn·Step+×)；TOOL 行 tab=Summary/Payload(JSON树)/Result(pre)/Schema/Timing)；消息行 tab=Summary/Preview/Raw；Summary=dt/dd 五对 | 全部落地(Duration 按 session timestamps 差值回退) | ✅ |
@@ -103,3 +103,28 @@
 - 会话 hover：mouseover treeitem → 「会话"nova-1"的操作」按钮 → menu=重命名/分叉会话/归档会话。
 - 设置：snapshot → 通用设置/模型/插件/Agent 预设/打开配置文件/关闭 + 标准模式/Full access/中文/浅色/深色。
 - 源码：`ui-trajectory/src/client/TrajectoryTable.tsx`（detail panel 2670-2720 行、tabs 895-925 行）、`views.module.css`（bottom-clearance）、`TrajectoryTimeline.tsx`（拖拽/缩放）。
+
+
+## 7. 剩余缺口清单（2026-09-04 15:30 全量实况复核后）
+
+近期已补齐（不再列为缺口）：控件体系（MenuSelect/SVG 按钮/工具条 toggle·switch·搜索）、轨迹表格结构（原生 table/kindTag/turnLabel/折叠摘要/详情分节/滚动 pane+底部让位）、Think 披露行、会话搜索展开式。
+
+### P0 假对齐（控件在但不工作，损害信任）
+- **7.1** 折叠侧栏：死按钮（无 handler），dsh 折叠成 56px 图标栏（§1.3）
+- **7.2** 空态 chips ▾：死 chevron，dsh 点开工作区/权限菜单（§2.3）
+- **7.3** 会话行 hover：无任何操作按钮（实测 item 内 0 button），dsh=「…」菜单（重命名/分叉/归档）+tooltip（§1.5）
+
+### P1 可见缺失（用户可感知）
+- **7.4** 会话头右侧：无 Session log⤓、无子代理链面包屑▾、无后台任务▾（实测 Nova 会话头 0 按钮）（§3.1）
+- **7.5** 助手消息操作行：只有复制；dsh=复制/赞/踩/分享+消息间细分隔线（§3.4）
+- **7.6** 「加载更早」分页：对话流与轨迹表两处都无（§3.2/§4.5）
+- **7.7** 轨迹行型不全：dsh kinds={user,tool,subtool,message,context}，Nova 只有 {user,tool,message}——缺 subtool（子代理调用）与 context（注入）行型
+- **7.8** 设置菜单：Nova 是 dialog 另一套；dsh=菜单（通用设置/模型/插件/Agent预设/打开配置文件+快捷偏好行）（§1.7）
+
+### P2 依赖后端/低频/细节
+- **7.9** 统计行 3/5 段：缺 首 token 平均/tok 速率/缓存命中/输入 tokens（需 provider 埋点，§5.2）
+- **7.10** Read 工具行内嵌文件跳转钮（§3.5）
+- **7.11** 侧栏组操作：缺 视图选项/添加工作区 两钮（§1.4）
+- **7.12** 会话树工作区分组折叠交互（§1.6）
+- **7.13** 轨迹搜索索引跳转（现在只高亮+计数，dsh 跳转到匹配行）
+- **7.14** 时间线缩放/框选已做（wheel/drag/pan），与 dsh 拖拽缩放的交互细节未逐一手感对比——待核对项

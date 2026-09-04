@@ -2203,3 +2203,10 @@ api 就不能再拆了吗？拆。
 [x] 修复：按 dsh .tablePane 结构把 table 包进 tt-tablePane（flex:1 + overflow-y:auto + padding-bottom:140px 让位），删孤儿规则
 [x] 验收：滚动生效（scrollH 530>clientH 467）、滚到底末行完整、统计条独立无碰撞（vision 四项全过）、252 unittest + 前端 smoke 绿
 ------ todo-list end at 2026/09/04 14:51:58 -----
+
+------ todo-list begin at 2026/09/04 15:31:49 -----
+用户请求原文：还有哪些对不齐的前端展示上面
+
+[x] 全量实况复核：侧栏折叠（死按钮 279→279）、空态 chips ▾（点击不开菜单）、会话行 hover（0 按钮）、会话头（0 按钮）、助手消息操作（仅复制）、轨迹 kinds（Nova 3 种 vs dsh 5 种）、搜索/分页/设置
+[x] 更新审计清单：修正 4 行状态（1.3 假对齐、1.10 ✅、4.4 ✅、2.3 假对齐），新增 §7 剩余缺口清单（P0×3 / P1×5 / P2×6）
+------ todo-list end at 2026/09/04 15:31:49 -----
