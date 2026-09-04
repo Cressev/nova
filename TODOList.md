@@ -2195,3 +2195,11 @@ api 就不能再拆了吗？拆。
 [x] 重写：删除组头按钮行与全部 trajectory-turn-* CSS；新增 tt-turnLabel/tt-turnLabelActive（含 Turn N 全称+#N 紧凑叠放）、turn 首行 2px 发丝线、tt-turnRail 改为仅活动 turn 渲染、折叠=首行+摘要行（可点开）、⊟Turns/⊟Calls 工具条按钮折叠态翻转 ⊞ + aria-pressed、 Calls 独立状态（折叠工具行为首行+摘要）、eventInner justify 改 flex-end、content 4px 左衬
 [x] 验收：组头行 0、Turn 小标签 5 个（8px/10px #f5f6f7 实测）、徽章右缘距文本 8px（dsh 10px 同款）、⊟Turns 折叠 5 轮→按钮变 ⊞Turns、摘要"3 steps · 1 tool call"格式与 dsh 一致、点击展开、vision 9/10、252 unittest + 前端 smoke 绿
 ------ todo-list end at 2026/09/04 14:30:28 -----
+
+------ todo-list begin at 2026/09/04 14:51:58 -----
+用户请求原文：服了改为那之后这个展示条目怎么这么宽？
+
+[x] 诊断：宽度本身没变（表 900px，dsh 同视口 998px）——真问题是上一轮移植表格时把 .trajectory-ledger div 换成 table，滚动容器和 140px 底部让位 CSS 全部失联（规则还指着已不存在的类名）→ 行漫过统计条、渲染进悬浮 composer 后面、底部文字碰撞，整块看起来又宽又破
+[x] 修复：按 dsh .tablePane 结构把 table 包进 tt-tablePane（flex:1 + overflow-y:auto + padding-bottom:140px 让位），删孤儿规则
+[x] 验收：滚动生效（scrollH 530>clientH 467）、滚到底末行完整、统计条独立无碰撞（vision 四项全过）、252 unittest + 前端 smoke 绿
+------ todo-list end at 2026/09/04 14:51:58 -----

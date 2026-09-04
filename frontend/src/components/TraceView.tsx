@@ -694,6 +694,7 @@ export function TraceView({ sessionId }: { sessionId: string }) {
         />
       ) : null}
       <div className="trajectory-ledger-wrap">
+        <div className="tt-tablePane">
         <table className="tt-table" aria-label="轨迹账本">
           <colgroup>
             <col className="tt-eventColumn" />
@@ -811,6 +812,7 @@ export function TraceView({ sessionId }: { sessionId: string }) {
           })}
           </tbody>
         </table>
+        </div>
         {selected ? <DetailPanel record={selected} onClose={() => setSelectedKey(null)} width={detailWidth} onWidthChange={setDetailWidth} /> : null}
       </div>
     </div>

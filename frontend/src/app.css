@@ -4031,9 +4031,14 @@ body.inspector-collapsed .inspector-toggle {
   align-items: stretch;
 }
 
-.trajectory-ledger-wrap .trajectory-ledger {
-  flex: 1 1 auto;
+.trajectory-ledger-wrap .tt-tablePane {
+  position: relative;
+  flex: 1;
   min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* dsh --dsh-trajectory-bottom-clearance：让末行能滚出 composer 遮挡区 */
+  padding-bottom: 140px;
 }
 
 /* ===== tt-* = dsh TrajectoryTable 行结构移植（2026-09-04，逐值照抄源码）===== */
@@ -4636,10 +4641,6 @@ body.inspector-collapsed .inspector-toggle {
   bottom: 6px;
 }
 
-/* dsh --dsh-trajectory-bottom-clearance：composer 高度 + 16px，让末行滚出遮挡区 */
-.app-shell[data-main-state="trace"] .trajectory-ledger {
-  padding-bottom: 140px;
-}
 
 /* ===== Think 披露行（dsh ReasoningRow + DisclosureRow 对齐）===== */
 .think-row {
