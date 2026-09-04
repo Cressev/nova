@@ -2210,3 +2210,21 @@ api 就不能再拆了吗？拆。
 [x] 全量实况复核：侧栏折叠（死按钮 279→279）、空态 chips ▾（点击不开菜单）、会话行 hover（0 按钮）、会话头（0 按钮）、助手消息操作（仅复制）、轨迹 kinds（Nova 3 种 vs dsh 5 种）、搜索/分页/设置
 [x] 更新审计清单：修正 4 行状态（1.3 假对齐、1.10 ✅、4.4 ✅、2.3 假对齐），新增 §7 剩余缺口清单（P0×3 / P1×5 / P2×6）
 ------ todo-list end at 2026/09/04 15:31:49 -----
+
+------ todo-list begin at 2026/09/04 15:39:09 -----
+用户请求原文：轨迹页面对齐得还是很差尤其上面那个可滚动的条，拼接不连续现在，而且人家sys提示词是一开始就拼接的，你每次都把思考人内容当做sys记录，记载最后面。而且点击跳转不到对应的条，还不能滚动放大缩小！
+
+[] 诊断①：时间线 tile 为什么拼接不连续（dsh=时长模式下无缝拼接）
+[] 诊断②：sys 提示词应在一开始拼接一次；思考内容不应记为 sys 在最后
+[] 诊断③：点击 tile 不跳转对应行；滚轮不能缩放
+[] 读 dsh TrajectoryTimeline 源码（tile 布局/点击/缩放交互）
+[] 修复全部并验收
+
+[x] 诊断①拼接不连续：我用原始时间戳布局，空闲时段全是豁口；dsh 默认 sequence 模式=每记录 1 单位无缝拼接
+[x] 诊断②sys 记录：reasoning.completed 被渲染成 system 行落在轮末；系统提示词根本没有 trace 事件
+[x] 诊断③④：点击色块只选中不滚动定位；缩放处理器在但原始时间戳模式下视觉变化几乎不可见
+[x] 读 dsh timeline.ts：deriveTrajectoryTimeline 三模式（sequence/duration/actual）+ compressIdle + turnBoundaries + MINIMUM_ZOOM_OPERATIONS=4
+[x] 修复-时间线：projectSpans 三模式投影（sequence 等宽无缝默认/时长真实时长+空闲压缩/实际时间墙钟）、turn 边界竖线、滚轮缩放（sequence 最小 4 单位）、右键平移、拖选→焦点键集合过滤、点击色块→选中+scrollIntoView 跳转表格行；时间线常驻（不再被"实际时间"开关隐藏）
+[x] 修复-sys 记录：后端新会话首条 turn 前置 system.prompt 事件（一次性，老会话不补发避免落尾部）；/api/agent/system-prompt 端点；老会话前端虚拟 SYSTEM 行兜底；foldRecords 把 sys: 行强制置顶 turn 1 首位；reasoning.completed 不再生成账本行（对话 tab Think 披露行照常消费）
+[x] 验收：无缝（相邻 tile 434.6→434.6 紧贴）、sequence 等宽 61px/duration 分化 202·459px/actual 点状、缩放 14→10 可见块+Esc 复位、点击末块→行滚动到视口中央+选中、新会话端到端 SYSTEM 首行（trace 事件序 system.prompt<turn.started）、Think 行 0、252 unittest+前端 smoke 绿
+------ todo-list end at 2026/09/04 15:51:49 -----

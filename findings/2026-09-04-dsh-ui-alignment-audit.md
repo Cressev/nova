@@ -71,7 +71,7 @@
 |---|---|---|---|---|
 | 4.1 | 工具条 | Duration / 实际时间(switch) / ⊟Turns / ⊟Calls + 搜索框(放大镜) | 32px 工具条+switch+折叠开关+计数 | ✅ |
 | 4.2 | ⊟Turns/Calls | 全部分组折叠开关(26→11 行，剩组头+…N steps·M calls) | 15→0 行+摘要行+再点还原 | ✅ |
-| 4.3 | 时间线 | 三泳道 tile(Input绿/Model紫/Tools橙/错误红)+横排小标签+网格+拖拽缩放 | 50px 高/14px 泳道距/横排标签(纠正竖排误解)；拖拽缩放未做 | 🟡 |
+| 4.3 | 时间线 | sequence(默认：每记录 1 单位无缝拼接)+duration(真实时长+空闲压缩)+actual(墙钟) 三模式；turn 边界竖线；滚轮缩放/右键拖平移/拖选聚焦/点击色块跳转表格行 | 全部落地（26/09/04 重写 projectSpans 三模式投影） | ✅ |
 | 4.4 | 表格 | 原生 table；kindTag 徽章行；Turn=首行左上 8px 小标签+发丝线（无组头按钮行） | 已按源码移植（4cf9477+563f890+bdf4d00：tt-* 结构/turnLabel/折叠摘要/滚动 pane+底部让位） | ✅ |
 | 4.5 | 分页 | 顶部「Load earlier history」行 | 无 | ❌ |
 | 4.6 | **行选中** | 点击行→右选中(bg rgba(38,49,72,.1))+右侧详情面板展开 | 同款选中色+381px 面板 | ✅ |
@@ -107,7 +107,7 @@
 
 ## 7. 剩余缺口清单（2026-09-04 15:30 全量实况复核后）
 
-近期已补齐（不再列为缺口）：控件体系（MenuSelect/SVG 按钮/工具条 toggle·switch·搜索）、轨迹表格结构（原生 table/kindTag/turnLabel/折叠摘要/详情分节/滚动 pane+底部让位）、Think 披露行、会话搜索展开式。
+近期已补齐（不再列为缺口）：控件体系（MenuSelect/SVG 按钮/工具条 toggle·switch·搜索）、轨迹表格结构（原生 table/kindTag/turnLabel/折叠摘要/详情分节/滚动 pane+底部让位）、Think 披露行、会话搜索展开式、时间线三模式无缝拼接+缩放+点击跳转（4.3 ✅）、SYSTEM 提示词行置顶（system.prompt 事件+老会话虚拟行兜底）、reasoning 不再渲染为 sys 行。
 
 ### P0 假对齐（控件在但不工作，损害信任）
 - **7.1** 折叠侧栏：死按钮（无 handler），dsh 折叠成 56px 图标栏（§1.3）

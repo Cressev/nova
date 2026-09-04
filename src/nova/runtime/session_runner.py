@@ -279,6 +279,24 @@ class SessionRunner:
             id_factory=self.deps.id_factory,
         )
 
+        # dsh 语义：系统提示词在会话最开始拼接一次（轨迹表首行 SYSTEM，
+        # 早于任何 user/tool 记录），而不是把思考内容当 sys 记录追加在轮末。
+        existing_events = self.deps.store.list_chat_events(session_id)
+        if not any(e.event_type == "system.prompt" for e in existing_events) and not any(
+            e.event_type.startswith("turn.") for e in existing_events
+        ):
+            prompt_runtime = self.deps.runtime_factory()
+            prompt_provider = getattr(prompt_runtime, "_system_prompt", None)
+            prompt_text = prompt_provider() if callable(prompt_provider) else None
+            if prompt_text:
+                orchestrator.event(
+                    "system.prompt",
+                    category="system",
+                    phase="completed",
+                    title="System prompt",
+                    message=prompt_text,
+                )
+
         if emit_user:
             self.deps.store.add_chat_message(user_message)
             yield {

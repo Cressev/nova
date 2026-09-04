@@ -3975,6 +3975,16 @@ body.inspector-collapsed .inspector-toggle {
   cursor: grabbing;
 }
 
+.trajectory-turnBoundary {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #d8dbe1;
+  pointer-events: none;
+  z-index: 2;
+}
+
 .trajectory-span {
   position: absolute;
   height: 8px;

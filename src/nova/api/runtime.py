@@ -81,6 +81,14 @@ async def restart_runtime() -> dict:
     return {"ok": True, "message": "Nova 正在重启，配置会在进程重新加载后生效。"}
 
 
+@router.get("/api/agent/system-prompt")
+async def get_agent_system_prompt() -> dict:
+    """轨迹表 SYSTEM 首行的数据源（老会话无 system.prompt 事件时前端虚拟行使用）。"""
+    runtime = ctx._agent_runtime()
+    provider = getattr(runtime, "_system_prompt", None)
+    return {"prompt": provider() if callable(provider) else ""}
+
+
 @router.get("/api/runtime/statusline")
 async def runtime_statusline(
     session_id: str | None = ctx.Query(default=None, max_length=80)

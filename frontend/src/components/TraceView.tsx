@@ -133,7 +133,13 @@ function foldRecords(messages: ChatMessage[], events: TraceEvent[]): { turns: Tu
         // 轮次/状态/钩子类事件不产生账本行（审计 §4.4）
         if (type.startsWith("turn.") || type === "status" || type === "memory.compacted" || type.startsWith("hook.") || type.startsWith("agent.")) return
         if (type === "reasoning.completed") {
-          push({ kind: "system", text: `Think · ${String(e.message || "").split("\n")[0].slice(0, 60)}`, tool: null, args: {}, output: String(e.message || ""), status: "ok", iso: e.created_at })
+          // dsh 轨迹表没有思考行：reasoning 属于助手消息（对话 tab 的 Think 披露行消费此事件）
+          return
+        }
+        if (type === "system.prompt") {
+          // dsh 语义：系统提示词=会话最开头的一行 SYSTEM（本会话首条 trace 事件）
+          const promptText = String(e.message || "")
+          push({ kind: "system", key: `sys:${e.id || "event"}`, text: promptText.split("\n").filter(Boolean)[0]?.slice(0, 90) || "System prompt", tool: null, args: {}, output: promptText, status: "ok", iso: e.created_at })
           return
         }
         if (type === "permission.requested") {
@@ -174,14 +180,14 @@ function foldRecords(messages: ChatMessage[], events: TraceEvent[]): { turns: Tu
     turnsAll.push(current)
     step = 0
   }
-  function push(partial: Omit<FusedRecord, "key" | "turn" | "step" | "ts" | "failed" | "durationMs" | "kind" | "text"> & Partial<Pick<FusedRecord, "durationMs">> & Pick<FusedRecord, "kind" | "text">) {
+  function push(partial: Omit<FusedRecord, "key" | "turn" | "step" | "ts" | "failed" | "durationMs" | "kind" | "text"> & Partial<Pick<FusedRecord, "durationMs" | "key">> & Pick<FusedRecord, "kind" | "text">) {
     if (!current) openTurn()
     step += 1
     const failed = partial.status === "failed" || partial.status === "error"
     const record: FusedRecord = {
       ...(partial as Omit<FusedRecord, "key" | "turn" | "step" | "ts" | "failed">),
       durationMs: partial.durationMs ?? null,
-      key: `r-${seq++}`,
+      key: partial.key ?? `r-${seq++}`,
       turn: current!.turn,
       step,
       ts: Date.parse(partial.iso) || 0,
@@ -191,6 +197,19 @@ function foldRecords(messages: ChatMessage[], events: TraceEvent[]): { turns: Tu
     if (Number.isNaN(current!.startedAt)) current!.startedAt = record.ts
   }
   for (const s of seeds) s.run()
+  // dsh 语义：系统提示词行永远置顶（用户消息 created_at 可能早于 system.prompt 事件，
+  // 不能让 SYSTEM 行被时间序排到轮内末尾）
+  for (let i = 0; i < turnsAll.length; i += 1) {
+    const sysRows = turnsAll[i].records.filter((r) => r.key.startsWith("sys:"))
+    if (sysRows.length === 0) continue
+    const rest = turnsAll[i].records.filter((r) => !r.key.startsWith("sys:"))
+    turnsAll[i].records = [...sysRows, ...rest]
+    if (i > 0) {
+      // 跨 turn 的 sys 行（异常情况）统一搬到第一个 turn 置顶
+      turnsAll[0].records = [...sysRows, ...turnsAll[0].records]
+      turnsAll[i].records = rest
+    }
+  }
   const turns = turnsAll.filter((t) => t.records.length > 0)
   const all = turns.flatMap((t) => t.records)
   // dsh：Timing source = session timestamps —— 缺 duration_ms 的工具行
@@ -219,13 +238,78 @@ function orderedRange(a: number, b: number): TimeRange {
   return a <= b ? { start: a, end: b } : { start: b, end: a }
 }
 
-function TimelineLanes({ records, turns, range, onRangeChange, onRecordSelect, onRecordFocus }: {
+export type LaneMode = "sequence" | "duration" | "actual"
+
+type TimelineSpan = {
+  record: FusedRecord
+  lane: number
+  color: string
+  start: number
+  end: number
+}
+
+/* dsh timeline.ts：sequence=每记录 1 单位无缝拼接（默认）；duration=真实时长+空闲压缩；actual=墙钟 */
+function projectSpans(records: FusedRecord[], turns: TurnGroup[], mode: LaneMode) {
+  if (mode === "sequence") {
+    const spans: TimelineSpan[] = records.map((record, i) => ({
+      record,
+      lane: laneFor(record.kind),
+      color: colorFor(record),
+      start: i,
+      end: i + 1,
+    }))
+    const boundaries = turns
+      .map((t) => ({ turn: t.turn, at: records.indexOf(t.records[0]) }))
+      .filter((b) => b.at >= 0)
+    return { spans, boundaries, domainStart: 0, domainEnd: Math.max(1, records.length) }
+  }
+  const timed = records.map((record) => {
+    const next = records[records.indexOf(record) + 1]
+    const rawEnd = mode === "duration"
+      ? record.ts + Math.max(record.durationMs ?? 0, 120)
+      : Math.min(next ? next.ts : record.ts + 30000, record.ts + 30000)
+    return { record, lane: laneFor(record.kind), color: colorFor(record), start: record.ts, end: Math.max(rawEnd, record.ts + 30) }
+  })
+  // duration 模式：按开始时间压缩空闲（dsh compressIdle）
+  let removedIdle = 0
+  let coveredUntil: number | null = null
+  const offsets = new Map<FusedRecord, number>()
+  for (const span of [...timed].sort((a, b) => a.start - b.start)) {
+    if (mode === "duration" && coveredUntil !== null && span.start > coveredUntil) {
+      removedIdle += span.start - coveredUntil
+    }
+    offsets.set(span.record, removedIdle)
+    coveredUntil = coveredUntil === null ? span.end : Math.max(coveredUntil, span.end)
+  }
+  const spans = timed.map((t) => ({
+    ...t,
+    start: t.start - (offsets.get(t.record) ?? 0),
+    end: t.end - (offsets.get(t.record) ?? 0),
+  }))
+  const boundaries = turns
+    .map((t) => ({ turn: t.turn, at: spans.find((sp) => sp.record.key === t.records[0]?.key)?.start ?? -1 }))
+    .filter((b) => b.at >= 0)
+  const domainStart = spans.length ? Math.min(...spans.map((sp) => sp.start)) : 0
+  const domainEnd = spans.length ? Math.max(...spans.map((sp) => sp.end)) : 1
+  return { spans, boundaries, domainStart, domainEnd }
+}
+
+function laneFor(kind: FusedRecord["kind"]): number {
+  return kind === "user" ? 0 : kind === "message" ? 1 : 2
+}
+
+function colorFor(record: FusedRecord): string {
+  if (record.failed) return "#e5484d"
+  return record.kind === "user" ? "#22c55e" : record.kind === "message" ? "#a78bfa" : "#f59e0b"
+}
+
+function TimelineLanes({ records, turns, mode, focusKeys, onFocusKeysChange, onRecordSelect }: {
   records: FusedRecord[]
   turns: TurnGroup[]
-  range: TimeRange | null
-  onRangeChange: (r: TimeRange | null) => void
+  mode: LaneMode
+  focusKeys: Set<string> | null
+  onFocusKeysChange: (keys: Set<string> | null) => void
   onRecordSelect: (record: FusedRecord) => void
-  onRecordFocus: (record: FusedRecord) => void
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const trackRef = useRef<HTMLDivElement | null>(null)
@@ -235,23 +319,27 @@ function TimelineLanes({ records, turns, range, onRangeChange, onRecordSelect, o
   const [viewport, setViewport] = useState<TimeRange | null>(null)
   const [panning, setPanning] = useState(false)
 
-  const modelStart = records.length ? records[0].ts : 0
-  const modelEnd = records.length ? records[records.length - 1].ts : 1
+  const model = useMemo(() => projectSpans(records, turns, mode), [records, turns, mode])
+  const { spans, boundaries } = model
+  const modelStart = model.domainStart
+  const modelEnd = model.domainEnd
   const fullDuration = Math.max(1, modelEnd - modelStart)
   const domainStart = viewport === null ? modelStart : viewport.start
   const domainDuration = viewport === null ? fullDuration : Math.max(1, viewport.end - viewport.start)
 
-  // 滚轮缩放：锚点跟随光标（dsh wheel 语义）
+  // 滚轮缩放：锚点跟随光标（dsh wheel 语义；sequence 模式最小 4 个操作单位）
   useEffect(() => {
     const root = rootRef.current
     if (root === null) return
     const onWheel = (event: WheelEvent) => {
       event.preventDefault()
       const track = trackRef.current
-      if (track === null || records.length === 0) return
+      if (track === null || spans.length === 0) return
       const rect = track.getBoundingClientRect()
       const anchorFraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(1, rect.width)))
-      const minDuration = (fullDuration / records.length) * MINIMUM_ZOOM_EVENTS
+      const minDuration = mode === "sequence"
+        ? Math.min(4, fullDuration)
+        : (fullDuration / Math.max(1, spans.length)) * MINIMUM_ZOOM_EVENTS
       const nextDuration = Math.min(
         fullDuration,
         Math.max(minDuration, domainDuration * Math.exp(event.deltaY * 0.0015)),
@@ -269,34 +357,33 @@ function TimelineLanes({ records, turns, range, onRangeChange, onRecordSelect, o
     }
     root.addEventListener("wheel", onWheel, { passive: false })
     return () => { root.removeEventListener("wheel", onWheel) }
-  }, [domainDuration, domainStart, fullDuration, modelEnd, modelStart, records.length])
+  }, [domainDuration, domainStart, fullDuration, modelEnd, modelStart, mode, spans.length])
 
   // Escape 重置（dsh 语义）
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setViewport(null)
-        onRangeChange(null)
+        onFocusKeysChange(null)
       }
     }
     window.addEventListener("keydown", onKey)
     return () => { window.removeEventListener("keydown", onKey) }
-  }, [onRangeChange])
+  }, [onFocusKeysChange])
 
-  if (records.length === 0) return null
+  // 投影或视口变化 → 重新计算焦点键集合（范围外记录淡化由表格过滤承担）
+  useEffect(() => {
+    if (range === null) return
+    const keys = new Set(spans.filter((sp) => sp.end >= domainStart && sp.start <= domainStart + domainDuration).map((sp) => sp.record.key))
+    onFocusKeysChange(keys.size === spans.length ? null : keys)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, viewport])
+
+  const [range, setRange] = useState<TimeRange | null>(null)
+  if (spans.length === 0) return null
 
   const visibleRange = draft ?? range
   const frac = (t: number) => (t - domainStart) / domainDuration
-  // 可见 domain 内的记录 → 泳道 span（绝对定位，dsh span 形态）
-  const spans = records
-    .map((record) => {
-      const lane = record.kind === "user" ? 0 : record.kind === "message" ? 1 : 2
-      const color = record.failed ? "#e5484d" : lane === 0 ? "#22c55e" : lane === 1 ? "#a78bfa" : "#f59e0b"
-      const next = records[records.indexOf(record) + 1]
-      const end = next ? Math.min(next.ts, record.ts + 30000) : record.ts + 30000
-      return { record, lane, color, start: record.ts, end: Math.max(end, record.ts + 30) }
-    })
-    .filter((s) => s.end >= domainStart && s.start <= domainStart + domainDuration)
 
   const fractionAt = (clientX: number): number => {
     const track = trackRef.current
@@ -307,7 +394,7 @@ function TimelineLanes({ records, turns, range, onRangeChange, onRecordSelect, o
   const recordAt = (target: EventTarget | null): FusedRecord | null => {
     const el = target instanceof HTMLElement ? target.closest<HTMLElement>("[data-record-key]") : null
     if (el === null) return null
-    return spans.find((s) => s.record.key === el.dataset.recordKey)?.record ?? null
+    return spans.find((sp) => sp.record.key === el.dataset.recordKey)?.record ?? null
   }
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -350,7 +437,7 @@ function TimelineLanes({ records, turns, range, onRangeChange, onRecordSelect, o
       const moved = pan.moved || Math.abs(event.clientX - pan.anchorClientX) >= MINIMUM_DRAG_PX
       panRef.current = null
       setPanning(false)
-      if (!moved) onRangeChange(null)
+      if (!moved) { setViewport(null); setRange(null); onFocusKeysChange(null) }
       return
     }
     const drag = dragRef.current
@@ -361,8 +448,9 @@ function TimelineLanes({ records, turns, range, onRangeChange, onRecordSelect, o
     setDraft(null)
     const isClick = Math.abs(event.clientX - drag.anchorClientX) < MINIMUM_DRAG_PX
     if (isClick && drag.record !== null) {
-      // 点击色块：直接选中该记录（dsh onRecordSelect）
-      onRangeChange(null)
+      // 点击色块：选中该记录并跳转到表格行（dsh onRecordSelect + 表格滚动定位）
+      setRange(null)
+      onFocusKeysChange(null)
       onRecordSelect(drag.record)
       return
     }
@@ -370,21 +458,13 @@ function TimelineLanes({ records, turns, range, onRangeChange, onRecordSelect, o
     const committed = selected.end - selected.start < minimumDuration
       ? (() => {
           const center = isClick ? selected.start : (selected.start + selected.end) / 2
-          const s = Math.min(Math.max(center - minimumDuration / 2, modelStart), modelEnd - minimumDuration)
-          return { start: s, end: s + minimumDuration }
+          const st = Math.min(Math.max(center - minimumDuration / 2, modelStart), modelEnd - minimumDuration)
+          return { start: st, end: st + minimumDuration }
         })()
       : selected
-    onRangeChange(committed)
-    if (isClick) {
-      // 点空白：聚焦最近记录（dsh onRecordFocus）
-      let nearest = spans[0]?.record
-      let best = Infinity
-      for (const s of spans) {
-        const d = selected.start < s.start ? s.start - selected.start : selected.start > s.end ? selected.start - s.end : 0
-        if (d < best) { best = d; nearest = s.record }
-      }
-      if (nearest !== undefined) onRecordFocus(nearest)
-    }
+    setRange(committed)
+    const keys = new Set(spans.filter((sp) => sp.end >= committed.start && sp.start <= committed.end).map((sp) => sp.record.key))
+    onFocusKeysChange(keys.size === spans.length ? null : keys)
   }
 
   const selectionLeft = visibleRange ? `${Math.min(Math.max(frac(visibleRange.start), 0), 1) * 100}%` : null
@@ -409,15 +489,23 @@ function TimelineLanes({ records, turns, range, onRangeChange, onRecordSelect, o
         onPointerCancel={onPointerEnd}
         onContextMenu={(e) => e.preventDefault()}
       >
-        {spans.map((s) => {
-          const left = `${Math.min(Math.max(frac(s.start), 0), 1) * 100}%`
-          const width = `${Math.max(0.2, (Math.min(Math.max(frac(s.end), 0), 1) - Math.min(Math.max(frac(s.start), 0), 1)) * 100)}%`
+        {boundaries.map((b) => (
+          <span
+            key={`b-${b.turn}`}
+            className="trajectory-turnBoundary"
+            style={{ left: `${Math.min(Math.max(frac(b.at), 0), 1) * 100}%` }}
+            aria-hidden="true"
+          />
+        ))}
+        {spans.map((sp) => {
+          const left = `${Math.min(Math.max(frac(sp.start), 0), 1) * 100}%`
+          const width = `${Math.max(0.25, (Math.min(Math.max(frac(sp.end), 0), 1) - Math.min(Math.max(frac(sp.start), 0), 1)) * 100)}%`
           return (
             <span
-              key={s.record.key}
+              key={sp.record.key}
               className="trajectory-span"
-              data-record-key={s.record.key}
-              style={{ top: `calc(${s.lane} * 14px)`, left, width, background: s.color }}
+              data-record-key={sp.record.key}
+              style={{ top: `calc(${sp.lane} * 14px)`, left, width, background: sp.color }}
             />
           )
         })}
@@ -597,10 +685,11 @@ export function TraceView({ sessionId }: { sessionId: string }) {
   const [turns, setTurns] = useState<TurnGroup[] | null>(null)
   const [error, setError] = useState("")
   const [query, setQuery] = useState("")
-  const [durationMode, setDurationMode] = useState(false)
+  const [durationPressed, setDurationPressed] = useState(false)
+  const [actualSwitch, setActualSwitch] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
-  const [range, setRange] = useState<TimeRange | null>(null)
+  const [focusKeys, setFocusKeys] = useState<Set<string> | null>(null)
   const [detailWidth, setDetailWidth] = useState<number | null>(null)
   const [callsCollapsed, setCallsCollapsed] = useState(false)
   const reload = useRef(0)
@@ -610,15 +699,42 @@ export function TraceView({ sessionId }: { sessionId: string }) {
     setTurns(null)
     setError("")
     setSelectedKey(null)
-    setRange(null)
+    setFocusKeys(null)
     Promise.all([
       api<ChatMessage[] | { messages?: ChatMessage[] }>(`/api/chat/sessions/${encodeURIComponent(sessionId)}/messages`),
       api<{ items?: TraceEvent[] }>(`/api/chat/sessions/${encodeURIComponent(sessionId)}/trace`),
     ])
-      .then(([msgData, traceData]) => {
+      .then(async ([msgData, traceData]) => {
         if (gen !== reload.current) return
         const messages = Array.isArray(msgData) ? msgData : (msgData.messages || [])
         const folded = foldRecords(messages, traceData.items || [])
+        // 老会话没有 system.prompt 事件：用系统提示词端点补一条虚拟 SYSTEM 行（dsh：置顶拼接）
+        const firstTurn = folded.turns[0]
+        const hasSysRow = folded.turns.some((t) => t.records.some((r) => r.key.startsWith("sys:")))
+        if (firstTurn && !hasSysRow) {
+          try {
+            const promptData = await api<{ prompt?: string }>("/api/agent/system-prompt")
+            const promptText = String(promptData.prompt || "")
+            if (promptText && firstTurn.records.length > 0) {
+              const firstTs = Math.min(...firstTurn.records.map((r) => r.ts))
+              firstTurn.records.unshift({
+                key: "sys:virtual",
+                turn: firstTurn.turn,
+                step: 0,
+                ts: firstTs - 1,
+                kind: "system",
+                text: promptText.split("\n").filter(Boolean)[0]?.slice(0, 90) || "System prompt",
+                tool: null,
+                args: {},
+                output: promptText,
+                status: "ok",
+                iso: firstTurn.records[0].iso,
+                durationMs: null,
+                failed: false,
+              })
+            }
+          } catch { /* 端点不可用则跳过 */ }
+        }
         setTurns(folded.turns)
       })
       .catch((e: unknown) => { if (gen === reload.current) setError(String(e instanceof Error ? e.message : e)) })
@@ -638,6 +754,9 @@ export function TraceView({ sessionId }: { sessionId: string }) {
   if (error) return <div className="trace-view"><p className="trace-loading">轨迹加载失败：{error}</p></div>
   if (!turns) return <div className="trace-view"><p className="trace-loading">加载中…</p></div>
 
+  // dsh 工具条语义：实际时间(墙钟) > 时长(真实时长+压缩空闲) > sequence(等宽无缝，默认)
+  const laneMode: LaneMode = actualSwitch ? "actual" : durationPressed ? "duration" : "sequence"
+
   // ⊟Turns/⊟Calls = 全部分组折叠开关（审计 §4.2：26 行→11 行，剩组头+摘要）
   const allCollapsed = turns.length > 0 && turns.every((t) => collapsed.has(t.turn))
   const toggleCollapseAll = () => {
@@ -650,9 +769,9 @@ export function TraceView({ sessionId }: { sessionId: string }) {
         <div className="trajectory-modes">
           <button
             type="button"
-            className={`trajectory-mode${durationMode ? " active" : ""}`}
-            aria-pressed={durationMode}
-            onClick={() => setDurationMode((v) => !v)}
+            className={`trajectory-mode${durationPressed ? " active" : ""}`}
+            aria-pressed={durationPressed}
+            onClick={() => { setDurationPressed((v) => !v); setActualSwitch(false) }}
           >
             <svg className="trajectory-toggle-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.25" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round"/><path d="M8 4.75V8l2.25 1.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round"/></svg>
             时长
@@ -660,13 +779,13 @@ export function TraceView({ sessionId }: { sessionId: string }) {
           <button
             type="button"
             role="switch"
-            aria-checked={durationMode}
+            aria-checked={actualSwitch}
             className="trajectory-switch"
-            title={durationMode ? "使用等宽时长" : "使用实际时长"}
-            onClick={() => setDurationMode((v) => !v)}
+            title={actualSwitch ? "使用等宽序贯投影" : "使用实际墙钟时间"}
+            onClick={() => { setActualSwitch((v) => !v); setDurationPressed(false) }}
           >
             <span>实际时间</span>
-            <span className="trajectory-switch-track" data-on={durationMode || undefined} aria-hidden="true"><span className="trajectory-switch-thumb" /></span>
+            <span className="trajectory-switch-track" data-on={actualSwitch || undefined} aria-hidden="true"><span className="trajectory-switch-thumb" /></span>
           </button>
           <button type="button" className={`trajectory-mode${allCollapsed ? " active" : ""}`} aria-pressed={allCollapsed} onClick={toggleCollapseAll}>{allCollapsed ? "⊞Turns" : "⊟Turns"}</button>
           <button type="button" className={`trajectory-mode${callsCollapsed ? " active" : ""}`} aria-pressed={callsCollapsed} onClick={() => setCallsCollapsed((v) => !v)}>{callsCollapsed ? "⊞Calls" : "⊟Calls"}</button>
@@ -683,16 +802,21 @@ export function TraceView({ sessionId }: { sessionId: string }) {
           {q ? <span className="trajectory-search-count">{matchCount} 处匹配</span> : null}
         </div>
       </div>
-      {!durationMode ? (
-        <TimelineLanes
-          records={turns.flatMap((t) => t.records)}
-          turns={turns}
-          range={range}
-          onRangeChange={setRange}
-          onRecordSelect={(record) => setSelectedKey(record.key)}
-          onRecordFocus={(record) => setSelectedKey(record.key)}
-        />
-      ) : null}
+      <TimelineLanes
+        records={turns.flatMap((t) => t.records)}
+        turns={turns}
+        mode={laneMode}
+        focusKeys={focusKeys}
+        onFocusKeysChange={setFocusKeys}
+        onRecordSelect={(record) => {
+          setSelectedKey(record.key)
+          // dsh：点击色块后表格滚动定位到对应行
+          requestAnimationFrame(() => {
+            const row = document.querySelector(`.tt-row[data-record-key="${CSS.escape(record.key)}"]`)
+            row?.scrollIntoView({ block: "center", behavior: "smooth" })
+          })
+        }}
+      />
       <div className="trajectory-ledger-wrap">
         <div className="tt-tablePane">
         <table className="tt-table" aria-label="轨迹账本">
@@ -704,9 +828,9 @@ export function TraceView({ sessionId }: { sessionId: string }) {
           {turns.length === 0 ? <tr><td colSpan={2}><p className="trace-loading">无记录</p></td></tr> : null}
           {turns.map((turn) => {
             // 时间线框选范围外的记录隐藏（dsh range 过滤语义）
-            const visibleRecords = range === null
+            const visibleRecords = focusKeys === null
               ? turn.records
-              : turn.records.filter((r) => r.ts >= range.start - 1 && r.ts <= range.end + 1)
+              : turn.records.filter((r) => focusKeys.has(r.key))
             if (visibleRecords.length === 0) return null
             const isCollapsed = collapsed.has(turn.turn) && visibleRecords.length > 1
             // ⊟Calls：折叠工具调用（隐藏 tool 行，在首个 tool 位置留摘要）
@@ -727,6 +851,7 @@ export function TraceView({ sessionId }: { sessionId: string }) {
                 <tr
                   key={record.key}
                   tabIndex={0}
+                  data-record-key={record.key}
                   data-kind={record.kind}
                   data-selected={isSelected || undefined}
                   data-error={record.failed || undefined}
