@@ -3871,15 +3871,11 @@ body.inspector-collapsed .inspector-toggle {
   cursor: pointer;
 }
 
-.trajectory-mode:hover {
-  color: #171717;
-  background: rgba(0, 0, 0, 0.05);
-}
-
-/* dsh .toggle[aria-pressed=true]：主文本色 + hover 底 */
+.trajectory-mode:hover,
 .trajectory-mode.active {
+  /* dsh token：interactive-bg-hover = rgba(38,49,72,.06) */
   color: #171717;
-  background: rgba(0, 0, 0, 0.05);
+  background: rgba(38, 49, 72, 0.06);
 }
 
 
@@ -4186,109 +4182,146 @@ body.inspector-collapsed .inspector-toggle {
   padding-right: 8px;
 }
 
-/* 详情面板（dsh aside：381px，头部 + tab 条 + 滚动体） */
+/* 详情面板（dsh .details：clamp 宽 + 左缘拖宽把手 + 42px 头 + 34px tab 行） */
 .trajectory-details {
-  flex: none;
-  width: 381px;
+  position: relative;
   display: flex;
+  flex: none;
   flex-direction: column;
+  width: clamp(320px, 38%, 440px);
+  max-width: calc(100% - 280px);
+  min-width: 0;
   min-height: 0;
   border-left: 1px solid #e5e7eb;
   background: #fff;
 }
 
-.trajectory-details-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-bottom: 1px solid #eef0f3;
+.trajectory-details-resize {
+  position: absolute;
+  z-index: 6;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
 }
 
-.trajectory-details-title {
-  flex: 1;
-  color: #33363c;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
+.trajectory-details-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  height: 42px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.trajectory-details-name {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  color: #171717;
+  font: 500 12px/16px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.trajectory-details-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #6b7280;
+}
+
+.trajectory-details-location {
+  min-width: 0;
+  overflow: hidden;
+  color: #8a8f98;
+  font: 11px/16px ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .trajectory-details-close {
-  border: none;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: #6b7280;
   background: transparent;
-  color: #9ca3af;
+  cursor: pointer;
   font-size: 16px;
   line-height: 1;
-  padding: 2px 6px;
-  border-radius: 4px;
-  cursor: pointer;
 }
 
 .trajectory-details-close:hover {
+  color: #171717;
   background: rgba(0, 0, 0, 0.05);
-  color: #40454e;
 }
 
+/* tab 行（dsh .detailTabs：34px、1px 间距、下边框、横滚隐条） */
 .trajectory-details-tabs {
   display: flex;
-  gap: 2px;
+  flex: none;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 34px;
   padding: 0 8px;
-  border-bottom: 1px solid #eef0f3;
+  overflow-x: auto;
+  overflow-y: hidden;
+  gap: 1px;
+  border-bottom: 1px solid #e5e7eb;
 }
 
+.trajectory-details-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* tab（dsh .detailTab：13px 字、9px 侧衬、hover 浮层底；active=业务蓝字+内嵌 2px 下划线） */
 .trajectory-details-tab {
-  border: none;
+  position: relative;
+  flex: none;
+  padding: 0 9px;
+  border: 0;
+  color: #8a8f98;
   background: transparent;
-  color: #6b7280;
-  font-size: 12px;
-  padding: 6px 8px;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
+  font-size: 13px;
+  line-height: 34px;
 }
 
 .trajectory-details-tab:hover {
-  color: #111827;
+  color: #171717;
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .trajectory-details-tab.active {
-  color: #111827;
-  border-bottom-color: #3b82f6;
+  color: var(--dsw-alias-state-business-primary, #3b82f6);
 }
 
-.trajectory-details-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 8px 0 12px;
+.trajectory-details-tab.active::after {
+  content: '';
+  position: absolute;
+  right: 9px;
+  bottom: 0;
+  left: 9px;
+  height: 2px;
+  border-radius: 1px 1px 0 0;
+  background: var(--dsw-alias-state-business-primary, #3b82f6);
 }
 
-/* Summary 的 dt/dd 两列（dsh：94px 标签列 + 内容列） */
-.trajectory-overview {
-  margin: 0;
-}
-
-.trajectory-overview > div {
-  display: grid;
-  grid-template-columns: 94px minmax(0, 1fr);
-  min-height: 22px;
-  padding: 0 14px;
-  align-items: center;
-}
-
-.trajectory-overview dt {
-  color: #9ca3af;
-  font-size: 12px;
-}
-
-.trajectory-overview dd {
-  margin: 0;
-  color: #33363c;
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-
-.trajectory-overview dd.err {
-  color: #e5484d;
-}
 
 /* Payload/Result/Raw 的等宽块 */
 .trajectory-pre {

@@ -429,10 +429,11 @@ function fmtStarted(iso: string): string {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("zh-CN", { hour12: false })
 }
 
-function DetailPanel({ record, onClose }: { record: FusedRecord; onClose: () => void }) {
+function DetailPanel({ record, onClose, width, onWidthChange }: { record: FusedRecord; onClose: () => void; width: number | null; onWidthChange: (w: number) => void }) {
   const tabs = tabsForRecord(record)
   const [active, setActive] = useState("overview")
   const [schema, setSchema] = useState<string>("加载中…")
+  const widthRef = useRef(width ?? 381)
   useEffect(() => setActive("overview"), [record.key])
   useEffect(() => {
     if (record.kind !== "tool" || !record.tool) return
@@ -450,11 +451,36 @@ function DetailPanel({ record, onClose }: { record: FusedRecord; onClose: () => 
   }, [record.tool, record.kind])
 
   return (
-    <aside className="trajectory-details" aria-label="轨迹详情">
+    <aside className="trajectory-details" aria-label="轨迹详情" style={{ width: width !== null ? `${width}px` : undefined }}>
+      <button
+        type="button"
+        className="trajectory-details-resize"
+        aria-label="拖动调整详情宽度"
+        onPointerDown={(e) => {
+          const startX = e.clientX
+          const startW = widthRef.current
+          const target = e.currentTarget
+          target.setPointerCapture(e.pointerId)
+          const onMove = (ev: PointerEvent) => {
+            const next = Math.min(440, Math.max(320, startW + (startX - ev.clientX)))
+            widthRef.current = next
+            onWidthChange(next)
+          }
+          const onUp = (ev: PointerEvent) => {
+            target.removeEventListener("pointermove", onMove)
+            target.removeEventListener("pointerup", onUp)
+            if (typeof target.releasePointerCapture === "function") {
+              try { target.releasePointerCapture(ev.pointerId) } catch { /* 已释放 */ }
+            }
+          }
+          target.addEventListener("pointermove", onMove)
+          target.addEventListener("pointerup", onUp)
+        }}
+      />
       <div className="trajectory-details-head">
-        <span className={`trajectory-badge badge-${record.kind}`}>{KIND_BADGE[record.kind]}</span>
-        <span className="trajectory-details-title">Turn {record.turn} · Step {record.step}</span>
-        <button type="button" className="trajectory-details-close" aria-label="关闭详情" onClick={onClose}>×</button>
+        <span className="trajectory-details-name"><span className="trajectory-details-dot" aria-hidden="true" />{KIND_BADGE[record.kind]}</span>
+        <span className="trajectory-details-location">Turn {record.turn} · Step {record.step}</span>
+        <button type="button" className="trajectory-details-close" aria-label="关闭详情" onClick={onClose}><span aria-hidden="true">×</span></button>
       </div>
       <div className="trajectory-details-tabs" role="tablist" aria-label="Event details">
         {tabs.map((tab) => (
@@ -504,6 +530,7 @@ export function TraceView({ sessionId }: { sessionId: string }) {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [range, setRange] = useState<TimeRange | null>(null)
+  const [detailWidth, setDetailWidth] = useState<number | null>(null)
   const reload = useRef(0)
 
   useEffect(() => {
@@ -655,7 +682,7 @@ export function TraceView({ sessionId }: { sessionId: string }) {
             )
           })}
         </div>
-        {selected ? <DetailPanel record={selected} onClose={() => setSelectedKey(null)} /> : null}
+        {selected ? <DetailPanel record={selected} onClose={() => setSelectedKey(null)} width={detailWidth} onWidthChange={setDetailWidth} /> : null}
       </div>
     </div>
   )

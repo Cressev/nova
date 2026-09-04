@@ -2167,3 +2167,12 @@ api 就不能再拆了吗？拆。
 [x] 按 dsh 规范重建：新 MenuSelect.tsx（pill 触发器+浮层卡）替换两处原生 select；按钮换 SVG；工具条 toggle/switch/搜索框全部按 dsh 尺寸重写；PATCH 方法修正
 [x] 验收：下拉开合/选择/API 生效（plan→label→后端 config 全链路实测）、工具条几何（20px/12px/22px 对照 dsh）、vision 8.5/10、"pill 不统一"经核实为 dsh 规范本身（ghost 触发器+hover 底）
 ------ todo-list end at 2026/09/04 13:27:30 -----
+
+------ todo-list begin at 2026/09/04 13:38:20 -----
+用户请求原文：轨迹页面的控件呢
+
+[x] 实测 dsh 轨迹页控件基准（DOM 几何）：toggle 20px/r3/12px字/透明底、选中=rgba(38,49,72,.06)+深字、搜索框 22px/r4、详情面板 clamp(320,38%,440)+左缘拖宽把手、头部 42px(5px点+12px等宽名+11px位置码)、tab 行 34px/13px字/蓝字+内嵌9px下划线、关闭钮 28×28/r6
+[x] 详情面板重写：宽度 clamp+可拖宽（真实鼠标拖拽实测 342→440）、头部三点式布局、tab 全规格（13px/hover浮层底/active蓝字+下划线）、关闭钮 28×28
+[x] 工具条 selected 底色 token 化：rgba(0,0,0,.05) → rgba(38,49,72,.06)（dsh interactive-bg-hover 实测值）
+[x] 验收：几何 8 项对照 dsh（42/34/28/13px/clamp/20px）、真实拖拽生效、vision 8.5/10、252 unittest 绿、前端 smoke 绿
+------ todo-list end at 2026/09/04 13:38:20 -----
