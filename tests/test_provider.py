@@ -165,10 +165,15 @@ class BigModelProviderTest(unittest.TestCase):
         provider.set_runtime_api_key("test-key")
         messages = [ChatMessage(session_id="s", role=ChatRole.USER, content="流式回答")]
 
-        async def collect() -> list[str]:
+        async def collect() -> list[object]:
             return [delta async for delta in provider.stream(messages)]
 
-        self.assertEqual(asyncio.run(collect()), ["流式", "回答"])
+        # 思考模型的 reasoning 增量以 dict 单独下发（与正文 str 混流），
+        # 前端渲染为 Think 披露行；正文 delta 仍为纯 str。
+        self.assertEqual(
+            asyncio.run(collect()),
+            [{"type": "reasoning_delta", "text": "内部推理"}, "流式", "回答"],
+        )
         self.assertEqual(fake_client.chat.completions.calls[-1]["stream"], True)
 
     def test_stream_delta_ignores_empty_choices_and_reasoning_only_delta(self) -> None:

@@ -227,6 +227,9 @@ class CodexLikeAgentRuntime:
         native_calls: list = []
         content_parts: list[str] = []
         async for event in stream_with_tools(messages, tools=tools):
+            if event.get("type") == "reasoning_delta":
+                yield {"type": "reasoning_delta", "delta": str(event.get("text") or "")}
+                continue
             if event.get("type") == "delta":
                 content_parts.append(str(event.get("text") or ""))
                 for safe in gate.feed(str(event.get("text") or "")):
@@ -285,6 +288,10 @@ class CodexLikeAgentRuntime:
         gate = _ToolCallGate()
         async for delta in self.provider.stream([*working_messages, final_prompt]):
             emitted = True
+            if isinstance(delta, dict):
+                if delta.get("type") == "reasoning_delta":
+                    yield {"type": "reasoning_delta", "delta": str(delta.get("text") or "")}
+                continue
             for safe in gate.feed(delta):
                 yield {"type": "assistant_delta", "delta": safe}
         for safe in gate.flush():
@@ -346,6 +353,11 @@ class CodexLikeAgentRuntime:
         gate = _ToolCallGate()
         try:
             async for delta in self.provider.stream(messages):
+                # 思考模型可能先发 reasoning_delta（dict），再发正文（str）
+                if isinstance(delta, dict):
+                    if delta.get("type") == "reasoning_delta":
+                        yield {"type": "reasoning_delta", "delta": str(delta.get("text") or "")}
+                    continue
                 for safe in gate.feed(delta):
                     yield {"type": "assistant_delta", "delta": safe}
         except ProviderError:

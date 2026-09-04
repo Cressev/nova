@@ -104,6 +104,18 @@ class BigModelProvider:
         content = self._read_attr(delta, "content")
         return content if isinstance(content, str) and content else None
 
+    def _stream_reasoning_text(self, delta: dict) -> str | None:
+        """GLM-4.7 等思考模型的推理增量（reasoning_content）。
+
+        思考发生在正文/工具调用之前；单独成流下发，前端渲染为
+        Think 披露行（dsh ReasoningRow），不与正文混排。
+        """
+        for key in ("reasoning_content", "reasoning"):
+            value = self._read_attr(delta, key)
+            if isinstance(value, str) and value:
+                return value
+        return None
+
     def _openai_client(self, api_key: str) -> Any:
         if self._client_factory is not None:
             return self._client_factory(api_key)
@@ -332,6 +344,9 @@ class BigModelProvider:
             if not choices:
                 continue
             delta = self._read_attr(choices[0], "delta") or {}
+            reasoning = self._stream_reasoning_text(delta)
+            if reasoning:
+                yield {"type": "reasoning_delta", "text": reasoning}
             content = self._stream_delta_text(delta)
             if content:
                 parts.append(content)
@@ -415,6 +430,9 @@ class BigModelProvider:
             if not choices:
                 continue
             delta = self._read_attr(choices[0], "delta") or {}
+            reasoning = self._stream_reasoning_text(delta)
+            if reasoning:
+                yield {"type": "reasoning_delta", "text": reasoning}
             content = self._stream_delta_text(delta)
             if content:
                 yield content

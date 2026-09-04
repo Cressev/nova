@@ -74,6 +74,19 @@ function foldRecords(messages: ChatMessage[], events: TraceEvent[]): { turns: Tu
       },
     })
   }
+  // 工具事件按 id 去重合并：started+completed 是同一次调用的两半，
+  // 只渲染一行（completed 携带 output/status/updated_at；started 行丢弃）
+  const toolEventById = new Map<string, TraceEvent>()
+  for (const e of events) {
+    const type = String(e.event_type || "")
+    if (!type.startsWith("tool.")) continue
+    const id = String((e as { id?: string }).id || "")
+    if (!id) continue
+    const prev = toolEventById.get(id)
+    if (!prev || type === "tool.completed" || (prev.event_type === "tool.started" && type === "tool.failed")) {
+      toolEventById.set(id, e)
+    }
+  }
   for (const e of events) {
     const ts = e.created_at ? Date.parse(e.created_at) : NaN
     if (Number.isNaN(ts)) continue
@@ -82,7 +95,11 @@ function foldRecords(messages: ChatMessage[], events: TraceEvent[]): { turns: Tu
       run: () => {
         const type = String(e.event_type || "")
         // 轮次/状态/钩子类事件不产生账本行（审计 §4.4）
-        if (type.startsWith("turn.") || type === "status" || type === "memory.compacted" || type.startsWith("hook.")) return
+        if (type.startsWith("turn.") || type === "status" || type === "memory.compacted" || type.startsWith("hook.") || type.startsWith("agent.")) return
+        if (type === "reasoning.completed") {
+          push({ kind: "system", text: `Think · ${String(e.message || "").split("\n")[0].slice(0, 60)}`, tool: null, args: {}, output: String(e.message || ""), status: "ok", iso: e.created_at })
+          return
+        }
         if (type === "permission.requested") {
           push({ kind: "system", text: `permission · ${e.tool || "工具"} 待确认`, tool: e.tool || null, args: (e.arguments || {}) as Record<string, unknown>, output: null, status: "pending", iso: e.created_at })
           return
@@ -92,9 +109,11 @@ function foldRecords(messages: ChatMessage[], events: TraceEvent[]): { turns: Tu
           return
         }
         if (type.startsWith("tool.")) {
-          const durationMs = typeof e.duration_ms === "number" ? e.duration_ms : null
+          // 同一调用只取合并后的那一行；started 事件不渲染
+          if (toolEventById.get(String((e as { id?: string }).id || "")) !== e) return
           const args = (e.arguments || {}) as Record<string, unknown>
           const output = typeof e.output === "string" ? e.output : null
+          const updated = ((e as { updated_at?: string }).updated_at) || e.created_at
           push({
             kind: "tool",
             text: monospaceToolText(String(e.tool || "tool"), args, output),
@@ -102,8 +121,7 @@ function foldRecords(messages: ChatMessage[], events: TraceEvent[]): { turns: Tu
             args,
             output,
             status: e.status || "ok",
-            iso: e.created_at,
-            durationMs,
+            iso: updated,
           })
         }
       },
@@ -152,47 +170,226 @@ function foldRecords(messages: ChatMessage[], events: TraceEvent[]): { turns: Tu
   return { turns, totalMs }
 }
 
-/* ---- 泳道 tile 时间线（dsh：三泳道 + 语义色 + 网格底）---- */
-function TimelineLanes({ records, turns }: { records: FusedRecord[]; turns: TurnGroup[] }) {
-  const BINS = 48
-  const start = records.length ? records[0].ts : 0
-  const span = Math.max(1, (records.length ? records[records.length - 1].ts : 1) - start)
-  const lanes: Array<Array<{ color: string; count: number }>> = [
-    Array.from({ length: BINS }, () => ({ color: "", count: 0 })),
-    Array.from({ length: BINS }, () => ({ color: "", count: 0 })),
-    Array.from({ length: BINS }, () => ({ color: "", count: 0 })),
-  ]
-  for (const record of records) {
-    const lane = record.kind === "user" ? 0 : record.kind === "message" ? 1 : 2
-    const bin = Math.min(BINS - 1, Math.floor(((record.ts - start) / span) * BINS))
-    const cell = lanes[lane][bin]
-    cell.count += 1
-    if (record.failed) cell.color = "#e5484d"
-    else if (lane === 0) cell.color = cell.color || "#22c55e"
-    else if (lane === 1) cell.color = cell.color || "#a78bfa"
-    else cell.color = cell.color || "#f59e0b"
+/* ---- 泳道 tile 时间线（dsh TrajectoryTimeline 对齐：可缩放/拖选/平移/点击）----
+   滚轮=缩放（锚点跟随光标，exp(deltaY·0.0015)，最小窗 4 个事件宽度）；
+   左键拖=框选时间范围；右键拖=平移；点击色块=选中该记录；点空白=聚焦最近记录；
+   Escape=重置视口。时间范围 onChange 时账本只显示范围内的行。 */
+interface TimeRange { start: number; end: number }
+
+const MINIMUM_DRAG_PX = 3
+const MINIMUM_ZOOM_EVENTS = 4
+
+function orderedRange(a: number, b: number): TimeRange {
+  return a <= b ? { start: a, end: b } : { start: b, end: a }
+}
+
+function TimelineLanes({ records, turns, range, onRangeChange, onRecordSelect, onRecordFocus }: {
+  records: FusedRecord[]
+  turns: TurnGroup[]
+  range: TimeRange | null
+  onRangeChange: (r: TimeRange | null) => void
+  onRecordSelect: (record: FusedRecord) => void
+  onRecordFocus: (record: FusedRecord) => void
+}) {
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const trackRef = useRef<HTMLDivElement | null>(null)
+  const dragRef = useRef<{ pointerId: number; anchorTime: number; anchorClientX: number; record: FusedRecord | null } | null>(null)
+  const panRef = useRef<{ pointerId: number; anchorClientX: number; anchorStart: number; moved: boolean; pannable: boolean } | null>(null)
+  const [draft, setDraft] = useState<TimeRange | null>(null)
+  const [viewport, setViewport] = useState<TimeRange | null>(null)
+  const [panning, setPanning] = useState(false)
+
+  const modelStart = records.length ? records[0].ts : 0
+  const modelEnd = records.length ? records[records.length - 1].ts : 1
+  const fullDuration = Math.max(1, modelEnd - modelStart)
+  const domainStart = viewport === null ? modelStart : viewport.start
+  const domainDuration = viewport === null ? fullDuration : Math.max(1, viewport.end - viewport.start)
+
+  // 滚轮缩放：锚点跟随光标（dsh wheel 语义）
+  useEffect(() => {
+    const root = rootRef.current
+    if (root === null) return
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault()
+      const track = trackRef.current
+      if (track === null || records.length === 0) return
+      const rect = track.getBoundingClientRect()
+      const anchorFraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(1, rect.width)))
+      const minDuration = (fullDuration / records.length) * MINIMUM_ZOOM_EVENTS
+      const nextDuration = Math.min(
+        fullDuration,
+        Math.max(minDuration, domainDuration * Math.exp(event.deltaY * 0.0015)),
+      )
+      if (nextDuration >= fullDuration * 0.999) {
+        setViewport(null)
+        return
+      }
+      const anchorTime = domainStart + anchorFraction * domainDuration
+      const nextStart = Math.min(
+        Math.max(anchorTime - anchorFraction * nextDuration, modelStart),
+        modelEnd - nextDuration,
+      )
+      setViewport({ start: nextStart, end: nextStart + nextDuration })
+    }
+    root.addEventListener("wheel", onWheel, { passive: false })
+    return () => { root.removeEventListener("wheel", onWheel) }
+  }, [domainDuration, domainStart, fullDuration, modelEnd, modelStart, records.length])
+
+  // Escape 重置（dsh 语义）
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setViewport(null)
+        onRangeChange(null)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => { window.removeEventListener("keydown", onKey) }
+  }, [onRangeChange])
+
+  if (records.length === 0) return null
+
+  const visibleRange = draft ?? range
+  const frac = (t: number) => (t - domainStart) / domainDuration
+  // 可见 domain 内的记录 → 泳道 span（绝对定位，dsh span 形态）
+  const spans = records
+    .map((record) => {
+      const lane = record.kind === "user" ? 0 : record.kind === "message" ? 1 : 2
+      const color = record.failed ? "#e5484d" : lane === 0 ? "#22c55e" : lane === 1 ? "#a78bfa" : "#f59e0b"
+      const next = records[records.indexOf(record) + 1]
+      const end = next ? Math.min(next.ts, record.ts + 30000) : record.ts + 30000
+      return { record, lane, color, start: record.ts, end: Math.max(end, record.ts + 30) }
+    })
+    .filter((s) => s.end >= domainStart && s.start <= domainStart + domainDuration)
+
+  const fractionAt = (clientX: number): number => {
+    const track = trackRef.current
+    if (track === null) return 0
+    const rect = track.getBoundingClientRect()
+    return Math.min(1, Math.max(0, (clientX - rect.left) / Math.max(1, rect.width)))
   }
+  const recordAt = (target: EventTarget | null): FusedRecord | null => {
+    const el = target instanceof HTMLElement ? target.closest<HTMLElement>("[data-record-key]") : null
+    if (el === null) return null
+    return spans.find((s) => s.record.key === el.dataset.recordKey)?.record ?? null
+  }
+
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button === 2) {
+      panRef.current = { pointerId: event.pointerId, anchorClientX: event.clientX, anchorStart: domainStart, moved: false, pannable: viewport !== null }
+      setPanning(true)
+      event.currentTarget.setPointerCapture(event.pointerId)
+      return
+    }
+    if (event.button !== 0) return
+    const fraction = fractionAt(event.clientX)
+    const anchorTime = domainStart + fraction * domainDuration
+    dragRef.current = { pointerId: event.pointerId, anchorTime, anchorClientX: event.clientX, record: recordAt(event.target) }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setDraft({ start: anchorTime, end: anchorTime })
+  }
+
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const pan = panRef.current
+    if (pan !== null && pan.pointerId === event.pointerId) {
+      if (Math.abs(event.clientX - pan.anchorClientX) >= MINIMUM_DRAG_PX) pan.moved = true
+      if (!pan.pannable) return
+      const track = trackRef.current
+      if (track === null) return
+      const rect = track.getBoundingClientRect()
+      const delta = (event.clientX - pan.anchorClientX) / Math.max(1, rect.width)
+      const nextStart = Math.min(Math.max(pan.anchorStart - delta * domainDuration, modelStart), modelEnd - domainDuration)
+      setViewport({ start: nextStart, end: nextStart + domainDuration })
+      return
+    }
+    const drag = dragRef.current
+    if (drag === null || drag.pointerId !== event.pointerId) return
+    const pointTime = domainStart + fractionAt(event.clientX) * domainDuration
+    setDraft(orderedRange(drag.anchorTime, pointTime))
+  }
+
+  const onPointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    const pan = panRef.current
+    if (pan !== null && pan.pointerId === event.pointerId) {
+      const moved = pan.moved || Math.abs(event.clientX - pan.anchorClientX) >= MINIMUM_DRAG_PX
+      panRef.current = null
+      setPanning(false)
+      if (!moved) onRangeChange(null)
+      return
+    }
+    const drag = dragRef.current
+    if (drag === null || drag.pointerId !== event.pointerId) return
+    const pointTime = domainStart + fractionAt(event.clientX) * domainDuration
+    const selected = orderedRange(drag.anchorTime, pointTime)
+    dragRef.current = null
+    setDraft(null)
+    const isClick = Math.abs(event.clientX - drag.anchorClientX) < MINIMUM_DRAG_PX
+    if (isClick && drag.record !== null) {
+      // 点击色块：直接选中该记录（dsh onRecordSelect）
+      onRangeChange(null)
+      onRecordSelect(drag.record)
+      return
+    }
+    const minimumDuration = Math.min(domainDuration, fullDuration / Math.max(1, spans.length))
+    const committed = selected.end - selected.start < minimumDuration
+      ? (() => {
+          const center = isClick ? selected.start : (selected.start + selected.end) / 2
+          const s = Math.min(Math.max(center - minimumDuration / 2, modelStart), modelEnd - minimumDuration)
+          return { start: s, end: s + minimumDuration }
+        })()
+      : selected
+    onRangeChange(committed)
+    if (isClick) {
+      // 点空白：聚焦最近记录（dsh onRecordFocus）
+      let nearest = spans[0]?.record
+      let best = Infinity
+      for (const s of spans) {
+        const d = selected.start < s.start ? s.start - selected.start : selected.start > s.end ? selected.start - s.end : 0
+        if (d < best) { best = d; nearest = s.record }
+      }
+      if (nearest !== undefined) onRecordFocus(nearest)
+    }
+  }
+
+  const selectionLeft = visibleRange ? `${Math.min(Math.max(frac(visibleRange.start), 0), 1) * 100}%` : null
+  const selectionWidth = visibleRange
+    ? `${(Math.min(Math.max(frac(visibleRange.end), 0), 1) - Math.min(Math.max(frac(visibleRange.start), 0), 1)) * 100}%`
+    : null
+
   return (
-    <div className="trajectory-timeline" aria-label="轨迹时间线">
+    <div className="trajectory-timeline" ref={rootRef} aria-label="轨迹时间线">
       <div className="trajectory-lane-labels" aria-hidden="true">
         <span>Input</span>
         <span>Model</span>
         <span>Tools</span>
       </div>
-      <div className="trajectory-lanes">
-        {lanes.map((lane, i) => (
-          <div className="trajectory-lane" key={i}>
-            {lane.map((cell, bin) => (
-              <span
-                key={bin}
-                className="trajectory-tile"
-                data-filled={cell.count > 0 || undefined}
-                style={cell.color ? { background: cell.color } : undefined}
-              />
-            ))}
-          </div>
-        ))}
+      <div
+        className="trajectory-lanes"
+        ref={trackRef}
+        data-panning={panning || undefined}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerEnd}
+        onPointerCancel={onPointerEnd}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        {spans.map((s) => {
+          const left = `${Math.min(Math.max(frac(s.start), 0), 1) * 100}%`
+          const width = `${Math.max(0.2, (Math.min(Math.max(frac(s.end), 0), 1) - Math.min(Math.max(frac(s.start), 0), 1)) * 100)}%`
+          return (
+            <span
+              key={s.record.key}
+              className="trajectory-span"
+              data-record-key={s.record.key}
+              style={{ top: `calc(${s.lane} * 14px)`, left, width, background: s.color }}
+            />
+          )
+        })}
+        {selectionLeft !== null && selectionWidth !== null ? (
+          <span className="trajectory-selection" style={{ left: selectionLeft, width: selectionWidth }} aria-hidden="true" />
+        ) : null}
       </div>
+      <span className="trajectory-zoom-hint" aria-hidden="true">{viewport === null ? `${turns.length} 轮` : "已缩放 · Esc 重置"}</span>
     </div>
   )
 }
@@ -306,6 +503,7 @@ export function TraceView({ sessionId }: { sessionId: string }) {
   const [durationMode, setDurationMode] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const [range, setRange] = useState<TimeRange | null>(null)
   const reload = useRef(0)
 
   useEffect(() => {
@@ -313,6 +511,7 @@ export function TraceView({ sessionId }: { sessionId: string }) {
     setTurns(null)
     setError("")
     setSelectedKey(null)
+    setRange(null)
     Promise.all([
       api<ChatMessage[] | { messages?: ChatMessage[] }>(`/api/chat/sessions/${encodeURIComponent(sessionId)}/messages`),
       api<{ items?: TraceEvent[] }>(`/api/chat/sessions/${encodeURIComponent(sessionId)}/trace`),
@@ -372,14 +571,28 @@ export function TraceView({ sessionId }: { sessionId: string }) {
           {q ? <span className="trajectory-search-count">{matchCount} 处匹配</span> : null}
         </div>
       </div>
-      {!durationMode ? <TimelineLanes records={turns.flatMap((t) => t.records)} turns={turns} /> : null}
+      {!durationMode ? (
+        <TimelineLanes
+          records={turns.flatMap((t) => t.records)}
+          turns={turns}
+          range={range}
+          onRangeChange={setRange}
+          onRecordSelect={(record) => setSelectedKey(record.key)}
+          onRecordFocus={(record) => setSelectedKey(record.key)}
+        />
+      ) : null}
       <div className="trajectory-ledger-wrap">
         <div className="trajectory-ledger" role="grid" aria-label="轨迹账本">
           {turns.length === 0 ? <p className="trace-loading">无记录</p> : null}
           {turns.map((turn) => {
+            // 时间线框选范围外的记录隐藏（dsh range 过滤语义）
+            const visibleRecords = range === null
+              ? turn.records
+              : turn.records.filter((r) => r.ts >= range.start - 1 && r.ts <= range.end + 1)
+            if (visibleRecords.length === 0) return null
             const isCollapsed = collapsed.has(turn.turn)
-            const steps = turn.records.length
-            const calls = turn.records.filter((r) => r.kind === "tool").length
+            const steps = visibleRecords.length
+            const calls = visibleRecords.filter((r) => r.kind === "tool").length
             return (
               <div className="trajectory-turn" key={turn.turn}>
                 <button
@@ -398,14 +611,14 @@ export function TraceView({ sessionId }: { sessionId: string }) {
                   <span className="trajectory-turn-chevron" aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
                   <span className="trajectory-turn-label">Turn {turn.turn}</span>
                   <span className="trajectory-turn-index">#{turn.turn}</span>
-                  {turn.records[0]?.kind === "user" ? (
-                    <span className="trajectory-turn-lead">{turn.records[0].text.slice(0, 48)}</span>
+                  {visibleRecords[0]?.kind === "user" ? (
+                    <span className="trajectory-turn-lead">{visibleRecords[0].text.slice(0, 48)}</span>
                   ) : null}
                   {isCollapsed
                     ? <span className="trajectory-turn-subtotal">… {steps} steps · {calls} tool calls</span>
                     : <span className="trajectory-turn-meta">{steps} 条</span>}
                 </button>
-                {!isCollapsed ? turn.records.map((record) => {
+                {!isCollapsed ? visibleRecords.map((record) => {
                   // 搜索=高亮匹配行而非过滤（审计 §4.8）
                   const matched = q !== "" && (record.text.toLowerCase().includes(q) || (record.tool || "").toLowerCase().includes(q))
                   return (

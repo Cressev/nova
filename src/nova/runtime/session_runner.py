@@ -299,6 +299,8 @@ class SessionRunner:
         yield {"type": "runtime_event", "event": started}
 
         answer_parts: list[str] = []
+
+        reasoning_parts: list[str] = []
         engine = self._compaction_engine()
         try:
             # /compact 手动路径：与运行中的轮次天然串行（作为用户消息排队进入），
@@ -375,6 +377,11 @@ class SessionRunner:
                                 event,
                                 runtime_event=runtime_event,
                             )
+                        if event["type"] == "reasoning_delta":
+                            # 思考增量：直接下发（不入 answer_parts，正文与思考分离）
+                            reasoning_parts.append(str(event.get("delta") or ""))
+                            yield event
+                            continue
                         if event["type"] == "assistant_delta":
                             answer_parts.append(event["delta"])
                             yield event
@@ -429,6 +436,19 @@ class SessionRunner:
                 content=answer_text,
             )
             self.deps.store.add_chat_message(assistant_message)
+            # 思考过程持久化：turn 收口时落一条 reasoning.completed 事件，
+            # 前端恢复会话时把思考渲染为 Think 披露行（时间位置=工具调用之前）。
+            reasoning_text = "".join(reasoning_parts).strip()
+            if reasoning_text:
+                reasoning_event = orchestrator.event(
+                    "reasoning.completed",
+                    category="reasoning",
+                    phase="completed",
+                    title="模型思考",
+                    message=reasoning_text,
+                    data={"chars": len(reasoning_text)},
+                )
+                yield {"type": "runtime_event", "event": reasoning_event}
             completed = orchestrator.complete_turn(
                 message_id=assistant_message.id,
                 content=assistant_message.content,

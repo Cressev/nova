@@ -5,6 +5,7 @@ import { Markdown, CopyButton } from "./components/Markdown"
 import { ToolEventRow, deriveToolSummary, type ToolEventView } from "./components/ToolEvent"
 import { PermissionCard, QuestionCard } from "./components/Takeover"
 import { TraceView } from "./components/TraceView"
+import { ThinkRow } from "./components/ThinkRow"
 
 /* ============================================================================
    Nova App —— React 版（对齐 dsh ui-conversation 的组件分区）。
@@ -15,6 +16,7 @@ import { TraceView } from "./components/TraceView"
 
 type TimelineEntry =
   | { kind: "message"; key: string; message: ChatMessage }
+  | { kind: "think"; key: string; text: string; running: boolean }
   | { kind: "tool"; key: string; view: ToolEventView }
   | { kind: "permission"; key: string; item: PendingApprovalItem }
   | { kind: "question"; key: string; item: PendingApprovalItem }
@@ -59,6 +61,13 @@ function roleLabel(role: string): string {
   return role
 }
 
+function findLastIndex<T>(arr: T[], pred: (x: T) => boolean): number {
+  for (let i = arr.length - 1; i >= 0; i -= 1) {
+    if (pred(arr[i])) return i
+  }
+  return -1
+}
+
 /** 从后端 timeline items（message/event 混合）折叠为渲染条目。 */
 function foldTimeline(items: Array<{ kind: string; item: Record<string, unknown> }>): TimelineEntry[] {
   const entries: TimelineEntry[] = []
@@ -78,6 +87,20 @@ function foldTimeline(items: Array<{ kind: string; item: Record<string, unknown>
     const eventType = String(event.event_type || event.type || "")
     if (eventType.startsWith("turn.") || eventType === "status" || eventType.startsWith("hook.") || eventType === "memory.compacted") {
       continue // dsh 形态：运行状态不进消息流
+    }
+    if (eventType === "reasoning.completed") {
+      // 持久化思考：渲染为 Think 披露行。事件时间戳晚于 assistant 消息落库时间，
+      // 但语义上思考先于回答 → 插入点=同轮 assistant 消息之前（dsh Think 行位置）。
+      const thinkEntry: TimelineEntry = {
+        kind: "think",
+        key: `think-${event.id}`,
+        text: String(event.message || ""),
+        running: false,
+      }
+      const lastMsgIdx = findLastIndex(entries, (e) => e.kind === "message" && e.message.role === "assistant")
+      if (lastMsgIdx >= 0) entries.splice(lastMsgIdx, 0, thinkEntry)
+      else entries.push(thinkEntry)
+      continue
     }
     if (eventType === "user.question" || event.type === "user_question") {
       const questions = (event.data?.questions || (event as unknown as { questions?: unknown }).questions || []) as PendingApprovalItem["questions"]
@@ -373,6 +396,7 @@ function ConversationView({ entries, streamingText }: { entries: TimelineEntry[]
       {entries.map((entry) => {
         if (entry.kind === "message") return <MessageView key={entry.key} message={entry.message} />
         if (entry.kind === "checkpoint") return <CheckpointView key={entry.key} message={entry.message} />
+        if (entry.kind === "think") return <ThinkRow key={entry.key} text={entry.text} running={entry.running} />
         if (entry.kind === "tool") {
           return <ToolEventRow key={entry.key} view={entry.view} />
         }
@@ -505,6 +529,20 @@ export default function App() {
       const decoder = new TextDecoder()
       let buffer = ""
       let assistantText = ""
+      let thinkKey: string | null = null
+      let thinkText = ""
+      const upsertThink = (running: boolean) => {
+        const key = thinkKey
+        if (key === null) return
+        setEntries((prev) => {
+          const idx = prev.findIndex((e) => e.key === key)
+          const next = [...prev]
+          const item = { kind: "think" as const, key, text: thinkText, running }
+          if (idx >= 0 && next[idx].kind === "think") next[idx] = item
+          else next.push(item)
+          return next
+        })
+      }
       const pushTool = (view: ToolEventView, replaceKey: string) => {
         setEntries((prev) => {
           const idx = prev.findIndex((e) => e.key === replaceKey)
@@ -523,11 +561,23 @@ export default function App() {
           return
         }
         const type = String(event.type || "")
-        if (type === "assistant_delta") {
+        if (type === "reasoning_delta") {
+          // 思考在正文/工具调用之前发生：按段累积，插在消息流时间线上
+          if (thinkKey === null) {
+            thinkKey = `think-${Date.now()}`
+            thinkText = ""
+          }
+          thinkText += String(event.delta || "")
+          upsertThink(true)
+          setStreamState("Nova 正在思考")
+        } else if (type === "assistant_delta") {
+          // 正文开始 → 当前思考段落封口（running=false）
+          if (thinkKey !== null) { upsertThink(false); thinkKey = null; thinkText = "" }
           assistantText += String(event.delta || "")
           setStreamingText(assistantText)
           setStreamState("Nova 正在输出")
         } else if (type === "tool_start") {
+          if (thinkKey !== null) { upsertThink(false); thinkKey = null; thinkText = "" }
           const tool = String(event.tool || "")
           const callId = String(event.call_id || tool || `tool-${Date.now()}`)
           const args = (event.arguments || {}) as Record<string, unknown>

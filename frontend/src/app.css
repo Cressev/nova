@@ -3912,6 +3912,7 @@ body.inspector-collapsed .inspector-toggle {
   grid-template-columns: 44px minmax(0, 1fr);
   flex: none;
   height: 50px;
+  margin-top: 2px;
   overflow: hidden;
   border-bottom: 1px solid #e8eaed;
   background: #f7f8fa;
@@ -3939,195 +3940,53 @@ body.inspector-collapsed .inspector-toggle {
 .trajectory-lane-labels span:nth-child(2) { top: 21px; }
 .trajectory-lane-labels span:nth-child(3) { top: 35px; }
 
+/* 轨道：相对定位，span 绝对定位（dsh .lanes/.span 语义） */
 .trajectory-lanes {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 7px 0;
-  min-width: 0;
-}
-
-.trajectory-lane {
-  display: flex;
-  gap: 1px;
-  height: 8px;
-}
-
-.trajectory-tile {
-  flex: 1;
-  min-width: 2px;
-  height: 8px;
-  border-radius: 1px;
-  background: #eceef1;
-}
-
-.trajectory-tile[data-filled] {
-  background: #d9d9de;
-}
-
-/* 空 Turn（仅 turn.started 无内容）不渲染分组头 */
-.trajectory-turn-header[data-empty] {
-  display: none;
-}
-
-/* 事件流账本：脊线 + 圆点 + 徽章行 */
-.trajectory-ledger {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  position: relative;
-  margin-top: 6px;
-  padding-left: 18px;
-}
-
-.trajectory-ledger::before {
-  content: '';
-  position: absolute;
-  top: 4px;
-  bottom: 4px;
-  left: 5px;
-  width: 1px;
-  background: #e5e7eb;
-}
-
-.trajectory-turn-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  position: relative;
-  border: none;
-  border-radius: 6px;
-  padding: 6px 8px 6px 0;
-  background: transparent;
-  cursor: pointer;
-}
-
-.trajectory-turn-header::before {
-  content: '';
-  position: absolute;
-  left: -16px;
-  top: 50%;
-  width: 6px;
-  height: 6px;
-  transform: translateY(-50%);
-  border-radius: 999px;
-  background: #9ca3af;
-}
-
-.trajectory-turn-label {
-  color: #6b7280;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-}
-
-.trajectory-turn-meta {
-  color: #b0b4bb;
-  font-size: 11px;
-}
-
-.trajectory-turn-chevron {
-  margin-left: auto;
-  color: #9ca3af;
-  font-size: 10px;
-}
-
-.trajectory-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  position: relative;
-  min-height: 30px;
-  border-radius: 6px;
-  padding: 4px 8px 4px 0;
-}
-
-.trajectory-row::before {
-  content: '';
-  position: absolute;
-  left: -16px;
-  top: 50%;
-  width: 6px;
-  height: 6px;
-  transform: translateY(-50%);
-  border-radius: 999px;
-  background: #d1d5db;
-}
-
-.trajectory-row:hover {
-  background: rgba(0, 0, 0, 0.03);
-}
-
-/* 角色徽章：圆角 3-4px 小胶囊，10px 大写字距 */
-.trajectory-badge {
-  flex: none;
-  min-width: 68px;
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.05em;
-  line-height: 16px;
-  text-align: center;
-}
-
-.badge-user {
-  color: #4338ca;
-  background: #e0e7ff;
-}
-
-.badge-message {
-  color: #6d5ae0;
-  background: #ece8fc;
-}
-
-.badge-tool {
-  color: #c8791b;
-  background: #fbeede;
-}
-
-.badge-system {
-  color: #6b7280;
-  background: #f1f2f4;
-}
-
-.trajectory-text {
-  flex: 1;
-  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #33363c;
-  font-size: 13px;
+  cursor: crosshair;
+  touch-action: none;
+  margin: 7px 0;
+  min-height: 36px;
+  /* 泳道 pitch 14px × 3 - tile 8px */
 }
 
-.trajectory-text.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  color: #40454e;
+.trajectory-lanes[data-panning] {
+  cursor: grabbing;
 }
 
-.trajectory-row.failed .trajectory-text {
-  color: #e5484d;
+.trajectory-span {
+  position: absolute;
+  height: 8px;
+  min-width: 2px;
+  border-radius: 1px;
+  opacity: 0.78;
 }
 
-/* 普通工具行黑色等宽；红仅错误（dsh 语义） */
-.trajectory-row.kind-tool:not(.failed) .trajectory-text {
-  color: #111827;
+.trajectory-span:hover {
+  opacity: 1;
 }
 
-.trajectory-row-time {
-  flex: none;
+/* 框选高亮（dsh range 选择） */
+.trajectory-selection {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid rgba(59, 130, 246, 0.7);
+  border-right: 1px solid rgba(59, 130, 246, 0.7);
+  background: rgba(59, 130, 246, 0.08);
+  pointer-events: none;
+}
+
+/* 缩放状态提示（右上角小字） */
+.trajectory-zoom-hint {
+  position: absolute;
+  top: 2px;
+  right: 8px;
   color: #b0b4bb;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-#chat-form {
-  flex: none;
-  min-height: 94px;
+  font-size: 10px;
+  line-height: 1;
+  pointer-events: none;
 }
 
 /* ===== 轨迹态交互级对齐（审计 §4：详情面板/折叠/选中/搜索高亮）2026-09-04 ===== */
@@ -4158,6 +4017,23 @@ body.inspector-collapsed .inspector-toggle {
 }
 
 /* 行选中态（dsh：rgba(38,49,72,.1)） */
+/* 轨迹行基础形态（dsh table row）：徽章 + 等宽文本 + 尾时长 */
+.trajectory-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  min-height: 28px;
+  border-radius: 6px;
+  padding: 3px 8px 3px 0;
+  cursor: pointer;
+  outline: none;
+}
+
+.trajectory-row:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
 .trajectory-row.selected {
   background: rgba(38, 49, 72, 0.1);
 }
@@ -4167,6 +4043,27 @@ body.inspector-collapsed .inspector-toggle {
 }
 
 /* 搜索命中高亮（不过滤行，审计 §4.8） */
+/* 行文本：普通行省略号截断；工具行等宽（dsh table cell 语义） */
+.trajectory-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #33363c;
+  font-size: 13px;
+}
+
+.trajectory-text.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: #111827;
+}
+
+.trajectory-row.failed .trajectory-text {
+  color: #e5484d;
+}
+
 .trajectory-row.matched .trajectory-text {
   background: #fef3c7;
   border-radius: 3px;
@@ -4417,4 +4314,109 @@ body.inspector-collapsed .inspector-toggle {
 /* dsh --dsh-trajectory-bottom-clearance：composer 高度 + 16px，让末行滚出遮挡区 */
 .app-shell[data-main-state="trace"] .trajectory-ledger {
   padding-bottom: 140px;
+}
+
+/* ===== Think 披露行（dsh ReasoningRow + DisclosureRow 对齐）===== */
+.think-row {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 92%);
+  justify-self: start;
+  position: relative;
+}
+
+.think-disclosure {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  height: 24px;
+  min-width: 0;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+
+.think-disclosure:focus-visible {
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px var(--dsw-alias-state-business-tertiary);
+}
+
+.think-row[data-state="running"] .think-disclosure::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 300px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 60%, transparent) 55%,
+    transparent 100%
+  );
+  animation: nova-think-row-sweep 2.6s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes nova-think-row-sweep {
+  0% { left: -300px; }
+  90%, 100% { left: 100%; }
+}
+
+.think-leading {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.think-title {
+  flex: none;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 24px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.think-sep {
+  flex: none;
+  width: 2px;
+  height: 2px;
+  margin: 0 8px;
+  border-radius: 1px;
+  background: var(--dsw-alias-label-caption);
+}
+
+.think-summary {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1 1 auto;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.think-summary[data-follow-end] {
+  text-overflow: clip;
+}
+
+.think-chevron {
+  flex: none;
+  margin-left: 8px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.think-body {
+  padding: 4px 0 4px 22px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 24px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }

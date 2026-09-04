@@ -2146,3 +2146,14 @@ api 就不能再拆了吗？拆。
 [] P1 侧栏：hover「…」菜单（重命名/分叉/归档）替代 ✕（未做）
 [x] 交互级验收（两边同操作比结果）：几何 7 项对照 + 折叠/搜索/tab 切换实测；视觉 8/10；tsc+build+252 unittest+前端 smoke 全绿
 ------ todo-list end at 2026/09/04 12:31:37 -----
+
+------ todo-list begin at 2026/09/04 12:37:39 -----
+用户请求原文：模型思考内容要放对地方，现在都挤到最下面了，原来是工具调用之前的思考，导致最后的回答加载了工具调用的思考过程。而且现在页面pane的大小不对，你对比一下各个dom的元素的大小设计。还有现在的ui思考和工具调用的卡片（dsh没有卡片）还是没有对齐dsh。轨迹中非常混乱，一条工具调用重复了无数次，而且上面的预览条原来的dsh是可以滚动缩小放大拖动和点击的
+
+[x] 思考内容定位：provider 提取 reasoning_content（GLM-4.7 思考流）→ agent/session_runner 透传 reasoning_delta → SSE 实时下发 + turn 收口落 reasoning.completed trace 事件持久化；恢复会话时 Think 行插入 assistant 消息之前（实测 user→Think→assistant，展开可读全文）
+[x] pane 尺寸：空态规则改 data-main-state 限定（不再泄漏到轨迹态）；composer 96≈94 单行起步贴底；账本 463≈474 通底 + 140px clearance；工具条 32px；时间线 50px
+[x] 思考行形态：新 ThinkRow.tsx = dsh ReasoningRow+DisclosureRow 规范（24px 行/16px 图标/标题/2px 分隔点/省略摘要/运行扫光/22px 缩进展开体，无边框无卡片）
+[x] 轨迹去重：根因=tool.started+tool.completed 双事件都渲染 → 按 id 合并取 completed（实测 5 事件→3 行，无重复）
+[x] 时间线交互：滚轮缩放（锚点跟随+exp 系数+最小窗 4 事件）、左键拖选范围（账本过滤）、右键拖平移、点色块=选中记录开详情、点空白=聚焦最近、Esc 重置（全部实测通过）
+[x] 附带修复：reasoning 持久化测试期望更新；轨迹行/文本基础 CSS 补回（时间线重写时误伤）；徽章间距+缩放提示可见性
+------ todo-list end at 2026/09/04 13:14:51 -----
