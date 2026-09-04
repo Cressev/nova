@@ -602,6 +602,7 @@ export function TraceView({ sessionId }: { sessionId: string }) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [range, setRange] = useState<TimeRange | null>(null)
   const [detailWidth, setDetailWidth] = useState<number | null>(null)
+  const [callsCollapsed, setCallsCollapsed] = useState(false)
   const reload = useRef(0)
 
   useEffect(() => {
@@ -667,8 +668,8 @@ export function TraceView({ sessionId }: { sessionId: string }) {
             <span>实际时间</span>
             <span className="trajectory-switch-track" data-on={durationMode || undefined} aria-hidden="true"><span className="trajectory-switch-thumb" /></span>
           </button>
-          <button type="button" className={`trajectory-mode${allCollapsed ? " active" : ""}`} onClick={toggleCollapseAll}>⊟Turns</button>
-          <button type="button" className={`trajectory-mode${allCollapsed ? " active" : ""}`} onClick={toggleCollapseAll}>⊟Calls</button>
+          <button type="button" className={`trajectory-mode${allCollapsed ? " active" : ""}`} aria-pressed={allCollapsed} onClick={toggleCollapseAll}>{allCollapsed ? "⊞Turns" : "⊟Turns"}</button>
+          <button type="button" className={`trajectory-mode${callsCollapsed ? " active" : ""}`} aria-pressed={callsCollapsed} onClick={() => setCallsCollapsed((v) => !v)}>{callsCollapsed ? "⊞Calls" : "⊟Calls"}</button>
         </div>
         <div className="trajectory-searchbox">
           <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="6.4" cy="6.4" r="4.4" stroke="currentColor" strokeWidth="1.4"/><path d="m9.8 9.8 2.9 2.9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
@@ -706,92 +707,107 @@ export function TraceView({ sessionId }: { sessionId: string }) {
               ? turn.records
               : turn.records.filter((r) => r.ts >= range.start - 1 && r.ts <= range.end + 1)
             if (visibleRecords.length === 0) return null
-            const isCollapsed = collapsed.has(turn.turn)
-            const steps = visibleRecords.length
-            const calls = visibleRecords.filter((r) => r.kind === "tool").length
-            return (
-              <>
-              <tr className="tt-groupRow" key={`g-${turn.turn}`}>
-                <td colSpan={2} className="tt-groupCell">
-                  <button
-                    type="button"
-                    className="trajectory-turn-header"
-                    aria-expanded={!isCollapsed}
-                    onClick={() => {
-                      setCollapsed((prev) => {
-                        const next = new Set(prev)
-                        if (next.has(turn.turn)) next.delete(turn.turn)
-                        else next.add(turn.turn)
-                        return next
-                      })
-                    }}
-                  >
-                    <span className="trajectory-turn-chevron" aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
-                    <span className="trajectory-turn-label">Turn {turn.turn}</span>
-                    <span className="trajectory-turn-index">#{turn.turn}</span>
-                    {visibleRecords[0]?.kind === "user" ? (
-                      <span className="trajectory-turn-lead">{visibleRecords[0].text.slice(0, 48)}</span>
+            const isCollapsed = collapsed.has(turn.turn) && visibleRecords.length > 1
+            // ⊟Calls：折叠工具调用（隐藏 tool 行，在首个 tool 位置留摘要）
+            const callsHidden = callsCollapsed && visibleRecords.some((r) => r.kind === "tool")
+            const rowRecords = callsHidden ? visibleRecords.filter((r) => r.kind !== "tool") : visibleRecords
+            const hiddenCalls = visibleRecords.filter((r) => r.kind === "tool").length
+            const steps = new Set(visibleRecords.map((r) => r.step)).size
+            const activeTurn = selected ? selected.turn : null
+
+            const rowEl = (record: FusedRecord, idx: number, list: FusedRecord[], turnStart: boolean, turnEnd: boolean) => {
+              const matched = q !== "" && (record.text.toLowerCase().includes(q) || (record.tool || "").toLowerCase().includes(q))
+              const isSelected = record.key === selectedKey
+              const outputLine = record.output && record.output.trim()
+                ? (record.output.split("\n").filter(Boolean).slice(-1)[0] ?? "").slice(0, 80)
+                : ""
+              const select = () => setSelectedKey(record.key === selectedKey ? null : record.key)
+              return (
+                <tr
+                  key={record.key}
+                  tabIndex={0}
+                  data-kind={record.kind}
+                  data-selected={isSelected || undefined}
+                  data-error={record.failed || undefined}
+                  data-turn-start={turnStart || undefined}
+                  data-turn-end={turnEnd || undefined}
+                  data-matched={matched || undefined}
+                  className={`tt-row${record.failed ? " tt-failed" : ""}`}
+                  onClick={select}
+                  onKeyDown={(e) => { if (e.key === "Enter") select() }}
+                >
+                  <td className="tt-event">
+                    {record.turn === activeTurn ? <span className="tt-turnRail" aria-hidden="true" /> : null}
+                    <span className="tt-selectionRail" aria-hidden="true" />
+                    {turnStart ? (
+                      <span className={`tt-turnLabel${record.turn === activeTurn ? " tt-turnLabelActive" : ""}`} aria-label={`Turn ${record.turn}`}>
+                        <span className="tt-turnLabelFull" aria-hidden="true">Turn {record.turn}</span>
+                        <span className="tt-turnLabelCompact" aria-hidden="true">#{record.turn}</span>
+                      </span>
                     ) : null}
-                    {isCollapsed
-                      ? <span className="trajectory-turn-subtotal">… {steps} steps · {calls} tool calls</span>
-                      : <span className="trajectory-turn-meta">{steps} 条</span>}
-                  </button>
+                    <div className="tt-eventInner">
+                      <span className="tt-kindSlot">
+                        <span className={`tt-kindTag ${KIND_TAG_CLASS[record.kind]}`}>
+                          <span className="tt-kindTagIcon" aria-hidden="true">{KIND_ICON[record.kind]}</span>
+                          <span className="tt-kindTagLabel">{KIND_BADGE[record.kind]}</span>
+                        </span>
+                      </span>
+                    </div>
+                  </td>
+                  <td className="tt-content">
+                    {record.kind === "tool" && record.tool ? (
+                      <span className="tt-resultPreview" title={`${record.tool} ${JSON.stringify(record.args)}${outputLine ? ` → ${outputLine}` : ""}`}>
+                        <span className="tt-resultRequest">
+                          <span className="tt-toolCallNameTypeface">{record.tool}</span>
+                          <span className="tt-toolCallPayload">{JSON.stringify(record.args)}</span>
+                        </span>
+                        {outputLine ? (
+                          <span className="tt-inlineResult"><span className="tt-arrow" aria-hidden="true">→</span><span className="tt-inlineResultText">{outputLine}</span></span>
+                        ) : null}
+                      </span>
+                    ) : (
+                      <span className={`tt-contentText${record.text === "(tool call only)" ? " tt-toolCallOnly" : ""}`}>{record.text}</span>
+                    )}
+                  </td>
+                </tr>
+              )
+            }
+
+            const summaryRow = (key: string, label: string, onExpand: () => void, turnEnd: boolean) => (
+              <tr
+                key={key}
+                className="tt-row tt-collapsedSummary"
+                data-collapsed-summary="turn"
+                data-turn-end={turnEnd || undefined}
+                tabIndex={0}
+                onClick={onExpand}
+                onKeyDown={(e) => { if (e.key === "Enter") onExpand() }}
+              >
+                <td className="tt-event" />
+                <td className="tt-content">
+                  <span className="tt-collapsedTurnContent">
+                    <span className="tt-collapsedTurnEllipsis" aria-hidden="true">…</span>
+                    <span className="tt-collapsedTurnText">{label}</span>
+                  </span>
                 </td>
               </tr>
-                {!isCollapsed ? visibleRecords.map((record, recordIdx) => {
-                  // 搜索=高亮匹配行而非过滤（审计 §4.8）
-                  const matched = q !== "" && (record.text.toLowerCase().includes(q) || (record.tool || "").toLowerCase().includes(q))
-                  const isSelected = record.key === selectedKey
-                  const turnStart = recordIdx === 0
-                  const turnEnd = recordIdx === visibleRecords.length - 1
-                  const outputLine = record.output && record.output.trim()
-                    ? (record.output.split("\n").filter(Boolean).slice(-1)[0] ?? "").slice(0, 80)
-                    : ""
-                  const select = () => setSelectedKey(record.key === selectedKey ? null : record.key)
-                  return (
-                    <tr
-                      key={record.key}
-                      tabIndex={0}
-                      data-kind={record.kind}
-                      data-selected={isSelected || undefined}
-                      data-error={record.failed || undefined}
-                      data-turn-start={turnStart || undefined}
-                      data-turn-end={turnEnd || undefined}
-                      data-matched={matched || undefined}
-                      className={`tt-row${record.failed ? " tt-failed" : ""}`}
-                      onClick={select}
-                      onKeyDown={(e) => { if (e.key === "Enter") select() }}
-                    >
-                      <td className="tt-event">
-                        {turnStart ? <span className="tt-turnRail" aria-hidden="true" /> : null}
-                        <span className="tt-selectionRail" aria-hidden="true" />
-                        <div className="tt-eventInner">
-                          <span className="tt-kindSlot">
-                            <span className={`tt-kindTag ${KIND_TAG_CLASS[record.kind]}`}>
-                              <span className="tt-kindTagIcon" aria-hidden="true">{KIND_ICON[record.kind]}</span>
-                              <span className="tt-kindTagLabel">{KIND_BADGE[record.kind]}</span>
-                            </span>
-                          </span>
-                        </div>
-                      </td>
-                      <td className="tt-content">
-                        {record.kind === "tool" && record.tool ? (
-                          <span className="tt-resultPreview" title={`${record.tool} ${JSON.stringify(record.args)}${outputLine ? ` → ${outputLine}` : ""}`}>
-                            <span className="tt-resultRequest">
-                              <span className="tt-toolCallNameTypeface">{record.tool}</span>
-                              <span className="tt-toolCallPayload">{JSON.stringify(record.args)}</span>
-                            </span>
-                            {outputLine ? <span className="tt-inlineResultText">→ {outputLine}</span> : null}
-                          </span>
-                        ) : (
-                          <span className={`tt-contentText${record.text === "(tool call only)" ? " tt-toolCallOnly" : ""}`}>{record.text}</span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                }) : null}
-              </>
             )
+
+            if (isCollapsed) {
+              return [
+                rowEl(visibleRecords[0], 0, visibleRecords, true, false),
+                summaryRow(`t-${turn.turn}`, `${steps} ${steps === 1 ? "step" : "steps"} · ${visibleRecords.filter((r) => r.kind === "tool").length} tool ${visibleRecords.filter((r) => r.kind === "tool").length === 1 ? "call" : "calls"}`, () => setCollapsed((prev) => { const n = new Set(prev); n.delete(turn.turn); return n }), true),
+              ]
+            }
+            if (callsHidden && rowRecords.length > 0 && hiddenCalls > 0) {
+              // 工具行折叠：首行后插一条调用摘要
+              return [
+                ...rowRecords.slice(0, 1).map((record, i) => rowEl(record, i, rowRecords, true, false)),
+                summaryRow(`c-${turn.turn}`, `${hiddenCalls} tool ${hiddenCalls === 1 ? "call" : "calls"}`, () => setCallsCollapsed(false), false),
+                ...rowRecords.slice(1).map((record, i) => rowEl(record, i + 1, rowRecords, false, i === rowRecords.slice(1).length - 1)),
+              ]
+            }
+            return visibleRecords.map((record, idx) => rowEl(record, idx, visibleRecords, idx === 0, idx === visibleRecords.length - 1))
           })}
           </tbody>
         </table>

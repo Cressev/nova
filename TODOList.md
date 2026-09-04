@@ -2186,3 +2186,12 @@ api 就不能再拆了吗？拆。
 [x] 移植完成：TraceView 行渲染 div→原生 table（tt-* 类逐值照抄 CSS：kindTag 19px/r4/10px字、resultPreview 双栏 grid、toolCallNameTypeface Menlo 12px、toolCallPayload margin-left 7px 灰、行 30px、turnRail 2px/selectionRail 3px、错误轨红色）；详情面板头部换 kindTag（与行同组件）+ overview 改分节（Payload/Result/Schema/Timing section 结构）
 [x] 验收：DOM 骨架两边逐层一致（TR>TD.event>SPAN.rail+DIV.eventInner>SPAN.kindSlot>SPAN.kindTag>icon+label / TD.content>SPAN.resultPreview>…）、vision 8/10、252 unittest + 前端 smoke 全绿
 ------ todo-list end at 2026/09/04 13:57:52 -----
+
+------ todo-list begin at 2026/09/04 14:30:28 -----
+用户请求原文：展示条目位置不对，还有我说了那个按钮太丑太突兀了，turn按钮 你不知道吗，你看不出来差异吗
+
+[x] 诊断：我自造的"Turn N"组头按钮行在 dsh 根本不存在——dsh 的 Turn 标记=turn 首行左上角 8px 等宽小标签（Turn N/#N 叠放、1px 5px 衬、下圆角 2px、挂 2px 发丝线）+ 活动 turn 2px 蓝左轨 + 折叠摘要行；展示条目位置=徽章槽应右对齐事件列（我错用 flex-start）
+[x] 读 dsh 源码+实况测量：turnLabel（8px/10px、#f5f6f7 底、#81858c 字、absolute top0 left0）、data-turn-start td::before 2px 发丝线、collapsedSummary（… 前缀+N steps · M tool calls、20px 行、点击展开）、summarizeTurn 文案格式、.content padding-left 4px、slot 右缘实况 392→content 402（8-10px 间距）
+[x] 重写：删除组头按钮行与全部 trajectory-turn-* CSS；新增 tt-turnLabel/tt-turnLabelActive（含 Turn N 全称+#N 紧凑叠放）、turn 首行 2px 发丝线、tt-turnRail 改为仅活动 turn 渲染、折叠=首行+摘要行（可点开）、⊟Turns/⊟Calls 工具条按钮折叠态翻转 ⊞ + aria-pressed、 Calls 独立状态（折叠工具行为首行+摘要）、eventInner justify 改 flex-end、content 4px 左衬
+[x] 验收：组头行 0、Turn 小标签 5 个（8px/10px #f5f6f7 实测）、徽章右缘距文本 8px（dsh 10px 同款）、⊟Turns 折叠 5 轮→按钮变 ⊞Turns、摘要"3 steps · 1 tool call"格式与 dsh 一致、点击展开、vision 9/10、252 unittest + 前端 smoke 绿
+------ todo-list end at 2026/09/04 14:30:28 -----

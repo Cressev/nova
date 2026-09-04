@@ -4049,6 +4049,11 @@ body.inspector-collapsed .inspector-toggle {
 .tt-eventColumn { width: 122px; }
 .tt-contentColumn { width: auto; }
 
+.tt-content {
+  padding-left: 4px;
+  color: #171717;
+}
+
 .tt-table td {
   box-sizing: border-box;
   height: 30px;
@@ -4100,7 +4105,7 @@ body.inspector-collapsed .inspector-toggle {
   top: -1px;
   bottom: -1px;
   width: 2px;
-  background: rgba(65, 118, 230, 0.2);
+  background: rgba(65, 118, 230, 0.22);
 }
 
 .tt-selectionRail {
@@ -4120,7 +4125,8 @@ body.inspector-collapsed .inspector-toggle {
 .tt-eventInner {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  /* dsh 实况：kindSlot 右缘贴事件列内容区右缘（徽章列右对齐） */
+  justify-content: flex-end;
   min-width: 0;
   height: 100%;
 }
@@ -4211,42 +4217,107 @@ body.inspector-collapsed .inspector-toggle {
 
 .tt-toolCallOnly { color: #8a8f98; }
 
-/* 组头行（Turn 分组） */
-.tt-groupRow td {
-  height: auto;
-  padding: 4px 8px 2px 14px;
-  border-bottom: 1px solid #e8eaed;
-  background: #fff;
-}
-
-.tt-groupCell { vertical-align: top; }
-
-/* Turn 组头补充：序号/首行摘要/折叠摘要 */
-.trajectory-turn-index {
-  color: #b0b4bb;
-  font-size: 11px;
+/* Turn 小标签（dsh .turnLabel：绝对定位于 turn 首行左上、8px 等宽、挂发丝线的小 tab） */
+.tt-turnLabel {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  left: 0;
+  display: inline-grid;
+  flex: none;
+  align-items: center;
+  box-sizing: border-box;
+  width: max-content;
+  padding: 1px 5px;
+  border-radius: 0 0 2px;
+  color: #81858c;
+  background: #f5f6f7;
+  font: 8px/10px ui-monospace, SFMono-Regular, Menlo, monospace;
   font-variant-numeric: tabular-nums;
+  user-select: none;
+  white-space: nowrap;
 }
 
-.trajectory-turn-lead {
-  color: #6b7280;
+.tt-turnLabelActive {
+  color: #5e7dbd;
+  background: #d5e1fa;
+}
+
+.tt-turnLabelFull,
+.tt-turnLabelCompact {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
+
+.tt-turnLabelCompact { display: none; }
+
+/* Turn 边界发丝线（dsh：turn 首行 td::before 2px） */
+.tt-table tr[data-turn-start] td {
+  position: relative;
+  overflow: visible;
+}
+
+.tt-table tr[data-turn-start]:not(:first-child) td::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: #eceef1;
+  pointer-events: none;
+}
+
+/* 折叠摘要行（dsh .collapsedSummary：20px、可点开、… 前缀 + 摘要文本） */
+.tt-row[data-collapsed-summary] {
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.tt-row[data-collapsed-summary] td {
+  height: 20px;
+}
+
+.tt-row[data-collapsed-summary]:hover {
+  background: rgba(38, 49, 72, 0.06);
+}
+
+.tt-collapsedTurnContent {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  color: #5f6572;
   font-size: 12px;
+  line-height: 16px;
+}
+
+.tt-collapsedTurnEllipsis {
+  flex: none;
+  margin-right: 6px;
+  color: #8a8f98;
+  font-weight: 600;
+  user-select: none;
+}
+
+.tt-collapsedTurnText {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 46%;
 }
 
-.trajectory-turn-subtotal {
+/* 工具结果箭头（dsh .arrow） */
+.tt-arrow {
+  flex: none;
+  margin-right: 8px;
   color: #9ca3af;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  margin-left: auto;
 }
 
-.trajectory-turn-header .trajectory-turn-chevron {
-  margin-left: 8px;
-  order: -1;
+.tt-inlineResult {
+  display: flex;
+  align-items: center;
+  min-width: 0;
 }
 
 /* 「实际时间」switch（dsh .controlTrack/.controlThumb：20×10 轨道、6px 圆点、120ms） */
