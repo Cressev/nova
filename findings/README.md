@@ -10,6 +10,7 @@
 - `2026-06-05-cc-source-reference.md`：cc源码可借鉴的 agent runtime、工具执行、权限、状态线、技能、记忆和 MCP 设计结论。
 - `2026-06-06-reference-architecture-reading.md`：Codex、cc源码、Hermes、OpenClaw、VS Code 源码阅读后对 Nova 架构路线的修正结论。
 - `2026-06-07-opencode-crush-source-reference.md`：OpenCode / Crush 源码下载位置、版本和后续优先参考入口。
+- `2026-09-04-dsh-ui-alignment-audit.md`：DSH UI 交互级对齐审计清单（全部状态×区域×元素×交互+验收方式），前端对齐工作的唯一事实源，随修复进度更新。
 
 ## 放置规则
 

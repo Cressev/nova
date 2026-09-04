@@ -2125,3 +2125,12 @@ api 就不能再拆了吗？拆。
 [x] 富数据会话（86 事件）验证：3 色泳道 tile、15 行事件流、Turn 分组；可用性 6.5→8/10
 [x] 252 后端 + React 冒烟绿；提交推送 4cea3db
 ------ todo-list end at 2026/09/03/20:45:00 -----
+
+------ todo-list begin at 2026/09/04 11:48:41 -----
+用户请求原文：同意"先全面审计、再按清单逐项修"的做法
+
+[x] 系统遍历 dsh GUI 全部状态与交互（真实点击）：轨迹行点击→详情面板(381px aside+五tab)、Turns/Calls 折叠开关(26→11行)、搜索不过滤(索引跳转)、会话行 hover→重命名/分叉/归档菜单、设置菜单(通用/模型/插件/Agent预设/配置文件)、对话页消息操作行(复制/赞/踩/分享)
+[x] 读 ui-trajectory / ui-conversation 源码补交互语义（TrajectoryTable detail panel、bottom-clearance、timeline 拖拽）
+[x] 产出持久对齐清单 findings/2026-09-04-dsh-ui-alignment-audit.md（6 大节：全局新发现/骨架/空态/会话态/轨迹态/决策项+验收方式），findings/README 已登记
+[o] 用户过目清单后按项修（本轮交付=清单本身，修复待用户确认优先级）
+------ todo-list end at 2026/09/04 11:56:14 -----
