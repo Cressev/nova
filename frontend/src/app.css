@@ -4036,36 +4036,171 @@ body.inspector-collapsed .inspector-toggle {
   min-width: 0;
 }
 
-/* 行选中态（dsh：rgba(38,49,72,.1)） */
-/* 轨迹行基础形态（dsh table row）：徽章 + 等宽文本 + 尾时长 */
-.trajectory-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  position: relative;
-  min-height: 28px;
-  border-radius: 6px;
-  padding: 3px 8px 3px 0;
-  cursor: pointer;
+/* ===== tt-* = dsh TrajectoryTable 行结构移植（2026-09-04，逐值照抄源码）===== */
+.tt-table {
+  width: 100%;
+  min-width: 0;
+  border-spacing: 0;
+  table-layout: fixed;
+  color: #171717;
+  background: #fff;
+}
+
+.tt-eventColumn { width: 122px; }
+.tt-contentColumn { width: auto; }
+
+.tt-table td {
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 8px;
+  overflow: hidden;
+  border-bottom: 1px solid #f0f1f3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tt-row {
+  cursor: default;
   outline: none;
+  transition: background-color 120ms ease, opacity 120ms ease;
 }
 
-.trajectory-row:hover {
-  background: rgba(0, 0, 0, 0.03);
+.tt-row:not([data-selected="true"]):hover {
+  background: rgba(38, 49, 72, 0.06);
 }
 
-.trajectory-row.selected {
+.tt-row[data-selected="true"] {
   background: rgba(38, 49, 72, 0.1);
 }
 
-.trajectory-row.selected:hover {
-  background: rgba(38, 49, 72, 0.14);
+.tt-row[data-matched="true"] .tt-toolCallPayload,
+.tt-row[data-matched="true"] .tt-contentText,
+.tt-row[data-matched="true"] .tt-inlineResultText {
+  background: #fef3c7;
+  border-radius: 3px;
 }
 
-/* 搜索命中高亮（不过滤行，审计 §4.8） */
-/* 行文本：普通行省略号截断；工具行等宽（dsh table cell 语义） */
-.trajectory-text {
-  flex: 1;
+.tt-row[data-error="true"] .tt-toolCallNameTypeface,
+.tt-row[data-error="true"] .tt-toolCallPayload {
+  color: #d93036;
+}
+
+/* 事件列：轮次轨 + 选中轨 + 徽章槽 */
+.tt-event { position: relative; }
+
+.tt-turnRail,
+.tt-selectionRail {
+  position: absolute;
+  left: 0;
+  pointer-events: none;
+}
+
+.tt-turnRail {
+  z-index: 4;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  background: rgba(65, 118, 230, 0.2);
+}
+
+.tt-selectionRail {
+  z-index: 5;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #4176e6;
+  opacity: 0;
+}
+
+.tt-row[data-selected="true"] .tt-selectionRail { opacity: 1; }
+
+.tt-row[data-error="true"] .tt-turnRail { background: rgba(217, 48, 54, 0.22); }
+.tt-row[data-error="true"] .tt-selectionRail { background: #d93036; }
+
+.tt-eventInner {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 0;
+  height: 100%;
+}
+
+.tt-kindSlot {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  justify-content: flex-end;
+  width: 76px;
+}
+
+/* kind 徽章（dsh .kindTag：19px、r4、10px 字、1px 透明边） */
+.tt-kindTag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  box-sizing: border-box;
+  height: 19px;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  gap: 3px;
+}
+
+.tt-kindTagIcon { display: inline-flex; flex: none; }
+
+.tt-kindTagLabel {
+  display: inline-block;
+  max-width: 72px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* 徽章配色（dsh 实况测量值） */
+.tt-user { color: #4176e6; background: #e4edfd; }
+.tt-assistant { color: #886bae; background: #eee9f2; }
+.tt-tool { color: #dd8629; background: #fef5e7; }
+.tt-system { color: #6b7280; background: #f1f2f4; }
+
+/* 内容列：工具调用 = 名字 + 参数 + 输出（dsh .resultPreview 双栏 grid） */
+.tt-resultPreview {
+  display: grid;
+  grid-template-columns: clamp(180px, 36%, 480px) minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+}
+
+.tt-resultRequest {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tt-toolCallNameTypeface {
+  color: #171717;
+  font: 400 12px/18px Menlo, Consolas, "Liberation Mono", "PingFang SC", "Microsoft YaHei";
+}
+
+.tt-toolCallPayload {
+  margin-left: 7px;
+  color: #6b7280;
+  font: 400 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.tt-inlineResultText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #6b7280;
+  font: 400 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.tt-contentText {
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4074,21 +4209,17 @@ body.inspector-collapsed .inspector-toggle {
   font-size: 13px;
 }
 
-.trajectory-text.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  color: #111827;
+.tt-toolCallOnly { color: #8a8f98; }
+
+/* 组头行（Turn 分组） */
+.tt-groupRow td {
+  height: auto;
+  padding: 4px 8px 2px 14px;
+  border-bottom: 1px solid #e8eaed;
+  background: #fff;
 }
 
-.trajectory-row.failed .trajectory-text {
-  color: #e5484d;
-}
-
-.trajectory-row.matched .trajectory-text {
-  background: #fef3c7;
-  border-radius: 3px;
-  padding: 0 3px;
-}
+.tt-groupCell { vertical-align: top; }
 
 /* Turn 组头补充：序号/首行摘要/折叠摘要 */
 .trajectory-turn-index {
@@ -4222,21 +4353,12 @@ body.inspector-collapsed .inspector-toggle {
   border-bottom: 1px solid #e5e7eb;
 }
 
-.trajectory-details-name {
+.trajectory-details-title {
   display: flex;
   align-items: center;
   min-width: 0;
   gap: 8px;
   color: #171717;
-  font: 500 12px/16px ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-.trajectory-details-dot {
-  flex: none;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #6b7280;
 }
 
 .trajectory-details-location {
@@ -4322,6 +4444,79 @@ body.inspector-collapsed .inspector-toggle {
   background: var(--dsw-alias-state-business-primary, #3b82f6);
 }
 
+
+.trajectory-details-body {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 8px 0 12px;
+  scrollbar-gutter: stable;
+}
+
+/* Summary 的 dt/dd 两列（dsh：94px 标签列 + 内容列） */
+.trajectory-overview {
+  margin: 0;
+}
+
+.trajectory-overview > div {
+  display: grid;
+  grid-template-columns: 94px minmax(0, 1fr);
+  min-height: 22px;
+  padding: 0 14px;
+  align-items: center;
+}
+
+.trajectory-overview dt {
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.trajectory-overview dd {
+  margin: 0;
+  color: #33363c;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.trajectory-overview dd.err {
+  color: #d93036;
+}
+
+/* Summary 分节（dsh .overviewSections：每节 = 标题 + 预览滚动区） */
+.tt-overviewSections {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+}
+
+.tt-overviewSection {
+  border-top: 1px solid #f0f1f3;
+  padding: 6px 0 8px;
+}
+
+.tt-overviewHeading {
+  margin: 0;
+  padding: 4px 14px 6px;
+  color: #8a8f98;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.tt-overviewPreview {
+  max-height: 180px;
+  overflow: auto;
+  padding: 0 14px;
+}
+
+.tt-resultBlockText {
+  margin: 0;
+  color: #40454e;
+  font: 400 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 /* Payload/Result/Raw 的等宽块 */
 .trajectory-pre {

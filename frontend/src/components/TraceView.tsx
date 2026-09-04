@@ -43,6 +43,42 @@ const KIND_BADGE: Record<FusedRecord["kind"], string> = {
   system: "SYSTEM",
 }
 
+/* ---- kind 徽章图标（逐 path 照抄 dsh TrajectoryTable/icons/index）---- */
+const KIND_ICON: Record<FusedRecord["kind"], React.ReactNode> = {
+  user: (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M11.0307 5.46369C11.0305 3.78995 9.6734 2.43357 7.99961 2.43357C6.32601 2.43379 4.96972 3.79009 4.96949 5.46369C4.96949 7.13748 6.32587 8.49455 7.99961 8.49477C9.67354 8.49477 11.0307 7.13762 11.0307 5.46369ZM12.3163 5.46369C12.3163 7.84777 10.3837 9.78042 7.99961 9.78042C5.61572 9.7802 3.68288 7.84763 3.68288 5.46369C3.6831 3.07993 5.61586 1.14718 7.99961 1.14695C10.3836 1.14695 12.3161 3.0798 12.3163 5.46369Z" fill="currentColor" />
+      <path d="M8.00002 10.3316C11.7343 10.3316 14.1864 11.8997 15.0387 14.4445L14.4292 14.6483L13.8197 14.8531C13.1955 12.9893 11.3673 11.6182 8.00002 11.6182C4.63277 11.6182 2.80455 12.9893 2.18031 14.8531L1.5708 14.6483L0.961304 14.4445C1.81368 11.8997 4.26579 10.3316 8.00002 10.3316Z" fill="currentColor" />
+    </svg>
+  ),
+  message: (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M6.1 3.1Q6.6 7.8 11.3 8.3Q6.6 8.8 6.1 13.5Q5.6 8.8 0.9 8.3Q5.6 7.8 6.1 3.1Z" fill="currentColor" />
+      <path d="M11.9 1Q12.2 3.7 14.9 4Q12.2 4.3 11.9 7Q11.6 4.3 8.9 4Q11.6 3.7 11.9 1Z" fill="currentColor" />
+      <path d="M12.5 9.4Q12.7 11.4 14.7 11.6Q12.7 11.8 12.5 13.8Q12.3 11.8 10.3 11.6Q12.3 11.4 12.5 9.4Z" fill="currentColor" />
+    </svg>
+  ),
+  tool: (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M14 3.3a3.8 3.8 0 0 1-4.8 4.8l-5.1 5.1a1.6 1.6 0 1 1-2.3-2.3l5.1-5.1A3.8 3.8 0 0 1 11.7 1l-2.3 2.3 2.3 2.3L14 3.3Z" />
+    </svg>
+  ),
+  system: (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="6.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="8" cy="5.5" r=".85" fill="currentColor" stroke="none" />
+      <path d="M8 7.75v3.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  ),
+}
+
+const KIND_TAG_CLASS: Record<FusedRecord["kind"], string> = {
+  user: "tt-user",
+  message: "tt-assistant",
+  tool: "tt-tool",
+  system: "tt-system",
+}
+
 function monospaceToolText(tool: string, args: Record<string, unknown>, output: string | null): string {
   const keys = Object.keys(args || {})
   const argsPreview = keys.length > 0
@@ -478,8 +514,13 @@ function DetailPanel({ record, onClose, width, onWidthChange }: { record: FusedR
         }}
       />
       <div className="trajectory-details-head">
-        <span className="trajectory-details-name"><span className="trajectory-details-dot" aria-hidden="true" />{KIND_BADGE[record.kind]}</span>
-        <span className="trajectory-details-location">Turn {record.turn} · Step {record.step}</span>
+        <div className="trajectory-details-title">
+          <span className={`tt-kindTag ${KIND_TAG_CLASS[record.kind]}`}>
+            <span className="tt-kindTagIcon" aria-hidden="true">{KIND_ICON[record.kind]}</span>
+            <span className="tt-kindTagLabel">{KIND_BADGE[record.kind]}</span>
+          </span>
+          <span className="trajectory-details-location">Turn {record.turn} · Step {record.step}</span>
+        </div>
         <button type="button" className="trajectory-details-close" aria-label="关闭详情" onClick={onClose}><span aria-hidden="true">×</span></button>
       </div>
       <div className="trajectory-details-tabs" role="tablist" aria-label="Event details">
@@ -496,13 +537,43 @@ function DetailPanel({ record, onClose, width, onWidthChange }: { record: FusedR
       </div>
       <div className="trajectory-details-body" role="tabpanel">
         {active === "overview" ? (
-          <dl className="trajectory-overview">
-            <div><dt>Status</dt><dd className={record.failed ? "err" : undefined}>{record.failed ? "Error" : record.status === "pending" ? "Pending" : "Completed"}</dd></div>
-            <div><dt>Started</dt><dd>{fmtStarted(record.iso)}</dd></div>
-            <div><dt>Duration</dt><dd>{fmtDuration(record.durationMs)}</dd></div>
-            <div><dt>Timing source</dt><dd>Session timestamps</dd></div>
-            <div><dt>Hierarchy</dt><dd>Turn {record.turn} · Step {record.step}</dd></div>
-          </dl>
+          <>
+            <dl className="trajectory-overview">
+              <div><dt>Status</dt><dd className={record.failed ? "err" : undefined}>{record.failed ? "Error" : record.status === "pending" ? "Pending" : "Completed"}</dd></div>
+              <div><dt>Started</dt><dd>{fmtStarted(record.iso)}</dd></div>
+              <div><dt>Duration</dt><dd>{fmtDuration(record.durationMs)}</dd></div>
+              <div><dt>Timing source</dt><dd>Session timestamps</dd></div>
+              <div><dt>Hierarchy</dt><dd>Turn {record.turn} · Step {record.step}</dd></div>
+            </dl>
+            <div className="tt-overviewSections">
+              {record.kind === "tool" ? (
+                <>
+                  <section className="tt-overviewSection">
+                    <h3 className="tt-overviewHeading">Payload</h3>
+                    <div className="tt-overviewPreview"><pre className="trajectory-pre">{JSON.stringify(record.args ?? {}, null, 2)}</pre></div>
+                  </section>
+                  <section className="tt-overviewSection">
+                    <h3 className="tt-overviewHeading">Result</h3>
+                    <div className="tt-overviewPreview"><pre className="tt-resultBlockText">{record.output?.trim() || "(no output)"}</pre></div>
+                  </section>
+                  <section className="tt-overviewSection">
+                    <h3 className="tt-overviewHeading">Schema</h3>
+                    <div className="tt-overviewPreview"><pre className="trajectory-pre">{schema}</pre></div>
+                  </section>
+                </>
+              ) : null}
+              <section className="tt-overviewSection">
+                <h3 className="tt-overviewHeading">Timing</h3>
+                <div className="tt-overviewPreview">
+                  <dl className="trajectory-overview">
+                    <div><dt>Step</dt><dd>{record.step}</dd></div>
+                    <div><dt>Duration</dt><dd>{fmtDuration(record.durationMs)}</dd></div>
+                    <div><dt>Timing source</dt><dd>Session timestamps</dd></div>
+                  </dl>
+                </div>
+              </section>
+            </div>
+          </>
         ) : null}
         {active === "payload" ? <pre className="trajectory-pre">{JSON.stringify(record.args ?? {}, null, 2)}</pre> : null}
         {active === "output" ? <pre className="trajectory-pre">{record.output?.trim() || "(no output)"}</pre> : null}
@@ -622,8 +693,13 @@ export function TraceView({ sessionId }: { sessionId: string }) {
         />
       ) : null}
       <div className="trajectory-ledger-wrap">
-        <div className="trajectory-ledger" role="grid" aria-label="轨迹账本">
-          {turns.length === 0 ? <p className="trace-loading">无记录</p> : null}
+        <table className="tt-table" aria-label="轨迹账本">
+          <colgroup>
+            <col className="tt-eventColumn" />
+            <col className="tt-contentColumn" />
+          </colgroup>
+          <tbody>
+          {turns.length === 0 ? <tr><td colSpan={2}><p className="trace-loading">无记录</p></td></tr> : null}
           {turns.map((turn) => {
             // 时间线框选范围外的记录隐藏（dsh range 过滤语义）
             const visibleRecords = range === null
@@ -634,54 +710,91 @@ export function TraceView({ sessionId }: { sessionId: string }) {
             const steps = visibleRecords.length
             const calls = visibleRecords.filter((r) => r.kind === "tool").length
             return (
-              <div className="trajectory-turn" key={turn.turn}>
-                <button
-                  type="button"
-                  className="trajectory-turn-header"
-                  aria-expanded={!isCollapsed}
-                  onClick={() => {
-                    setCollapsed((prev) => {
-                      const next = new Set(prev)
-                      if (next.has(turn.turn)) next.delete(turn.turn)
-                      else next.add(turn.turn)
-                      return next
-                    })
-                  }}
-                >
-                  <span className="trajectory-turn-chevron" aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
-                  <span className="trajectory-turn-label">Turn {turn.turn}</span>
-                  <span className="trajectory-turn-index">#{turn.turn}</span>
-                  {visibleRecords[0]?.kind === "user" ? (
-                    <span className="trajectory-turn-lead">{visibleRecords[0].text.slice(0, 48)}</span>
-                  ) : null}
-                  {isCollapsed
-                    ? <span className="trajectory-turn-subtotal">… {steps} steps · {calls} tool calls</span>
-                    : <span className="trajectory-turn-meta">{steps} 条</span>}
-                </button>
-                {!isCollapsed ? visibleRecords.map((record) => {
+              <>
+              <tr className="tt-groupRow" key={`g-${turn.turn}`}>
+                <td colSpan={2} className="tt-groupCell">
+                  <button
+                    type="button"
+                    className="trajectory-turn-header"
+                    aria-expanded={!isCollapsed}
+                    onClick={() => {
+                      setCollapsed((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(turn.turn)) next.delete(turn.turn)
+                        else next.add(turn.turn)
+                        return next
+                      })
+                    }}
+                  >
+                    <span className="trajectory-turn-chevron" aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
+                    <span className="trajectory-turn-label">Turn {turn.turn}</span>
+                    <span className="trajectory-turn-index">#{turn.turn}</span>
+                    {visibleRecords[0]?.kind === "user" ? (
+                      <span className="trajectory-turn-lead">{visibleRecords[0].text.slice(0, 48)}</span>
+                    ) : null}
+                    {isCollapsed
+                      ? <span className="trajectory-turn-subtotal">… {steps} steps · {calls} tool calls</span>
+                      : <span className="trajectory-turn-meta">{steps} 条</span>}
+                  </button>
+                </td>
+              </tr>
+                {!isCollapsed ? visibleRecords.map((record, recordIdx) => {
                   // 搜索=高亮匹配行而非过滤（审计 §4.8）
                   const matched = q !== "" && (record.text.toLowerCase().includes(q) || (record.tool || "").toLowerCase().includes(q))
+                  const isSelected = record.key === selectedKey
+                  const turnStart = recordIdx === 0
+                  const turnEnd = recordIdx === visibleRecords.length - 1
+                  const outputLine = record.output && record.output.trim()
+                    ? (record.output.split("\n").filter(Boolean).slice(-1)[0] ?? "").slice(0, 80)
+                    : ""
+                  const select = () => setSelectedKey(record.key === selectedKey ? null : record.key)
                   return (
-                    <div
+                    <tr
                       key={record.key}
-                      role="row"
                       tabIndex={0}
-                      className={`trajectory-row kind-${record.kind}${record.failed ? " failed" : ""}${record.key === selectedKey ? " selected" : ""}${matched ? " matched" : ""}`}
-                      onClick={() => setSelectedKey(record.key === selectedKey ? null : record.key)}
-                      onKeyDown={(e) => { if (e.key === "Enter") setSelectedKey(record.key === selectedKey ? null : record.key) }}
+                      data-kind={record.kind}
+                      data-selected={isSelected || undefined}
+                      data-error={record.failed || undefined}
+                      data-turn-start={turnStart || undefined}
+                      data-turn-end={turnEnd || undefined}
+                      data-matched={matched || undefined}
+                      className={`tt-row${record.failed ? " tt-failed" : ""}`}
+                      onClick={select}
+                      onKeyDown={(e) => { if (e.key === "Enter") select() }}
                     >
-                      <span className={`trajectory-badge badge-${record.kind}`}>{KIND_BADGE[record.kind]}</span>
-                      <span className={`trajectory-text${record.kind === "tool" ? " mono" : ""}`}>{record.text}</span>
-                      {record.durationMs !== null && record.durationMs > 0 ? (
-                        <span className="trajectory-row-time">{(record.durationMs / 1000).toFixed(1)}s</span>
-                      ) : null}
-                    </div>
+                      <td className="tt-event">
+                        {turnStart ? <span className="tt-turnRail" aria-hidden="true" /> : null}
+                        <span className="tt-selectionRail" aria-hidden="true" />
+                        <div className="tt-eventInner">
+                          <span className="tt-kindSlot">
+                            <span className={`tt-kindTag ${KIND_TAG_CLASS[record.kind]}`}>
+                              <span className="tt-kindTagIcon" aria-hidden="true">{KIND_ICON[record.kind]}</span>
+                              <span className="tt-kindTagLabel">{KIND_BADGE[record.kind]}</span>
+                            </span>
+                          </span>
+                        </div>
+                      </td>
+                      <td className="tt-content">
+                        {record.kind === "tool" && record.tool ? (
+                          <span className="tt-resultPreview" title={`${record.tool} ${JSON.stringify(record.args)}${outputLine ? ` → ${outputLine}` : ""}`}>
+                            <span className="tt-resultRequest">
+                              <span className="tt-toolCallNameTypeface">{record.tool}</span>
+                              <span className="tt-toolCallPayload">{JSON.stringify(record.args)}</span>
+                            </span>
+                            {outputLine ? <span className="tt-inlineResultText">→ {outputLine}</span> : null}
+                          </span>
+                        ) : (
+                          <span className={`tt-contentText${record.text === "(tool call only)" ? " tt-toolCallOnly" : ""}`}>{record.text}</span>
+                        )}
+                      </td>
+                    </tr>
                   )
                 }) : null}
-              </div>
+              </>
             )
           })}
-        </div>
+          </tbody>
+        </table>
         {selected ? <DetailPanel record={selected} onClose={() => setSelectedKey(null)} width={detailWidth} onWidthChange={setDetailWidth} /> : null}
       </div>
     </div>

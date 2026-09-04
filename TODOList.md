@@ -2176,3 +2176,13 @@ api 就不能再拆了吗？拆。
 [x] 工具条 selected 底色 token 化：rgba(0,0,0,.05) → rgba(38,49,72,.06)（dsh interactive-bg-hover 实测值）
 [x] 验收：几何 8 项对照 dsh（42/34/28/13px/clamp/20px）、真实拖拽生效、vision 8.5/10、252 unittest 绿、前端 smoke 绿
 ------ todo-list end at 2026/09/04 13:38:20 -----
+
+------ todo-list begin at 2026/09/04 13:49:05 -----
+用户请求原文：不是控件类型都不一样我感觉，尤其是那个tool控件 还有下面的展示条目和详细 都差得很远，用一模一样都这么难吗，是没有源码吗？
+
+[x] 诚实回答：有全部源码（deepseek-harness checkout）；差距根源=此前"按测量值重新发明"而非"照源码移植"，本轮改为 dump 实况 DOM + 逐元素移植
+[x] dsh 实况 dump：TOOL 行完整 outerHTML（tr>td.event>turnRail/selectionRail+eventInner>kindSlot>kindTag(icon+label) / td.content>resultPreview>resultRequest(toolCallNameTypeface+toolCallPayload)+inlineResultText）+ 徽章四色实测值（user #4176e6/#e4edfd、assistant #886bae/#eee9f2、tool #dd8629/#fef5e7、system #6b7280/#f1f2f4）
+[x] 读 TrajectoryTable.tsx 源码：KIND_ICON 图标集（wrench/user/sparkle/information 逐 path 抄）、表格布局（122px event 列/30px 行高/border-spacing 0/hover rgba(38,49,72,.06)）
+[x] 移植完成：TraceView 行渲染 div→原生 table（tt-* 类逐值照抄 CSS：kindTag 19px/r4/10px字、resultPreview 双栏 grid、toolCallNameTypeface Menlo 12px、toolCallPayload margin-left 7px 灰、行 30px、turnRail 2px/selectionRail 3px、错误轨红色）；详情面板头部换 kindTag（与行同组件）+ overview 改分节（Payload/Result/Schema/Timing section 结构）
+[x] 验收：DOM 骨架两边逐层一致（TR>TD.event>SPAN.rail+DIV.eventInner>SPAN.kindSlot>SPAN.kindTag>icon+label / TD.content>SPAN.resultPreview>…）、vision 8/10、252 unittest + 前端 smoke 全绿
+------ todo-list end at 2026/09/04 13:57:52 -----
