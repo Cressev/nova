@@ -619,7 +619,8 @@ body.sidebar-collapsed .sidebar-foot-button {
 .composer-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  /* dsh 卡高 94 = 10 + 28(textarea) + 10 + 34(toolbar) + 12 */
+  gap: 10px;
   flex-shrink: 0;
   padding: 10px 14px 12px;
   border: 1px solid rgba(0, 0, 0, 0.1);
@@ -638,7 +639,8 @@ body.sidebar-collapsed .sidebar-foot-button {
 
 
 .composer-card textarea {
-  min-height: 52px;
+  /* dsh：单行起步 28px，卡总高 94（padding10+28+gap10+toolbar34+padding12） */
+  min-height: 28px;
   max-height: 200px;
   padding: 0;
   border: 0;
@@ -3461,7 +3463,8 @@ body.inspector-collapsed .inspector-toggle {
   flex: none;
 }
 
-.main-col:not(:has(.messages)) #chat-form {
+/* 仅空态（hero 组团）时 composer 下方留白；会话态/轨迹态贴底（dsh 行为） */
+.app-shell[data-main-state="empty"] #chat-form {
   margin-bottom: 16vh;
 }
 
@@ -3837,7 +3840,10 @@ body.inspector-collapsed .inspector-toggle {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 0;
+  /* dsh：工具条固定 32px + 下边框 + 白底 */
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 0;
 }
 
 .trajectory-modes {
@@ -3898,65 +3904,66 @@ body.inspector-collapsed .inspector-toggle {
 }
 
 /* 泳道 tile 时间线 */
+/* 时间线（dsh TrajectoryTimeline.module.css 对齐：plot 50px、44px 横排标签列、
+   泳道 pitch 14px、span 8px 高 min-width 2px、Turn 分界线、bg-layer-2 底） */
 .trajectory-timeline {
-  display: flex;
+  position: relative;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
   flex: none;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 0;
+  height: 50px;
+  overflow: hidden;
+  border-bottom: 1px solid #e8eaed;
+  background: #f7f8fa;
+  user-select: none;
 }
 
 .trajectory-lane-labels {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  gap: 4px;
-  width: 44px;
-  text-align: right;
+  position: relative;
+  border-right: 1px solid #eef0f3;
+  color: #8a8f98;
+  font-size: 10px;
+  line-height: 1;
 }
 
 .trajectory-lane-labels span {
-  color: #8a8f98;
-  font-size: 10px;
-  line-height: 10px;
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  transform: rotate(180deg);
+  position: absolute;
+  right: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 8px;
 }
 
+.trajectory-lane-labels span:nth-child(1) { top: 7px; }
+.trajectory-lane-labels span:nth-child(2) { top: 21px; }
+.trajectory-lane-labels span:nth-child(3) { top: 35px; }
+
 .trajectory-lanes {
+  position: relative;
   display: flex;
-  flex: 1;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  padding: 7px 0;
   min-width: 0;
-  background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(100% / 12 - 1px), #f0f0f2 calc(100% / 12 - 1px), #f0f0f2 calc(100% / 12));
 }
 
 .trajectory-lane {
   display: flex;
-  gap: 3px;
-  height: 10px;
+  gap: 1px;
+  height: 8px;
 }
 
 .trajectory-tile {
   flex: 1;
-  height: 10px;
-  border-radius: 2px;
-  background: #f4f4f6;
+  min-width: 2px;
+  height: 8px;
+  border-radius: 1px;
+  background: #eceef1;
 }
 
 .trajectory-tile[data-filled] {
   background: #d9d9de;
-}
-
-/* 泳道语义色由内联 style 承担；此处保证空 tile 不抢视觉 */
-
-.trajectory-total {
-  flex: none;
-  color: #8a8f98;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
 }
 
 /* 空 Turn（仅 turn.started 无内容）不渲染分组头 */
@@ -4116,4 +4123,298 @@ body.inspector-collapsed .inspector-toggle {
   color: #b0b4bb;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+
+#chat-form {
+  flex: none;
+  min-height: 94px;
+}
+
+/* ===== 轨迹态交互级对齐（审计 §4：详情面板/折叠/选中/搜索高亮）2026-09-04 ===== */
+
+/* 轨迹视图本体：纵向 flex，账本区内部滚动（贴住 composer 上沿，不被挤扁） */
+.trace-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 0 6px;
+}
+
+/* 账本 + 详情面板 两列（dsh：表格占满剩余宽，详情 aside 381px 贴右） */
+.trajectory-ledger-wrap {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  gap: 0;
+  align-items: stretch;
+}
+
+.trajectory-ledger-wrap .trajectory-ledger {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 行选中态（dsh：rgba(38,49,72,.1)） */
+.trajectory-row.selected {
+  background: rgba(38, 49, 72, 0.1);
+}
+
+.trajectory-row.selected:hover {
+  background: rgba(38, 49, 72, 0.14);
+}
+
+/* 搜索命中高亮（不过滤行，审计 §4.8） */
+.trajectory-row.matched .trajectory-text {
+  background: #fef3c7;
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
+/* Turn 组头补充：序号/首行摘要/折叠摘要 */
+.trajectory-turn-index {
+  color: #b0b4bb;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trajectory-turn-lead {
+  color: #6b7280;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 46%;
+}
+
+.trajectory-turn-subtotal {
+  color: #9ca3af;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+.trajectory-turn-header .trajectory-turn-chevron {
+  margin-left: 8px;
+  order: -1;
+}
+
+/* 「实际时间」switch（dsh 工具条内嵌开关） */
+.trajectory-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  padding: 2px 4px;
+  color: #6b7280;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.trajectory-switch span {
+  width: 22px;
+  height: 12px;
+  border-radius: 999px;
+  background: #d1d5db;
+  position: relative;
+  transition: background 0.15s ease;
+}
+
+.trajectory-switch span::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+
+.trajectory-switch[aria-checked="true"] {
+  color: #111827;
+}
+
+.trajectory-switch[aria-checked="true"] span {
+  background: #3b82f6;
+}
+
+.trajectory-switch[aria-checked="true"] span::after {
+  transform: translateX(10px);
+}
+
+/* 折叠开关激活态（⊟Turns/⊟Calls 全部收起时） */
+.trajectory-mode.active {
+  color: #111827;
+  background: rgba(59, 130, 246, 0.08);
+  border-color: #93c5fd;
+}
+
+/* 搜索计数徽标 */
+.trajectory-search-count {
+  flex: none;
+  color: #6b7280;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  padding-right: 8px;
+}
+
+/* 详情面板（dsh aside：381px，头部 + tab 条 + 滚动体） */
+.trajectory-details {
+  flex: none;
+  width: 381px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.trajectory-details-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #eef0f3;
+}
+
+.trajectory-details-title {
+  flex: 1;
+  color: #33363c;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trajectory-details-close {
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.trajectory-details-close:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #40454e;
+}
+
+.trajectory-details-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 8px;
+  border-bottom: 1px solid #eef0f3;
+}
+
+.trajectory-details-tab {
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  font-size: 12px;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.trajectory-details-tab:hover {
+  color: #111827;
+}
+
+.trajectory-details-tab.active {
+  color: #111827;
+  border-bottom-color: #3b82f6;
+}
+
+.trajectory-details-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 0 12px;
+}
+
+/* Summary 的 dt/dd 两列（dsh：94px 标签列 + 内容列） */
+.trajectory-overview {
+  margin: 0;
+}
+
+.trajectory-overview > div {
+  display: grid;
+  grid-template-columns: 94px minmax(0, 1fr);
+  min-height: 22px;
+  padding: 0 14px;
+  align-items: center;
+}
+
+.trajectory-overview dt {
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.trajectory-overview dd {
+  margin: 0;
+  color: #33363c;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.trajectory-overview dd.err {
+  color: #e5484d;
+}
+
+/* Payload/Result/Raw 的等宽块 */
+.trajectory-pre {
+  margin: 0;
+  padding: 8px 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: #40454e;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Preview 的 markdown 渲染 */
+.trajectory-markdown {
+  padding: 4px 14px;
+  font-size: 13px;
+}
+
+/* ===== 轨迹态悬浮 composer（dsh：ledger 通底 + composer 覆盖 + 底部 clearance） ===== */
+.app-shell[data-main-state="trace"] .main-col {
+  position: relative;
+}
+
+/* 底部三件套脱离文档流悬浮（composer 覆盖在通底账本之上） */
+.app-shell[data-main-state="trace"] .takeover-dock,
+.app-shell[data-main-state="trace"] #chat-form,
+.app-shell[data-main-state="trace"] .stats-line {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+}
+
+.app-shell[data-main-state="trace"] .takeover-dock {
+  bottom: 136px;
+}
+
+.app-shell[data-main-state="trace"] #chat-form {
+  bottom: 32px;
+  margin-bottom: 0;
+  min-height: 0;
+}
+
+.app-shell[data-main-state="trace"] .stats-line {
+  bottom: 6px;
+}
+
+/* dsh --dsh-trajectory-bottom-clearance：composer 高度 + 16px，让末行滚出遮挡区 */
+.app-shell[data-main-state="trace"] .trajectory-ledger {
+  padding-bottom: 140px;
 }

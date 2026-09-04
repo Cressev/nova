@@ -681,6 +681,11 @@ export default function App() {
   }
 
   const hasContent = entries.length > 0
+  const mainState = !hasContent && streamingText === null
+    ? "empty"
+    : activeTab === "trace"
+      ? "trace"
+      : "conversation"
   const modeLabel = PERMISSION_MODE_LABELS[String(runtimeConfig.permission_mode || "")] || "标准模式"
   const model = String(runtimeConfig.model || "glm-4.7")
   const modelOptions = useMemo(() => {
@@ -690,7 +695,7 @@ export default function App() {
   const selectedSession = sessions.find((s) => s.id === selectedId)
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-main-state={mainState}>
       <Sidebar
         sessions={sessions}
         selectedId={selectedId}
@@ -754,7 +759,7 @@ export default function App() {
           <textarea
             id="message-input"
             ref={textareaRef}
-            rows={2}
+            rows={1}
             placeholder="给智能体发消息"
             value={draft}
             onChange={(e) => {

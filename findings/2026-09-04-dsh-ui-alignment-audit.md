@@ -69,21 +69,21 @@
 
 | # | 项 | dsh 实测 | Nova 现状 | 标记 |
 |---|---|---|---|---|
-| 4.1 | 工具条 | Duration / 实际时间(switch) / ⊟Turns / ⊟Calls + 搜索框(放大镜) | 三个假模式按钮 | ❌ |
-| 4.2 | ⊟Turns/Calls | 全部分组折叠开关(26→11 行，剩组头+…N steps·M calls) | 无 | ❌ |
-| 4.3 | 时间线 | 三泳道 tile(Input绿/Model紫/Tools橙/错误红)+竖排标签+网格+拖拽缩放 | 泳道有、无交互 | 🟡 |
+| 4.1 | 工具条 | Duration / 实际时间(switch) / ⊟Turns / ⊟Calls + 搜索框(放大镜) | 32px 工具条+switch+折叠开关+计数 | ✅ |
+| 4.2 | ⊟Turns/Calls | 全部分组折叠开关(26→11 行，剩组头+…N steps·M calls) | 15→0 行+摘要行+再点还原 | ✅ |
+| 4.3 | 时间线 | 三泳道 tile(Input绿/Model紫/Tools橙/错误红)+横排小标签+网格+拖拽缩放 | 50px 高/14px 泳道距/横排标签(纠正竖排误解)；拖拽缩放未做 | 🟡 |
 | 4.4 | 表格 | 原生 table；行=TOOL/ASSISTANT/USER/System 徽章行+等宽工具行；Turn 组头行「Turn N #seq」 | div 列表 | 🟡 |
 | 4.5 | 分页 | 顶部「Load earlier history」行 | 无 | ❌ |
-| 4.6 | **行选中** | 点击行→右选中(bg rgba(38,49,72,.1))+右侧详情面板展开 | **无** | ❌ |
-| 4.7 | **详情面板** | 381px aside：头部(类型+Turn·Step+×)；TOOL 行 tab=Summary/Payload(JSON树)/Result(pre)/Schema/Timing；消息行 tab=Summary/Preview/Raw(/Source)；Summary=dt/dd(Status/Started/Duration/Timing source/Hierarchy) | **完全缺失** | ❌ |
-| 4.8 | 搜索 | 索引跳转/高亮(3s 节流)，不过滤行数 | 过滤行数(行为错误) | ❌ |
-| 4.9 | composer | dsh 常驻(轨迹区让位) | 常驻 | ❓ 见 §5 |
+| 4.6 | **行选中** | 点击行→右选中(bg rgba(38,49,72,.1))+右侧详情面板展开 | 同款选中色+381px 面板 | ✅ |
+| 4.7 | **详情面板** | 381px aside：头部(类型+Turn·Step+×)；TOOL 行 tab=Summary/Payload(JSON树)/Result(pre)/Schema/Timing)；消息行 tab=Summary/Preview/Raw；Summary=dt/dd 五对 | 全部落地(Duration 按 session timestamps 差值回退) | ✅ |
+| 4.8 | 搜索 | 索引跳转/高亮(3s 节流)，不过滤行数 | 高亮匹配行+计数(15 行不变，7 处命中)；跳转未做 | ✅ |
+| 4.9 | composer | dsh 常驻且悬浮(账本通底延伸至 composer 下，clearance 让末行滚出) | 同款悬浮：780×96 y=505(参照 780×94 y=507)，账本 463≈474，padding-bottom 140 | ✅ |
 
 ## 5. 决策待定项（需用户拍板）
 
 | # | 问题 | dsh 事实 | 用户指示 | 建议 |
 |---|---|---|---|---|
-| 5.1 | 轨迹页 composer 去留 | **常驻**（textarea 可见，源码 `bottom-clearance` 专为它设计） | 「轨迹页面不需要有对话框」 | 按用户指示隐藏；清单记为「用户覆盖 dsh」 |
+| 5.1 | 轨迹页 composer 去留 | **常驻悬浮**（textarea 可见，源码 `bottom-clearance` 专为它设计） | 用户确认：常驻，此前难受的是尺寸/位置 → 已按 dsh 几何对齐 | ✅ 已结 |
 | 5.2 | 统计行缺的后 4 段指标 | 需 provider 侧记录 TTFT/解码时长/缓存命中/输入 tokens | — | 后端补埋点后前端接（工作量在 provider 层） |
 
 ## 6. 验收方式（逐项通用）
