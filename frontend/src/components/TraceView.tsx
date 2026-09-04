@@ -549,18 +549,31 @@ export function TraceView({ sessionId }: { sessionId: string }) {
     <div className="trace-view trajectory-view">
       <div className="trajectory-toolbar" role="toolbar" aria-label="轨迹工具条">
         <div className="trajectory-modes">
-          <button type="button" className={`trajectory-mode${durationMode ? " active" : ""}`} onClick={() => setDurationMode((v) => !v)}>Duration</button>
+          <button
+            type="button"
+            className={`trajectory-mode${durationMode ? " active" : ""}`}
+            aria-pressed={durationMode}
+            onClick={() => setDurationMode((v) => !v)}
+          >
+            <svg className="trajectory-toggle-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.25" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round"/><path d="M8 4.75V8l2.25 1.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            时长
+          </button>
           <button
             type="button"
             role="switch"
             aria-checked={durationMode}
             className="trajectory-switch"
+            title={durationMode ? "使用等宽时长" : "使用实际时长"}
             onClick={() => setDurationMode((v) => !v)}
-          ><span aria-hidden="true" />实际时间</button>
+          >
+            <span>实际时间</span>
+            <span className="trajectory-switch-track" data-on={durationMode || undefined} aria-hidden="true"><span className="trajectory-switch-thumb" /></span>
+          </button>
           <button type="button" className={`trajectory-mode${allCollapsed ? " active" : ""}`} onClick={toggleCollapseAll}>⊟Turns</button>
           <button type="button" className={`trajectory-mode${allCollapsed ? " active" : ""}`} onClick={toggleCollapseAll}>⊟Calls</button>
         </div>
         <div className="trajectory-searchbox">
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="6.4" cy="6.4" r="4.4" stroke="currentColor" strokeWidth="1.4"/><path d="m9.8 9.8 2.9 2.9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
           <input
             className="trajectory-search"
             value={query}

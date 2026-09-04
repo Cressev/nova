@@ -2157,3 +2157,13 @@ api 就不能再拆了吗？拆。
 [x] 时间线交互：滚轮缩放（锚点跟随+exp 系数+最小窗 4 事件）、左键拖选范围（账本过滤）、右键拖平移、点色块=选中记录开详情、点空白=聚焦最近、Esc 重置（全部实测通过）
 [x] 附带修复：reasoning 持久化测试期望更新；轨迹行/文本基础 CSS 补回（时间线重写时误伤）；徽章间距+缩放提示可见性
 ------ todo-list end at 2026/09/04 13:14:51 -----
+
+------ todo-list begin at 2026/09/04 13:19:10 -----
+用户请求原文：所有的控件按键你和dsh用的是同一套东西吗，好丑啊，像是上个世纪的应用设计
+
+[x] 诚实回答：不同源。Nova 用原生 <select> 盖层 hack + 文字字形按钮（＋■↑）+ 手搓工具条；dsh 是自绘 Menu 原语 + SVG 图标 + token 化 toggle/switch——已向用户说明
+[x] 审计 dsh 控件规范：Toolbar .toggle(20px/r3/12px字)、.controlTrack(20×10 轨道+6px 圆点/120ms)、.search(22px/r4/bg-layer-2/focus 变白+蓝边)、PermissionSelect(28px pill 触发器/r24/chevron 120ms 旋转)、Menu(r12 卡/4px 衬/40px 行 r10/icon 16px 槽)
+[x] 找出全部旧控件：权限/模型原生 select（POST 调 PATCH 端点——切换从未生效的隐藏 bug）、＋/■/↑ 文字按钮、✓/○ 前缀 hack 的工具条
+[x] 按 dsh 规范重建：新 MenuSelect.tsx（pill 触发器+浮层卡）替换两处原生 select；按钮换 SVG；工具条 toggle/switch/搜索框全部按 dsh 尺寸重写；PATCH 方法修正
+[x] 验收：下拉开合/选择/API 生效（plan→label→后端 config 全链路实测）、工具条几何（20px/12px/22px 对照 dsh）、vision 8.5/10、"pill 不统一"经核实为 dsh 规范本身（ghost 触发器+hover 底）
+------ todo-list end at 2026/09/04 13:27:30 -----

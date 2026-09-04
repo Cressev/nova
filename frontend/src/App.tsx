@@ -6,6 +6,7 @@ import { ToolEventRow, deriveToolSummary, type ToolEventView } from "./component
 import { PermissionCard, QuestionCard } from "./components/Takeover"
 import { TraceView } from "./components/TraceView"
 import { ThinkRow } from "./components/ThinkRow"
+import { MenuSelect } from "./components/MenuSelect"
 
 /* ============================================================================
    Nova App —— React 版（对齐 dsh ui-conversation 的组件分区）。
@@ -828,46 +829,40 @@ export default function App() {
           />
           <div className="composer-toolbar">
             <div className="toolbar-left">
-              <button id="composer-add" className="composer-add" type="button" aria-label="添加附件" title="添加附件">＋</button>
-              <label className="toolbar-select permission-select" title="权限模式">
-                <svg className="select-icon shield-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5 13.5 3.5V7.5C13.5 11 11.2 13.6 8 14.5C4.8 13.6 2.5 11 2.5 7.5V3.5L8 1.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>
-                <span className="select-value">{PERMISSION_VALUE_LABELS[String(runtimeConfig.permission_mode || "workspace_write")] || "工作区写入"} <span aria-hidden="true" className="select-chevron">▾</span></span>
-                <select
-                  id="permission-select"
-                  value={String(runtimeConfig.permission_mode || "workspace_write")}
-                  onChange={(e) => {
-                    const value = e.target.value
-                    void api("/api/runtime/config", { method: "POST", body: JSON.stringify({ permission_mode: value }) }).then(reloadShell).catch(() => {})
-                  }}
-                >
-                  <option value="read_only">只读</option>
-                  <option value="ask">询问</option>
-                  <option value="workspace_write">标准模式（工作区写入）</option>
-                  <option value="plan">计划</option>
-                  <option value="bypass_permissions">完全访问</option>
-                </select>
-              </label>
+              <button id="composer-add" className="composer-add" type="button" aria-label="添加附件" title="添加附件"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg></button>
+              <MenuSelect
+                id="permission-select"
+                title="权限模式"
+                value={String(runtimeConfig.permission_mode || "workspace_write")}
+                options={[
+                  { value: "read_only", label: "只读" },
+                  { value: "ask", label: "询问" },
+                  { value: "workspace_write", label: "工作区写入" },
+                  { value: "plan", label: "计划" },
+                  { value: "bypass_permissions", label: "Full access" },
+                ]}
+                leadingIcon={<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5 13.5 3.5V7.5C13.5 11 11.2 13.6 8 14.5C4.8 13.6 2.5 11 2.5 7.5V3.5L8 1.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>}
+                onChange={(value) => {
+                  void api("/api/runtime/config", { method: "PATCH", body: JSON.stringify({ permission_mode: value }) }).then(reloadShell).catch(() => {})
+                }}
+              />
             </div>
             <div className="toolbar-right">
               {streamState ? <span id="stream-state" className="stream-state" aria-live="polite">{streamState}</span> : null}
-              <label className="toolbar-select model-select" title="模型">
-                <span className="model-select-label">{model} <span aria-hidden="true" className="select-chevron">▾</span></span>
-                <select
-                  id="model-select"
-                  value={model}
-                  onChange={(e) => {
-                    const value = e.target.value
-                    void api("/api/runtime/config", { method: "POST", body: JSON.stringify({ model: value }) }).then(reloadShell).catch(() => {})
-                  }}
-                >
-                  {modelOptions.map((m) => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </label>
+              <MenuSelect
+                id="model-select"
+                title="模型"
+                value={model}
+                options={modelOptions.map((m) => ({ value: m, label: m }))}
+                onChange={(value) => {
+                  void api("/api/runtime/config", { method: "PATCH", body: JSON.stringify({ model: value }) }).then(reloadShell).catch(() => {})
+                }}
+              />
               {hasContent ? <button id="regenerate-button" className="round-button ghost" type="button" aria-label="重新生成" title="重新生成最后一轮" onClick={() => void regenerate()}><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M12.2 6.2A5 5 0 1 0 12.5 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><path d="M12.6 2.8v3.6H9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg></button> : null}
               {running ? (
-                <button id="stop-button" className="round-button stop" type="button" aria-label="停止" onClick={cancel}>■</button>
+                <button id="stop-button" className="round-button stop" type="button" aria-label="停止" onClick={cancel}><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.5" fill="currentColor"/></svg></button>
               ) : (
-                <button id="send-button" className="round-button send" type="submit" aria-label="发送" disabled={!draft.trim()}>↑</button>
+                <button id="send-button" className="round-button send" type="submit" aria-label="发送" disabled={!draft.trim()}><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.5V3.5M3.8 7.7L8 3.5l4.2 4.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
               )}
             </div>
           </div>
