@@ -1056,3 +1056,10 @@ Mac 自带一个围栏工具，Linux 自带两个，Windows 又是另一套。�
 
 [Recieve:26/09/04-15:39:09 CST]
 [Done:26/09/04-15:51:49 CST | 5518a01]
+
+---
+
+轨迹中sys提示词并没有显示。工具的schema都显示"未找到该工具的 Schema"。
+
+[Recieve:26/09/06-17:41:36 CST]
+[Done:PLACEHOLDER]

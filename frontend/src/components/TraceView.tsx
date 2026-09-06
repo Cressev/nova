@@ -562,12 +562,12 @@ function DetailPanel({ record, onClose, width, onWidthChange }: { record: FusedR
   useEffect(() => {
     if (record.kind !== "tool" || !record.tool) return
     let alive = true
-    api<{ tools?: Array<{ name: string; description?: string; input_schema?: unknown; parameters?: unknown }> }>("/api/tools")
+    api<{ items?: Array<{ name: string; description?: string; schema?: unknown; input_schema?: unknown; parameters?: unknown }> }>("/api/tools")
       .then((data) => {
         if (!alive) return
-        const spec = (data.tools || []).find((t) => t.name === record.tool)
+        const spec = (data.items || []).find((t) => t.name === record.tool)
         if (!spec) { setSchema("未找到该工具的 Schema"); return }
-        const sch = spec.input_schema ?? spec.parameters ?? null
+        const sch = spec.schema ?? spec.input_schema ?? spec.parameters ?? null
         setSchema([spec.description || "", "", JSON.stringify(sch ?? {}, null, 2)].join("\n").trim())
       })
       .catch(() => { if (alive) setSchema("Schema 加载失败") })

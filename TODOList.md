@@ -2228,3 +2228,12 @@ api 就不能再拆了吗？拆。
 [x] 修复-sys 记录：后端新会话首条 turn 前置 system.prompt 事件（一次性，老会话不补发避免落尾部）；/api/agent/system-prompt 端点；老会话前端虚拟 SYSTEM 行兜底；foldRecords 把 sys: 行强制置顶 turn 1 首位；reasoning.completed 不再生成账本行（对话 tab Think 披露行照常消费）
 [x] 验收：无缝（相邻 tile 434.6→434.6 紧贴）、sequence 等宽 61px/duration 分化 202·459px/actual 点状、缩放 14→10 可见块+Esc 复位、点击末块→行滚动到视口中央+选中、新会话端到端 SYSTEM 首行（trace 事件序 system.prompt<turn.started）、Think 行 0、252 unittest+前端 smoke 绿
 ------ todo-list end at 2026/09/04 15:51:49 -----
+
+------ todo-list begin at 2026/09/06 17:41:36 -----
+用户请求原文：轨迹中sys提示词并没有显示。工具的schema都显示"未找到该工具的 Schema"。
+
+[x] 诊断 sys 行：代码链路本身是通的——新会话有 system.prompt 事件置顶、老会话虚拟行兜底，实况抽查 6 个会话全部 SYSTEM 首行；用户看到的是旧 bundle（9/4 部署后未硬刷新）
+[x] 诊断 Schema：前端读 data.tools + spec.input_schema，但 /api/tools 实际返回 items + schema——字段名全对不上，永远查不到 spec
+[x] 修复：TraceView Schema 拉取改为 data.items + spec.schema（兼容 input_schema/parameters 旧字段名）
+[x] 验收：glob 工具 Schema 显示描述+参数结构、web_search 同样正常、"未找到"消失、sys 首行在新老会话都在、252 unittest + 前端 smoke 绿
+------ todo-list end at 2026/09/06 17:48:25 -----
