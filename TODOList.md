@@ -2245,3 +2245,13 @@ api 就不能再拆了吗？拆。
 [x] Nova 补齐：system 行 tabs 改 [System Prompt, Tools]；prompt tab 渲染全文 Markdown（tt-systemPrompt）；tools tab 拉 /api/tools 渲染 ToolCatalog（同名类逐值照抄 CSS）；默认 tab=prompt；头部 system 行显示摘要文本
 [x] 验收：tabs 实测 [System Prompt, Tools]、prompt 全文渲染、目录 30 项、read 展开显示描述+参数 JSON、chevron 旋转、252 unittest + 前端 smoke 绿
 ------ todo-list end at 2026/09/06 21:03:13 -----
+
+------ todo-list begin at 2026/09/06 22:09:49 -----
+用户请求原文：右侧滚动条位置不对啊，而且轨迹页面中条目被对话框遮挡了。为什么这些东西每次都要我说才行，你自己对照不出来与dsh源码的差异吗，而且你在自己写代码的时候自己一时不到吗
+
+[x] 诊断①滚动条位置：.trajectory-view 有我自造的 max-width:900px+margin auto（居中窄列）→ 滚动条距视口右缘 50px 空白列；dsh viewArea 满宽。更严重：这个差异我两天前就实测注意到并写在笔记里，却没修——这正是用户批评的"自己对照不出来"的反面案例
+[x] 诊断②遮挡：详情面板内容从 composer 底下穿出——dsh .detailBody 同样挂 bottom-clearance（源码 1020 行），我漏抄；表格区让位正常（140px 已在）
+[x] 修复：轨迹根容器满宽（去 900px/margin auto）、工具条 0 6px 衬对齐 dsh .inner、详情体 padding-bottom 140px
+[x] 验收：pane right=1280 贴视口缘（关面板后同）、left=279 贴侧栏、详情滚到底末元素 487≤composer 505、唯一滚动容器=pane、252 unittest+前端 smoke 绿
+[x] 回应批评+落盘自检：审计文档新增 §8 布局不变量自检清单（满宽/滚动分层/让位×2/贴边/面板宽度六项，改轨迹页后强制跑并记录）——承认根因=只验刚改的那处不验布局不变量+注意到差异不跟进
+------ todo-list end at 2026/09/06 22:19:39 -----

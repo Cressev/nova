@@ -3824,14 +3824,13 @@ body.inspector-collapsed .inspector-toggle {
 
 /* ---- dsh 轨迹视图（ui-trajectory 形态） ---- */
 .trajectory-view {
+  /* dsh：viewArea 满宽（280→1280），滚动条贴视口右缘，非居中窄列 */
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
   flex-direction: column;
   width: 100%;
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 0 16px 12px;
+  padding: 0 0 12px;
 }
 
 .trajectory-toolbar {
@@ -3839,7 +3838,8 @@ body.inspector-collapsed .inspector-toggle {
   flex: none;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
+  padding: 0 6px;
   /* dsh：工具条固定 32px + 下边框 + 白底 */
   height: 32px;
   box-sizing: border-box;
@@ -4536,7 +4536,8 @@ body.inspector-collapsed .inspector-toggle {
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 8px 0 12px;
+  /* dsh .detailBody 同样挂 --dsh-trajectory-bottom-clearance：内容可滚出 composer 遮挡区 */
+  padding: 8px 0 140px;
   scrollbar-gutter: stable;
 }
 
