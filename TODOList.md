@@ -2237,3 +2237,11 @@ api 就不能再拆了吗？拆。
 [x] 修复：TraceView Schema 拉取改为 data.items + spec.schema（兼容 input_schema/parameters 旧字段名）
 [x] 验收：glob 工具 Schema 显示描述+参数结构、web_search 同样正常、"未找到"消失、sys 首行在新老会话都在、252 unittest + 前端 smoke 绿
 ------ todo-list end at 2026/09/06 17:48:25 -----
+
+------ todo-list begin at 2026/09/06 21:00:40 -----
+用户请求原文：sys提示词 没有 我的意思是轨迹中只有一个summary
+
+[x] 读 dsh 源码：SYSTEM 行详情 tab 集 = SYSTEM_PROMPT_TABS（System Prompt 全文 Markdown + Tools 工具目录，没有 Summary！）；ToolCatalog=details 折叠项（chevron 100ms 旋转 90°+扳手图标+等宽名+截断描述，展开=完整描述+参数 JSON，30px 行 hover 浮层）；头部位置码=prompt 摘要文本
+[x] Nova 补齐：system 行 tabs 改 [System Prompt, Tools]；prompt tab 渲染全文 Markdown（tt-systemPrompt）；tools tab 拉 /api/tools 渲染 ToolCatalog（同名类逐值照抄 CSS）；默认 tab=prompt；头部 system 行显示摘要文本
+[x] 验收：tabs 实测 [System Prompt, Tools]、prompt 全文渲染、目录 30 项、read 展开显示描述+参数 JSON、chevron 旋转、252 unittest + 前端 smoke 绿
+------ todo-list end at 2026/09/06 21:03:13 -----

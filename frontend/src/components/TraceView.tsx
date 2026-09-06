@@ -538,6 +538,13 @@ function tabsForRecord(record: FusedRecord): DetailTab[] {
       { id: "raw", label: "Raw" },
     ]
   }
+  // dsh SYSTEM_PROMPT_TABS：System Prompt 全文 + Tools 工具目录（无 Summary）
+  if (record.kind === "system") {
+    return [
+      { id: "prompt", label: "System Prompt" },
+      { id: "tools", label: "Tools" },
+    ]
+  }
   return [{ id: "overview", label: "Summary" }]
 }
 
@@ -557,8 +564,9 @@ function DetailPanel({ record, onClose, width, onWidthChange }: { record: FusedR
   const tabs = tabsForRecord(record)
   const [active, setActive] = useState("overview")
   const [schema, setSchema] = useState<string>("加载中…")
+  const [catalog, setCatalog] = useState<Array<{ name: string; description?: string; schema?: unknown }> | null>(null)
   const widthRef = useRef(width ?? 381)
-  useEffect(() => setActive("overview"), [record.key])
+  useEffect(() => setActive(record.kind === "system" ? "prompt" : "overview"), [record.key, record.kind])
   useEffect(() => {
     if (record.kind !== "tool" || !record.tool) return
     let alive = true
@@ -573,6 +581,16 @@ function DetailPanel({ record, onClose, width, onWidthChange }: { record: FusedR
       .catch(() => { if (alive) setSchema("Schema 加载失败") })
     return () => { alive = false }
   }, [record.tool, record.kind])
+
+  // Tools 目录（dsh ToolCatalog：本次请求注册的全部工具，可逐项展开看参数 JSON）
+  useEffect(() => {
+    if (record.kind !== "system") return
+    let alive = true
+    api<{ items?: Array<{ name: string; description?: string; schema?: unknown }> }>("/api/tools")
+      .then((data) => { if (alive) setCatalog(data.items || []) })
+      .catch(() => { if (alive) setCatalog([]) })
+    return () => { alive = false; setCatalog(null) }
+  }, [record.kind, record.key])
 
   return (
     <aside className="trajectory-details" aria-label="轨迹详情" style={{ width: width !== null ? `${width}px` : undefined }}>
@@ -607,7 +625,7 @@ function DetailPanel({ record, onClose, width, onWidthChange }: { record: FusedR
             <span className="tt-kindTagIcon" aria-hidden="true">{KIND_ICON[record.kind]}</span>
             <span className="tt-kindTagLabel">{KIND_BADGE[record.kind]}</span>
           </span>
-          <span className="trajectory-details-location">Turn {record.turn} · Step {record.step}</span>
+          <span className="trajectory-details-location">{record.kind === "system" ? record.text.slice(0, 60) : `Turn ${record.turn} · Step ${record.step}`}</span>
         </div>
         <button type="button" className="trajectory-details-close" aria-label="关闭详情" onClick={onClose}><span aria-hidden="true">×</span></button>
       </div>
@@ -675,6 +693,33 @@ function DetailPanel({ record, onClose, width, onWidthChange }: { record: FusedR
         ) : null}
         {active === "rendered" ? <div className="trajectory-markdown"><Markdown content={record.output ?? record.text} /></div> : null}
         {active === "raw" ? <pre className="trajectory-pre">{record.output ?? record.text}</pre> : null}
+        {active === "prompt" ? (
+          record.output?.trim()
+            ? <div className="trajectory-markdown tt-systemPrompt"><Markdown content={record.output} /></div>
+            : <p className="tt-noPayload">本请求没有系统提示词</p>
+        ) : null}
+        {active === "tools" ? (
+          catalog === null ? <p className="tt-noPayload">加载中…</p>
+          : catalog.length === 0 ? <p className="tt-noPayload">本请求没有注册工具</p>
+          : (
+            <div className="tt-toolCatalog">
+              {catalog.map((tool, i) => (
+                <details className="tt-toolCatalogItem" key={`${tool.name}:${i}`}>
+                  <summary className="tt-toolCatalogSummary">
+                    <svg className="tt-toolCatalogChevron" width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M5 3.5 9 7l-4 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3.3a3.8 3.8 0 0 1-4.8 4.8l-5.1 5.1a1.6 1.6 0 1 1-2.3-2.3l5.1-5.1A3.8 3.8 0 0 1 11.7 1l-2.3 2.3 2.3 2.3L14 3.3Z"/></svg>
+                    <span className="tt-toolCatalogName">{tool.name}</span>
+                    <span className="tt-toolCatalogDescription">{tool.description || ""}</span>
+                  </summary>
+                  <div className="tt-toolCatalogDefinition">
+                    {tool.description ? <p className="tt-toolCatalogFullDescription">{tool.description}</p> : null}
+                    <pre className="trajectory-pre">{JSON.stringify(tool.schema ?? {}, null, 2)}</pre>
+                  </div>
+                </details>
+              ))}
+            </div>
+          )
+        ) : null}
       </div>
     </aside>
   )

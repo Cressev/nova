@@ -4891,3 +4891,112 @@ body.inspector-collapsed .inspector-toggle {
   height: 12px;
   stroke: currentColor;
 }
+
+/* ===== SYSTEM 行详情（dsh systemPrompt + ToolCatalog，26/09/06 移植）===== */
+.tt-systemPrompt {
+  padding: 8px 14px 16px;
+}
+
+.tt-systemPrompt h1, .tt-systemPrompt h2, .tt-systemPrompt h3 {
+  font-size: 14px;
+  margin: 12px 0 6px;
+  color: #171717;
+}
+
+.tt-systemPrompt p, .tt-systemPrompt li {
+  font-size: 13px;
+  line-height: 20px;
+  color: #33363c;
+}
+
+.tt-systemPrompt ol, .tt-systemPrompt ul {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+
+.tt-systemPrompt code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  background: #f1f2f4;
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.tt-noPayload {
+  margin: 0;
+  padding: 24px 14px;
+  color: #8a8f98;
+  font-size: 13px;
+  text-align: center;
+}
+
+.tt-toolCatalog {
+  min-height: 100%;
+  padding: 0 0 16px;
+}
+
+.tt-toolCatalogItem {
+  border-bottom: 1px solid #f0f1f3;
+}
+
+.tt-toolCatalogSummary {
+  display: grid;
+  grid-template-columns: 12px 12px max-content minmax(0, 1fr);
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 30px;
+  padding: 4px 12px;
+  gap: 5px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.tt-toolCatalogSummary::-webkit-details-marker {
+  display: none;
+}
+
+.tt-toolCatalogSummary:hover {
+  background: rgba(38, 49, 72, 0.06);
+}
+
+.tt-toolCatalogChevron {
+  color: #9ca3af;
+  transition: transform 100ms ease;
+}
+
+.tt-toolCatalogItem[open] .tt-toolCatalogChevron {
+  transform: rotate(90deg);
+}
+
+.tt-toolCatalogSummary svg:not(.tt-toolCatalogChevron) {
+  color: #9ca3af;
+}
+
+.tt-toolCatalogName {
+  color: #171717;
+  font: 500 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.tt-toolCatalogDescription {
+  min-width: 0;
+  overflow: hidden;
+  color: #8a8f98;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tt-toolCatalogDefinition {
+  padding: 0 12px 8px 29px;
+  background: #fafafa;
+}
+
+.tt-toolCatalogFullDescription {
+  margin: 0;
+  padding: 7px 0 4px;
+  color: #5f6572;
+  font-size: 13px;
+  line-height: 18px;
+  white-space: pre-wrap;
+}

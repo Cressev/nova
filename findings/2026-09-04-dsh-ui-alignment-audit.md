@@ -75,7 +75,7 @@
 | 4.4 | 表格 | 原生 table；kindTag 徽章行；Turn=首行左上 8px 小标签+发丝线（无组头按钮行） | 已按源码移植（4cf9477+563f890+bdf4d00：tt-* 结构/turnLabel/折叠摘要/滚动 pane+底部让位） | ✅ |
 | 4.5 | 分页 | 顶部「Load earlier history」行 | 无 | ❌ |
 | 4.6 | **行选中** | 点击行→右选中(bg rgba(38,49,72,.1))+右侧详情面板展开 | 同款选中色+381px 面板 | ✅ |
-| 4.7 | **详情面板** | 381px aside：头部(类型+Turn·Step+×)；TOOL 行 tab=Summary/Payload(JSON树)/Result(pre)/Schema/Timing)；消息行 tab=Summary/Preview/Raw；Summary=dt/dd 五对 | 全部落地(Duration 按 session timestamps 差值回退) | ✅ |
+| 4.7 | **详情面板** | 381px aside：头部(类型+Turn·Step+×)；TOOL 行 tab=Summary/Payload(JSON树)/Result(pre)/Schema/Timing)；消息行 tab=Summary/Preview/Raw；**SYSTEM 行 tab=System Prompt(全文)+Tools(工具目录)** | 全部落地(Duration 按 session timestamps 差值回退；SYSTEM 行 26/09/06 补齐 prompt/tools 两 tab) | ✅ |
 | 4.8 | 搜索 | 索引跳转/高亮(3s 节流)，不过滤行数 | 高亮匹配行+计数(15 行不变，7 处命中)；跳转未做 | ✅ |
 | 4.9 | composer | dsh 常驻且悬浮(账本通底延伸至 composer 下，clearance 让末行滚出) | 同款悬浮：780×96 y=505(参照 780×94 y=507)，账本 463≈474，padding-bottom 140 | ✅ |
 
