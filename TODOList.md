@@ -2264,3 +2264,11 @@ api 就不能再拆了吗？拆。
 [x] 重构：App.tsx 包 .scroll-body 满宽滚动层；.messages 退为 780 居中列不滚动；清理三处旧滚动残留（886 块 overflow、3448 块、scrollbar-gutter）；grid 加显式单列模板（修掉用户气泡 justify-self:end 撞隐式列飞到 1415 的连带 bug）；.trace-view 去 overflow（滚动唯一=tablePane）
 [x] 验收：对话页 sb 279→1280 满宽、滚动正常、气泡右对齐 1156≤1170 全在列内、无横向溢出（scrollWidth==clientWidth）；轨迹页 §8 六项复跑全过（1280/279/140px×2）；252 unittest + 前端 smoke 绿
 ------ todo-list end at 2026/09/07 10:32:50 -----
+
+------ todo-list begin at 2026/09/07 11:38:21 -----
+用户请求原文：现在工具层面应该差不多了吧，还有什么差距吗
+
+[x] 实测 Nova 对话页工具行：24px 紧凑行+点击展开(24→275)正常、Think 行型在(14 行)、ToolBody 已分变体(bash 终端体/diff 体/read 体/web 体/IoBody 兜底)、取消/重试/hook 上下文在
+[x] 读 dsh 源码对照：ui-tool/toolviews={GenericToolCard, read-row, bash-sample, file-mutation-row, search-row, web-row, todo-row, ask-question-row}，ToolRow chrome(title/summary/body/output/card/onOpenFile/state)
+[x] 差距清单定稿（见最终回复）：①bash 非零退出不标红(后端 ok=True+前端不消费 exitCode) ②Read 行无文件跳转钮 ③Glob/Grep 无 search 结果卡 ④轨迹缺 subtool/context 行型(§7.7) ⑤统计行 token 指标(§7.9，需 provider 埋点)
+------ todo-list end at 2026/09/07 11:38:21 -----
