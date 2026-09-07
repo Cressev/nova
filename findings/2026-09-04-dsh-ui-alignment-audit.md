@@ -136,6 +136,7 @@
 
 改动后逐条在 8765 实测（agent-browser eval），任何一条不符即为回归：
 - **8.1 满宽**：`.tt-tablePane` right == window.innerWidth（当前 1280），left == 侧栏右缘（279）。禁止任何 max-width/margin auto 出现在轨迹链路上。
+- **8.1b 对话页满宽**：`.scroll-body` right == innerWidth 且 left == 279；`.messages` 780 居中且 **overflow 必须为 visible**（滚动只许在 .scroll-body）。26/09/07 新增：对话页滚动条悬在内容列右缘（1170）就是违反此条。
 - **8.2 滚动分层**：唯一纵向滚动容器 = `.tt-tablePane`（overflow-y auto）；`.trajectory-ledger-wrap`/`.trace-view`/`.main-col`/body 全部不滚动（scrollHeight==clientHeight）。
 - **8.3 底部让位×2**：`.tt-tablePane` 与 `.trajectory-details-body` 的 padding-bottom 都必须是 140px；各自滚到底后最后一个子元素 bottom ≤ composer top（实测 487 ≤ 505）。
 - **8.4 贴边**：工具条/时间线/表格左缘 == 侧栏右缘（279），无居中窄列、无左右留白列。
@@ -143,3 +144,5 @@
 - **8.6 每项记录**：跑完在本节末追加一行（日期+提交+六项结果），作为审计证据。
 
 （26/09/06 `8c9f483` 首跑：8.1 ✅ 1280/279；8.2 ✅ 仅 pane 滚；8.3 ✅ 140px+487≤505；8.4 ✅ 279 贴边；8.5 ✅ 关闭后 1280。）
+
+（26/09/07 对话页重构首跑：8.1b ✅ sb 279→1280，messages 382→1162 居中不滚，气泡 1156≤1170 全内，scrollWidth==clientWidth。）

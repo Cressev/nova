@@ -393,7 +393,8 @@ function ConversationView({ entries, streamingText }: { entries: TimelineEntry[]
     bottomRef.current?.scrollIntoView({ block: "end" })
   }, [entries.length, streamingText])
   return (
-    <div className="messages" id="messages">
+    <div className="scroll-body" id="messages-scroll">
+      <div className="messages" id="messages">
       {entries.map((entry) => {
         if (entry.kind === "message") return <MessageView key={entry.key} message={entry.message} />
         if (entry.kind === "checkpoint") return <CheckpointView key={entry.key} message={entry.message} />
@@ -413,6 +414,7 @@ function ConversationView({ entries, streamingText }: { entries: TimelineEntry[]
         </article>
       ) : null}
       <div ref={bottomRef} />
+      </div>
     </div>
   )
 }
