@@ -2350,3 +2350,9 @@ api 就不能再拆了吗？拆。
 [x] 已对齐域：会话/事件流/审批审计/沙箱/compaction(阈值压缩)/多工作区/worktree/subagents(壳)/MCP(壳)/skills(目录)/memory(10 路由最完整)/processes/LSP/hooks/spill
 [x] 差距定稿（见最终回复四层清单）：模型协作 5 项（goal/plan/todo/schedule/feedback）、智能编排 3 项（workflow 编排/subagent 深度/ralf 类 fresh-loop）、检索 2 项（session-query 会话检索/context 注入）、扩展生态 5 项（acp/attachment/credentials/identity/settings 族）、运行时 3 项（多 provider/token-meter/terminal、e2b 云执行）
 ------ todo-list end at 2026/09/09 15:10:18 -----
+
+------ todo-list begin at 2026/09/09 15:31:29 -----
+用户请求原文：终端仿真、云沙箱执行、Agent Client Protocol 自动化、持久附件、凭据库（API key 管理）、统一身份 是干什么的，对我个人工作中使用作用大吗
+
+[x] 读 6 个包的 README 职责+Nova 替代现状（secrets 已有单文件实现/processes Popen 无 PTY/read_image 有但无对话附件）
+------ todo-list end at 2026/09/09 15:31:29 -----
