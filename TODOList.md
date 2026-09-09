@@ -2272,3 +2272,9 @@ api 就不能再拆了吗？拆。
 [x] 读 dsh 源码对照：ui-tool/toolviews={GenericToolCard, read-row, bash-sample, file-mutation-row, search-row, web-row, todo-row, ask-question-row}，ToolRow chrome(title/summary/body/output/card/onOpenFile/state)
 [x] 差距清单定稿（见最终回复）：①bash 非零退出不标红(后端 ok=True+前端不消费 exitCode) ②Read 行无文件跳转钮 ③Glob/Grep 无 search 结果卡 ④轨迹缺 subtool/context 行型(§7.7) ⑤统计行 token 指标(§7.9，需 provider 埋点)
 ------ todo-list end at 2026/09/07 11:38:21 -----
+
+------ todo-list begin at 2026/09/09 10:48:14 -----
+用户请求原文：这都是算法设计层面的差异还是ui前端显示的差异
+
+[x] 逐项定性 5 个差距的所属层面（前端/数据链/产品能力），验证关键事实：bash exitCode 已在后端 data 里（前端没消费=显示层）；token usage 在 bigmodel provider 完全未提取（数据链层）；subagents/manager.py 事件只进自己的 run.events 不进会话事件流（数据链层）
+------ todo-list end at 2026/09/09 10:48:14 -----
