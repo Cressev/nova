@@ -28,9 +28,40 @@ async def update_runtime_config(payload: ctx.RuntimeConfigUpdate) -> dict:
         encoding="utf-8",
     )
     ctx._apply_workspace_runtime_config()
+    # dsh approval/policy 对齐：审批/沙箱策略切换是 log-only 事件，落到当前活跃会话
+    # （无活跃会话时静默跳过——它本来就不进模型 transcript，只是审计日志）。
+    if "permission_mode" in update or "sandbox_mode" in update:
+        _emit_permission_policy_event(update)
     result = ctx._runtime_config_payload()
     result["pending_config"] = pending
     return result
+
+
+def _emit_permission_policy_event(update: dict) -> None:
+    active = [sid for sid in ctx.agent_sessions.active_session_ids]
+    if not active:
+        return
+    parts = [
+        f"{key}={update[key]}"
+        for key in ("permission_mode", "sandbox_mode")
+        if key in update
+    ]
+    for session_id in sorted(active)[:1]:
+        try:
+            ctx.store.upsert_chat_event(
+                ctx.ChatEvent(
+                    session_id=session_id,
+                    type="permission",
+                    event_type="permission.policy",
+                    phase="completed",
+                    title="权限策略已切换",
+                    message="；".join(parts),
+                    data={"policy": update.get("permission_mode", ""), "sandbox": update.get("sandbox_mode", ""), **update},
+                )
+            )
+        except Exception:
+            # 审计事件失败不阻断配置切换
+            pass
 
 
 @router.patch("/api/runtime/secrets")

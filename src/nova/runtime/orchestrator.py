@@ -100,11 +100,24 @@ class RunOrchestrator:
             else {}
         )
         checkpoint_data = {**raw_data, **runtime_data}
+        call_id = str(raw_event.get("call_id") or (runtime_event or {}).get("id") or self.id_factory("tool"))
+        tool = str(raw_event.get("tool") or "tool")
+        # dsh 对齐：approval/asked 事件落会话流（可回放审计三件套 asked/decided/policy 之一）。
+        # 独立 id 前缀：不与 permission.requested runtime 事件抢同一 call_id 身份
+        # （store 的 upsert 按 id 合并，同 id 会互相覆盖 event_type）。
+        self.emit_permission_asked(
+            tool=tool,
+            call_id=call_id,
+            arguments=raw_event.get("arguments") if isinstance(raw_event.get("arguments"), dict) else {},
+            permission=str(raw_event.get("permission") or ""),
+            reason=str(raw_event.get("message") or "执行工具前需要用户确认。"),
+            risk=str(checkpoint_data.get("risk") or "") or None,
+        )
         self.agent_sessions.create_pending_approval(
             session_id=self.session_id,
             turn_id=self.turn_id,
-            call_id=str(raw_event.get("call_id") or (runtime_event or {}).get("id") or self.id_factory("tool")),
-            tool=str(raw_event.get("tool") or "tool"),
+            call_id=call_id,
+            tool=tool,
             arguments=raw_event.get("arguments") if isinstance(raw_event.get("arguments"), dict) else {},
             permission=str(raw_event.get("permission") or ""),
             reason=str(raw_event.get("message") or "执行工具前需要用户确认。"),
@@ -115,6 +128,42 @@ class RunOrchestrator:
                 else None
             ),
             checkpoint_data=checkpoint_data,
+        )
+
+    def emit_permission_asked(
+        self,
+        *,
+        tool: str,
+        call_id: str,
+        arguments: dict[str, Any],
+        permission: str,
+        reason: str,
+        risk: str | None = None,
+    ) -> dict[str, Any]:
+        """approval/asked：工具请求审批时落一条可回放事件（dsh approval/asked 对齐）。"""
+        # event() 会把 call_id 同时用作事件 id 与 call_id 字段；upsert 按 id 合并，
+        # 所以 asked 用独立 id（asked-{call_id}），call_id 字段仍指向被审批的调用。
+        return self.event(
+            "permission.asked",
+            category="permission",
+            phase="pending",
+            title=f"请求确认：{tool}",
+            message=reason,
+            tool=tool,
+            call_id=f"asked-{call_id}",
+            arguments=arguments,
+            data={"permission": permission, "risk": risk or "", "call_id": call_id},
+        )
+
+    def emit_permission_policy(self, *, policy: str, reason: str = "") -> dict[str, Any]:
+        """approval/policy：审批策略切换的 log-only 事件（dsh approval/policy 对齐）。"""
+        return self.event(
+            "permission.policy",
+            category="permission",
+            phase="completed",
+            title="审批策略已切换",
+            message=reason or f"当前审批策略：{policy}",
+            data={"policy": policy},
         )
 
     def event(

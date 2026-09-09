@@ -109,7 +109,8 @@ def load_settings() -> Settings:
     )
     if permission_mode not in {"read_only", "ask", "workspace_write", "default", "plan", "accept_edits", "dont_ask", "bypass_permissions"}:
         permission_mode = "ask"
-    sandbox_mode = _string_override(overrides, "sandbox_mode", os.getenv("NOVA_SANDBOX_MODE", "workspace_write").strip())
+    # dsh fail-safe 对齐：沙箱默认 read-only，部署要放开须显式 opt-in（环境变量/runtime 覆盖）。
+    sandbox_mode = _string_override(overrides, "sandbox_mode", os.getenv("NOVA_SANDBOX_MODE", "read_only").strip())
     if sandbox_mode not in {"read_only", "workspace_write", "danger_full_access"}:
         sandbox_mode = "workspace_write"
     approval_policy = _string_override(overrides, "approval_policy", os.getenv("NOVA_APPROVAL_POLICY", "never").strip())

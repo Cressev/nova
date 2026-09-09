@@ -146,3 +146,15 @@
 （26/09/06 `8c9f483` 首跑：8.1 ✅ 1280/279；8.2 ✅ 仅 pane 滚；8.3 ✅ 140px+487≤505；8.4 ✅ 279 贴边；8.5 ✅ 关闭后 1280。）
 
 （26/09/07 对话页重构首跑：8.1b ✅ sb 279→1280，messages 382→1162 居中不滚，气泡 1156≤1170 全内，scrollWidth==clientWidth。）
+
+
+## 9. 权限/安全对齐（26/09/09 全对齐完成）
+
+| 层 | dsh | Nova | 状态 |
+|---|---|---|---|
+| bash 执行 | 每条经 sandbox-exec/bwrap/ACL 内核级 confine，runner 失败 fail-closed | sandbox.py 同语义移植：macOS SBPL（deny file-write* + subpath 白名单）/Linux bwrap/他平台拒绝；非 danger_full_access 全走 confine | ✅ |
+| 审批审计 | approval/asked·decided·policy 三事件可回放 | permission.asked/approved/denied/policy 落会话事件流（asked 用独立 id 防 upsert 合并） | ✅ |
+| ask 模式 | 走审批 answerer 链 | gate 放行到 executor 审批流（pending→批准续跑） | ✅ |
+| 默认模式 | read-only fail-safe，显式 opt-in 放开 | sandbox_mode 默认 read_only；用户已有 runtime-config 显式覆盖保留 | ✅ |
+
+实测记录：workspace_write 区内写 ok、区外写内核拒（Operation not permitted）；read_only gate 双层拦截；258 unittest 绿。

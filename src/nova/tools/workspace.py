@@ -8,6 +8,8 @@ import os
 import re
 import shlex
 import subprocess
+
+from nova.tools.sandbox import SandboxPolicy, SandboxUnavailableError, confine
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -1229,11 +1231,17 @@ class WorkspaceTools:
             raise ToolExecutionError(f"命令命中黑名单，拒绝执行：{risk['reason']}：{command}", code="PERMISSION_DENIED")
         workdir = self._resolve_workspace_path(str(arguments.get("workdir") or "."))
         timeout_ms = min(int(arguments.get("timeoutMs") or 30000), 120000)
+        # dsh 对齐：每条 bash 经 OS 级沙箱 confine（read_only/workspace_write），
+        # danger_full_access 才直跑；runner 不可用 → SandboxUnavailableError fail-closed。
+        run_argv: list[str] | None = None
+        if self.sandbox_mode != "danger_full_access":
+            policy = SandboxPolicy(mode="read_only" if self.sandbox_mode == "read_only" else "workspace_write", workspace_root=str(self.project_root))
+            run_argv = confine(command, policy)
         try:
             completed = subprocess.run(
-                command,
+                run_argv if run_argv is not None else command,
                 cwd=workdir,
-                shell=True,
+                shell=run_argv is None,
                 text=True,
                 errors="replace",
                 capture_output=True,
@@ -1254,6 +1262,8 @@ class WorkspaceTools:
                 ok=True,
                 data={"timedOut": True, "timeoutMs": timeout_ms, "workdir": self._display(workdir)},
             )
+        except SandboxUnavailableError as exc:
+            raise ToolExecutionError(str(exc), code="SANDBOX_UNAVAILABLE") from exc
         except OSError as exc:
             raise ToolExecutionError(f"命令启动失败：{exc}") from exc
 
@@ -2268,8 +2278,9 @@ class WorkspaceTools:
             raise ToolExecutionError(f"当前权限模式为 dont_ask，未预批准的 {name} 会被拒绝")
         if self.permission_mode == "read_only":
             raise ToolExecutionError(f"当前权限模式为 read_only，禁止执行 {name}")
-        if self.permission_mode == "ask":
-            raise ToolExecutionError(f"{name} 需要用户审批；当前版本尚未实现前端审批确认")
+        # ask 模式：不在 gate 拦截，放行到 executor 的审批流（permission.request 事件 →
+        # pending approval → 用户批准后续跑，见 executor._run_permission_request_flow）。
+        # gate 在这里抛错会让审批通道永远走不到。
 
 def tool_result_as_json(result: ToolResult) -> str:
     return json.dumps(

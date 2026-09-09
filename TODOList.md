@@ -2295,3 +2295,13 @@ api 就不能再拆了吗？拆。
 [x] 读 dsh：sandbox-policy(3 模式,fail-safe 默认 read-only)+bash-sandbox(每条 bash confine→sandbox-exec/bwrap/ACL 内核级,runner 起不来→SandboxUnavailableError 宁败不裸跑)+user-approval(ask/never 2 态+approval/asked·decided·policy 事件可回放审计)
 [x] 定性：概念层对齐、执行层与审计层未对齐——Nova bash=subprocess shell=True 完全无内核级约束(可写工作区外/可联网)，审批 store 仅内存无 durable 审计，ask 模式 gate 抛"尚未实现前端审批确认"(Takeover 预审批是另一条路)
 ------ todo-list end at 2026/09/09 11:03:08 -----
+
+------ todo-list begin at 2026/09/09 11:05:33 -----
+用户请求原文：全对齐
+
+[x] ① 新 src/nova/tools/sandbox.py：seatbeltProfileArgs 对齐移植（deny file-write* + subpath 白名单，macOS sandbox-exec）；Linux bwrap；其他平台 fail-closed 抛 SandboxUnavailableError（宁拒不裸跑）；workspace.py bash() 非 danger_full_access 全部经 confine 执行。实测：区内写 ok、区外写被内核拒（Operation not permitted）、read_only 双层拦截
+[x] ② 审批三事件：register_permission_request 落 permission.asked（独立 id 防 upsert 合并覆盖）；approve/deny 原有 permission.approved/denied 保留；PATCH /api/runtime/config 切换权限/沙箱时落 permission.policy（活跃会话，无则静默）
+[x] ③ ask 模式 gate 并拢：删"尚未实现前端审批确认"硬拦截，放行到 executor 审批流（_needs_permission_request ask→True→permission.request→pending→批准续跑）
+[x] ④ fail-safe 默认：sandbox_mode 默认 read_only（用户 ~/.nova/config 既有显式覆盖保留=显式 opt-in 语义）
+[x] ⑤ 258 unittest 全绿（新增 6 测试：asked 落库/id 独立/policy log-only/seatbelt 两种 profile/未知平台 fail-closed/probe）；前端 smoke 绿；服务已重启生效
+------ todo-list end at 2026/09/09 11:14:30 -----
