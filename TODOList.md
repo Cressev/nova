@@ -2324,3 +2324,13 @@ api 就不能再拆了吗？拆。
 [x] 修复三层：①_enforce_permission_sandbox_consistency——权限≠bypass 时沙箱自动从 danger 收敛为 workspace_write（每次 apply+启动兜底）；②模块加载末尾 _apply_workspace_runtime_config() 启动即拉齐；③UI 补沙箱选择器（与权限选择器并排同显，lock 图标）
 [x] 验证：重启服务 danger→workspace_write 收敛、区外写拦截（"拒绝访问工作区外路径"）、bypass+danger 组合保留、262 unittest+前端 smoke 绿、UI 两选择器实测同显；测试文件 /Users/liam/test-nova-write.txt 已清理
 ------ todo-list end at 2026/09/09 12:59:31 -----
+
+------ todo-list begin at 2026/09/09 13:09:52 -----
+用户请求原文：为什么啊你看看为什么
+（指：为什么 .nova/config/runtime-config.json 里会有 sandbox_mode=danger_full_access——上一轮只修了收敛，没查写入源头）
+
+[x] 取证（会话事件+git 历史+指纹比对）：①agent 无自我提权——两个内部测试会话事件链干净（write→read→cat，无 curl/PATCH）；②真凶=旧版 vanilla UI 设置面板的"权限预设"捆绑写入：derivePermissionConfig 把 bypass_permissions 预设展开成 {permission_mode:bypass, sandbox_mode:danger_full_access, approval_policy:never} 全量落盘（指纹完全吻合：rounds=6 旧表单默认值、never、danger）；③9/3 迁移 Vite 后新 UI 权限下拉只发 permission_mode 单字段——你选"工作区写入"时 PATCH 合并保留旧 danger，且该 PATCH 触发全量 re-apply 把 danger 应用到 live——UI 断代造成半新半旧状态
+[x] 附带发现并修复：测试套件零隔离（TestClient 用真实 app+真实 ~/.nova/sessions）——每次跑测都往你会话列表灌 80+ 夹具会话（10:58 你让我清空后又被我灌脏了）。修复：test_api.ApiTest + test_runtime_control 全部换临时 SessionStore
+[x] 清理：中毒配置文件 sandbox 收敛为 workspace_write（与运行时一致）；真实库 94+5 个测试残留清零
+[x] 回归：262 unittest 全绿且真实库会话数=0（零污染验证）、前端 smoke 绿、服务重启 live=workspace_write
+------ todo-list end at 2026/09/09 13:14:28 -----

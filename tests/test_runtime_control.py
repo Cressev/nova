@@ -17,6 +17,16 @@ from nova.processes.manager import ProcessManager
 
 class RuntimeControlTest(unittest.TestCase):
     def setUp(self) -> None:
+        # 隔离：临时 SessionStore，避免夹具会话污染真实 ~/.nova/sessions（同 test_api）。
+        import tempfile
+
+        from pathlib import Path as _P
+
+        from nova.sessions.store import SessionStore as _Store
+
+        self._real_store = app_module.store
+        app_module.store = _Store(_P(tempfile.mkdtemp(prefix="nova-test-")))
+        self.addCleanup(lambda: setattr(app_module, "store", self._real_store))
         self.client = TestClient(app)
 
     def test_pending_approval_can_be_approved_and_denied(self) -> None:

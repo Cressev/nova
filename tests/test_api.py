@@ -7,7 +7,10 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from pathlib import Path
+
 from nova.app import main as app_module
+from nova.sessions.store import SessionStore
 from nova.permissions.store import PendingApprovalStore
 from nova.app.main import app
 from nova.observability.trace import TraceRecorder
@@ -16,7 +19,17 @@ from nova.processes.manager import ProcessManager
 
 class ApiTest(unittest.TestCase):
     def setUp(self) -> None:
+        # 隔离：换临时 SessionStore，避免夹具会话污染真实 ~/.nova/sessions。
+        # （routes 的全局 store 经模块属性引用，换实例即全局生效。）
+        import tempfile
+
+        self._real_store = app_module.store
+        app_module.store = SessionStore(Path(tempfile.mkdtemp(prefix="nova-test-")))
+        self.addCleanup(self._restore_store)
         self.client = TestClient(app)
+
+    def _restore_store(self) -> None:
+        app_module.store = self._real_store
 
     def test_health(self) -> None:
         response = self.client.get("/api/health")
