@@ -848,6 +848,20 @@ export default function App() {
                   void api("/api/runtime/config", { method: "PATCH", body: JSON.stringify({ permission_mode: value }) }).then(reloadShell).catch(() => {})
                 }}
               />
+              <MenuSelect
+                id="sandbox-select"
+                title="文件沙箱"
+                value={String(runtimeConfig.sandbox_mode || "read_only")}
+                options={[
+                  { value: "read_only", label: "只读沙箱" },
+                  { value: "workspace_write", label: "工作区沙箱" },
+                  { value: "danger_full_access", label: "全放开沙箱" },
+                ]}
+                leadingIcon={<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.5" y="6.5" width="11" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M5.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" strokeWidth="1.3"/></svg>}
+                onChange={(value) => {
+                  void api("/api/runtime/config", { method: "PATCH", body: JSON.stringify({ sandbox_mode: value }) }).then(reloadShell).catch(() => {})
+                }}
+              />
             </div>
             <div className="toolbar-right">
               {streamState ? <span id="stream-state" className="stream-state" aria-live="polite">{streamState}</span> : null}

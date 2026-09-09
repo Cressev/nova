@@ -382,6 +382,21 @@ def _apply_runtime_config(update: dict) -> None:
             continue
         if hasattr(settings, key):
             object.__setattr__(settings, key, value)
+    _enforce_permission_sandbox_consistency()
+
+
+def _enforce_permission_sandbox_consistency() -> None:
+    """权限→沙箱一致性（dsh fail-safe 语义）。
+
+    权限模式承诺"工作区写入"（workspace_write/accept_edits/dont_ask/plan/read_only/ask）
+    时，文件沙箱不得高于 workspace_write——否则 _resolve_workspace_path 的边界检查
+    被 danger_full_access 短路，工作区外任意路径可写，UI 显示与实际能力不符。
+    只有显式选择 bypass_permissions（相当于 dsh 的显式全放开）才允许 danger。
+    """
+    permission = getattr(settings, "permission_mode", "ask")
+    sandbox = getattr(settings, "sandbox_mode", "read_only")
+    if permission != "bypass_permissions" and sandbox == "danger_full_access":
+        object.__setattr__(settings, "sandbox_mode", "workspace_write")
 
 
 def _read_runtime_config_overrides(root: Path | None = None) -> dict:
@@ -913,3 +928,8 @@ def register_api_routes() -> None:
 
 
 register_api_routes()
+
+# 启动兜底：应用工作区运行配置（含权限→沙箱一致性约束）。
+# 覆盖文件里的 danger_full_access + workspace_write 组合在启动时就被收敛，
+# 不等第一次 PATCH。settings 加载自环境默认，这里统一拉齐到覆盖文件语义。
+_apply_workspace_runtime_config()

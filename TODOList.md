@@ -2315,3 +2315,12 @@ api 就不能再拆了吗？拆。
 [x] 前端 Markdown 全面兼容：Markdown.tsx 从手写迷你管线换成 marked(gfm+breaks) + marked-katex-extension($/$$ KaTeX) + 原始 HTML 转义防注入；CSS 补表格/任务列表/引用/删除线/hr/katex 样式。浏览器实测 9 项全过（table/th/katex-display/katex 行内/checkbox/del/blockquote/pre/script 转义）+ vision 确认公式立体排版无错乱
 [x] 260 unittest 全绿（新增 read 区外放行/write 区外拦截回归测试）+ 前端 smoke 绿 + 验收会话已清理
 ------ todo-list end at 2026/09/09 12:51:32 -----
+
+------ todo-list begin at 2026/09/09 12:57:00 -----
+用户请求原文：（Nova 内部报告）workspace_write 模式下成功写入工作区外 /Users/liam/test-nova-write.txt 并读回验证——用户确认是在工作区写入模式问的，即出现逃逸
+
+[x] 复现：直接调用 write 区外被拦（workspace_write）——但 Nova 内部测试确实写成功了 → 根因不在工具层
+[x] 根因：三 层配置链（~/.nova → .nova/runtime-config.json → .nova/config/runtime-config.json），最高优先级的工作区文件里 sandbox_mode=danger_full_access（Nova 自己 PATCH 写的），而 UI 只显示 permission_mode=workspace_write → 用户看到"工作区写入"实际跑 danger 沙箱（write 的路径边界检查在 danger 下被短路）→ 配置显示与实际能力脱节的产品缺陷
+[x] 修复三层：①_enforce_permission_sandbox_consistency——权限≠bypass 时沙箱自动从 danger 收敛为 workspace_write（每次 apply+启动兜底）；②模块加载末尾 _apply_workspace_runtime_config() 启动即拉齐；③UI 补沙箱选择器（与权限选择器并排同显，lock 图标）
+[x] 验证：重启服务 danger→workspace_write 收敛、区外写拦截（"拒绝访问工作区外路径"）、bypass+danger 组合保留、262 unittest+前端 smoke 绿、UI 两选择器实测同显；测试文件 /Users/liam/test-nova-write.txt 已清理
+------ todo-list end at 2026/09/09 12:59:31 -----

@@ -137,3 +137,28 @@ class ReadWriteBoundsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PermissionSandboxConsistencyTest(unittest.TestCase):
+    """权限→沙箱一致性约束：workspace_write 权限时沙箱不得为 danger（dsh fail-safe）。"""
+
+    def test_convergence_on_inconsistent_config(self) -> None:
+        from nova.api import routes
+
+        # 模拟覆盖文件不一致：权限 workspace_write + 沙箱 danger
+        object.__setattr__(routes.settings, "permission_mode", "workspace_write")
+        object.__setattr__(routes.settings, "sandbox_mode", "danger_full_access")
+        routes._enforce_permission_sandbox_consistency()
+        self.assertEqual(routes.settings.sandbox_mode, "workspace_write")
+
+    def test_bypass_permissions_keeps_danger(self) -> None:
+        from nova.api import routes
+
+        object.__setattr__(routes.settings, "permission_mode", "bypass_permissions")
+        object.__setattr__(routes.settings, "sandbox_mode", "danger_full_access")
+        routes._enforce_permission_sandbox_consistency()
+        self.assertEqual(routes.settings.sandbox_mode, "danger_full_access")
+
+
+if __name__ == "__main__":
+    unittest.main()
