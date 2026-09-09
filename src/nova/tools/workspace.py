@@ -982,19 +982,16 @@ class WorkspaceTools:
         )
 
     def _resolve_read_path(self, value: str) -> Path:
-        """read 允许工作区内路径 + 两个记忆 scope 目录（dsh fs 后端同时
-        服务工作区与 memory 目录；模型要按索引读 items/<id>.md）。"""
+        """read 不设工作区边界（dsh 语义：读宽松、写严格）。
+
+        文件沙箱只约束写效果；读任意绝对路径都是本地优先产品的正常能力
+        （dsh 的 fs 后端同样不限制 read 的来源路径）。相对路径仍锚定工作区。
+        写边界由 _resolve_workspace_path + OS 级 bash confine 负责。
+        """
         candidate = Path(value)
         if not candidate.is_absolute():
-            resolved = (self.project_root / candidate).resolve()
-        else:
-            resolved = candidate.resolve()
-        for allowed_root in (self.project_root, layered.project_dir(self.project_root), layered.global_dir()):
-            if resolved == allowed_root or allowed_root in resolved.parents:
-                return resolved
-        raise ToolExecutionError(
-            f"路径超出允许范围（工作区或记忆目录）：{value}", code="PERMISSION_DENIED"
-        )
+            return (self.project_root / candidate).resolve()
+        return candidate.resolve()
 
     @staticmethod
     def _diff_preview(display_path: str, before: str, after: str) -> dict[str, Any]:

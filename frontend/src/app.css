@@ -180,41 +180,62 @@ body.sidebar-collapsed .sidebar-head {
 
 
 body.sidebar-collapsed 
-/* ---- Markdown 渲染样式（对照 dsh AssistantMarkdown / ToolDetails code） ---- */
-.message .md-p {
+/* ---- Markdown 渲染样式（marked+KaTeX 管线，标准元素标签） ---- */
+.message p,
+.tt-systemPrompt p {
   margin: 0 0 6px;
 }
 
 
-.message .md-p:last-child {
+.message p:last-child {
   margin-bottom: 0;
 }
 
 
-.message .md-h {
-  margin: 12px 0 6px;
+.message h1, .message h2, .message h3, .message h4, .message h5, .message h6 {
+  margin: 14px 0 6px;
   color: var(--text);
   font-weight: 600;
+  line-height: 1.35;
 }
 
 
-.message .md-h:first-child {
+.message h1 { font-size: 1.3em; }
+.message h2 { font-size: 1.18em; }
+.message h3 { font-size: 1.08em; }
+.message h4, .message h5, .message h6 { font-size: 1em; }
+
+
+.message > :first-child, .message-content > :first-child {
   margin-top: 0;
 }
 
 
-.message .md-list {
+.message ul, .message ol {
   margin: 0 0 6px;
-  padding-left: 20px;
+  padding-left: 22px;
 }
 
 
-.message .md-list li {
+.message li {
   margin: 2px 0;
 }
 
 
-.message .md-code {
+/* 任务列表：去掉序号/圆点，复选框占位 */
+.message li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -18px;
+}
+
+
+.message input[type="checkbox"] {
+  margin-right: 6px;
+  accent-color: var(--dsw-alias-state-business-primary);
+}
+
+
+.message code {
   border-radius: 5px;
   padding: 1.5px 5px;
   background: var(--dsw-alias-interactive-bg-active);
@@ -224,7 +245,7 @@ body.sidebar-collapsed
 }
 
 
-.message .md-pre {
+.message pre {
   overflow-x: auto;
   margin: 0 0 8px;
   border-radius: 12px;
@@ -233,12 +254,74 @@ body.sidebar-collapsed
 }
 
 
-.message .md-pre code {
+.message pre code {
+  padding: 0;
+  background: none;
   color: var(--dsw-alias-label-primary);
   font-family: var(--ds-font-family-code, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
   font-size: 13px;
   line-height: 21px;
   white-space: pre;
+}
+
+
+/* GFM 表格 */
+.message table {
+  display: block;
+  overflow-x: auto;
+  margin: 4px 0 10px;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+
+.message th, .message td {
+  border: 1px solid var(--dsw-alias-border-l2, #e5e7eb);
+  padding: 5px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+
+.message th {
+  background: var(--dsw-alias-interactive-bg-active);
+  font-weight: 600;
+}
+
+
+/* 引用块 / 删除线 / 分割线 */
+.message blockquote {
+  margin: 4px 0 8px;
+  border-left: 3px solid var(--dsw-alias-border-l2, #d1d5db);
+  padding: 2px 0 2px 10px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+
+.message del {
+  color: var(--dsw-alias-label-secondary);
+}
+
+
+.message hr {
+  margin: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--dsw-alias-border-l2, #e5e7eb);
+}
+
+
+/* KaTeX 公式：块级居中可横滚，行内随文 */
+.message .katex-display {
+  margin: 8px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+  text-align: center;
+}
+
+
+.message .katex {
+  font-size: 1.05em;
 }
 
 

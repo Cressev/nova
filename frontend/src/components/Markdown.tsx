@@ -1,84 +1,50 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { ReactNode } from "react"
+import { Marked } from "marked"
+import markedKatex from "marked-katex-extension"
+
+import "katex/dist/katex.min.css"
 
 /**
- * 轻量 Markdown 渲染（app.js renderMarkdown 的 React 等价物）。
- * 直接复用既有 HTML 管线（工具标签清扫 + 围栏代码 + 列表 + 标题 + 行内标记），
- * 输出经清洗后的受限 HTML，挂到受控容器上。
+ * Markdown 渲染（dsh 语义：GFM 全语法 + KaTeX 公式）。
+ *
+ * marked 负责 GFM（表格/删除线/任务列表/围栏代码/引用/嵌套列表），
+ * marked-katex-extension 负责 $...$ / $$...$$ 公式；
+ * 原始 HTML 一律转义不执行（模型输出不可信，等价旧管线的受限 HTML 语义）。
  */
+
 function sanitize(raw: string): string {
   // 防护：历史数据漏网的 <tool_call> XML 绝不进入 markdown 管线（后端已清扫，前端双保险）。
   return String(raw || "").replace(/<tool_calls?>[\s\S]*?(?:<\/tool_calls?>|$)/g, "").trim()
 }
 
-function esc(t: string): string {
-  return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
 
-function inline(t: string): string {
-  return esc(t)
-    .replace(/`([^`\n]+)`/g, '<code class="md-code">$1</code>')
-    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-}
+const marked = new Marked({ gfm: true, breaks: true })
+marked.use(
+  markedKatex({
+    throwOnError: false,
+    nonStandard: true,
+  }),
+)
+marked.use({
+  renderer: {
+    // 原始 HTML 块/行内 HTML 一律转义显示，不进入 DOM（防注入）。
+    html(token) {
+      return escapeHtml((token as { text?: string }).text ?? "")
+    },
+  },
+})
 
 export function renderMarkdownHtml(raw: string): string {
   const text = sanitize(raw)
   try {
-    const lines = text.split("\n")
-    const out: string[] = []
-    let inCode = false
-    let codeBuf: string[] = []
-    let listBuf: string[] = []
-    const flushList = () => {
-      if (listBuf.length) {
-        out.push('<ul class="md-list">' + listBuf.map((i) => `<li>${inline(i)}</li>`).join("") + "</ul>")
-        listBuf = []
-      }
-    }
-    for (const line of lines) {
-      const fence = line.match(/^```(\w*)/)
-      if (fence) {
-        if (inCode) {
-          out.push(`<pre class="md-pre"><code>${esc(codeBuf.join("\n"))}</code></pre>`)
-          codeBuf = []
-          inCode = false
-        } else {
-          flushList()
-          inCode = true
-        }
-        continue
-      }
-      if (inCode) {
-        codeBuf.push(line)
-        continue
-      }
-      const heading = line.match(/^(#{1,4})\s+(.*)/)
-      if (heading) {
-        flushList()
-        const level = heading[1].length
-        out.push(`<h${level + 2} class="md-h">${inline(heading[2])}</h${level + 2}>`)
-        continue
-      }
-      const li = line.match(/^\s*(?:[-*]|\d+\.)\s+(.*)/)
-      if (li) {
-        listBuf.push(li[1])
-        continue
-      }
-      if (!line.trim()) {
-        flushList()
-        continue
-      }
-      flushList()
-      out.push(`<p class="md-p">${inline(line)}</p>`)
-    }
-    if (inCode && codeBuf.length) {
-      out.push(`<pre class="md-pre"><code>${esc(codeBuf.join("\n"))}</code></pre>`)
-    }
-    flushList()
-    return out.join("")
+    const parsed = marked.parse(text, { async: false })
+    return typeof parsed === "string" ? parsed : escapeHtml(text)
   } catch {
-    return esc(text)
+    return escapeHtml(text)
   }
 }
 

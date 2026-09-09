@@ -1,5 +1,6 @@
 """权限审批三事件（asked/decided/policy）落库与回放——对齐 dsh approval 事件审计语义。"""
 
+import os
 import unittest
 
 from nova.runtime.orchestrator import RunOrchestrator
@@ -102,6 +103,36 @@ class SandboxConfineTest(unittest.TestCase):
         info = probe_runner()
         self.assertIn(info["platform"], {"darwin", "linux", "windows"})
         self.assertIn("available", info)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class ReadWriteBoundsTest(unittest.TestCase):
+    """读写边界对称性（dsh 语义：读宽松、写严格）。"""
+
+    def test_read_allows_outside_workspace(self) -> None:
+        import tempfile
+        from pathlib import Path
+        from nova.tools.workspace import WorkspaceTools
+
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as fp:
+            fp.write("outside")
+            outside = fp.name
+        self.addCleanup(os.unlink, outside)
+        tools = WorkspaceTools(Path.cwd(), sandbox_mode="workspace_write", permission_mode="workspace_write")
+        result = tools.run("read", {"file_path": outside})
+        self.assertIn("outside", result.output)
+
+    def test_write_blocks_outside_workspace(self) -> None:
+        import tempfile
+        from pathlib import Path
+        from nova.tools.workspace import WorkspaceTools, ToolExecutionError
+
+        tools = WorkspaceTools(Path.cwd(), sandbox_mode="workspace_write", permission_mode="workspace_write")
+        with self.assertRaises(ToolExecutionError):
+            tools.run("write", {"file_path": "/tmp/__nova_bounds_escape", "content": "x"})
 
 
 if __name__ == "__main__":

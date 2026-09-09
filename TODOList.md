@@ -2305,3 +2305,13 @@ api 就不能再拆了吗？拆。
 [x] ④ fail-safe 默认：sandbox_mode 默认 read_only（用户 ~/.nova/config 既有显式覆盖保留=显式 opt-in 语义）
 [x] ⑤ 258 unittest 全绿（新增 6 测试：asked 落库/id 独立/policy log-only/seatbelt 两种 profile/未知平台 fail-closed/probe）；前端 smoke 绿；服务已重启生效
 ------ todo-list end at 2026/09/09 11:14:30 -----
+
+------ todo-list begin at 2026/09/09 12:47:35 -----
+用户请求原文：不有问题吧。另外前端显示要完全兼容md各种语法（包括公式）
+（附 Nova 内部测试报告：write 可写工作区外 /private/tmp；read 报"路径超出允许范围"；bash+cat 可读任意路径）
+
+[x] 诊断：workspace_write 下 write 区外其实有拦（Nova 内部测试跑在 danger_full_access 才放行）；真 bug=read 的 _resolve_read_path 不看沙箱模式，连 danger 都读不了区外 → 与 write/danger 语义不对称
+[x] 对齐 dsh 语义：_resolve_read_path 撤掉工作区+记忆目录白名单（读宽松，任意绝对路径；相对路径仍锚定工作区）；写严格保持（_resolve_workspace_path + 内核 bash confine）。实测三模式 read 区外全放行、workspace_write write 区外拦截
+[x] 前端 Markdown 全面兼容：Markdown.tsx 从手写迷你管线换成 marked(gfm+breaks) + marked-katex-extension($/$$ KaTeX) + 原始 HTML 转义防注入；CSS 补表格/任务列表/引用/删除线/hr/katex 样式。浏览器实测 9 项全过（table/th/katex-display/katex 行内/checkbox/del/blockquote/pre/script 转义）+ vision 确认公式立体排版无错乱
+[x] 260 unittest 全绿（新增 read 区外放行/write 区外拦截回归测试）+ 前端 smoke 绿 + 验收会话已清理
+------ todo-list end at 2026/09/09 12:51:32 -----
