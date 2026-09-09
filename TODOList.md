@@ -2356,3 +2356,19 @@ api 就不能再拆了吗？拆。
 
 [x] 读 6 个包的 README 职责+Nova 替代现状（secrets 已有单文件实现/processes Popen 无 PTY/read_image 有但无对话附件）
 ------ todo-list end at 2026/09/09 15:31:29 -----
+
+------ todo-list begin at 2026/09/09 15:54:50 -----
+用户请求原文：终端仿真（持久 PTY）和之前你说的那些其他的差距都补齐（模型协作智能编排检索与上下文运行时底座
+
+[x] A1 token-meter：非流式 response.usage+流式 include_usage 尾块提取→token_usage 事件→tokens.usage 持久→统计行 tokens ↑↓真实值（实测 11612/51）
+[x] A2 todo：todo_write 已有（.nova/agent-todos.json 文件持久），本轮纳入会话工具缓存
+[x] A3 goal：SessionRunner._drive_goal_rounds 续跑驱动+goal.round/goal.snapshot 事件+重启事件恢复+会话级工具缓存
+[x] A4 schedule：已有（到期注入 turn 开头），随会话缓存跨请求存活
+[x] A5 feedback：POST /api/chat/sessions/{id}/feedback 落 feedback.recorded 事件
+[x] A6 plan：plan_submit 工具复用 user_question 挂起管线，批准/驳回后续跑
+[x] B1 session-query：session_search 已有完整实现，session_store 挂接补齐
+[x] B2 PTY：pty_manager(openpty+TIOCSWINSZ+256KB 滚动缓冲)+5 工具，OS 沙箱内，permission=shell 全门控；实测 REPL 交互往返
+[x] C1 workflow_run：≤6 任务线程池并行 fan-out+失败隔离聚合；实测 2/2 完成
+[x] C2 多 provider：registry 六预设+PATCH 热切三元组+provider-select 工具条；实测 deepseek↔bigmodel 往返
+[x] 全量验收：262 测试绿+tsc/build 过+8765 端到端（token/统计行/工具清单）+审计文档 7.A 更新
+------ todo-list end at 2026/09/09 16:15:30 -----

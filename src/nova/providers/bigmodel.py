@@ -250,6 +250,7 @@ class BigModelProvider:
         except Exception as exc:
             raise ProviderError(f"模型工具决策调用失败：{exc}") from exc
 
+        self._record_usage(self._read_attr(response, "usage"))
         try:
             message = response.choices[0].message
         except (AttributeError, IndexError, TypeError) as exc:
@@ -258,6 +259,40 @@ class BigModelProvider:
             content=self._message_text(message),
             tool_calls=self._message_tool_calls(message),
         )
+
+    # ---- token-meter（dsh llm/token-meter 对齐：provider usage 提取与会话累计） ----
+
+    last_usage: dict[str, int] | None = None
+    session_usage: dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+    def _record_usage(self, usage: Any) -> dict[str, int] | None:
+        """记录一次响应的 token 用量；非 dict 直接跳过。"""
+        if not isinstance(usage, dict):
+            usage_obj = usage if not isinstance(usage, type(None)) else None
+            if usage_obj is None:
+                return None
+            usage = {
+                "prompt_tokens": self._read_attr(usage, "prompt_tokens"),
+                "completion_tokens": self._read_attr(usage, "completion_tokens"),
+                "total_tokens": self._read_attr(usage, "total_tokens"),
+            }
+        clean = {
+            "prompt_tokens": int(usage.get("prompt_tokens") or 0),
+            "completion_tokens": int(usage.get("completion_tokens") or 0),
+            "total_tokens": int(usage.get("total_tokens") or 0),
+        }
+        if clean["total_tokens"] <= 0 and clean["prompt_tokens"] <= 0:
+            return None
+        self.last_usage = dict(clean)
+        for key in self.session_usage:
+            self.session_usage[key] += clean.get(key, 0)
+        return dict(clean)
+
+    def reset_session_usage(self) -> dict[str, int]:
+        """状态线读取会话累计并清零（每轮展示当轮增量由调用方决定）。"""
+        snapshot = dict(self.session_usage)
+        self.session_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        return snapshot
 
     def _payload_messages(self, messages: list[ChatMessage]) -> list[dict[str, str]]:
         # 只把对话所需字段发给模型，内部错误消息、工具 trace 和调试信息不进入模型上下文。
@@ -333,13 +368,19 @@ class BigModelProvider:
                 tools=tools or self.openai_tool_schemas(),
                 tool_choice="auto",
                 stream=True,
+                # token-meter：OpenAI 兼容端点在最后一个 chunk 带 usage（choices 空）
+                stream_options={"include_usage": True},
             )
         except Exception as exc:
             raise ProviderError(f"模型流式工具决策调用失败：{exc}") from exc
 
         parts: list[str] = []
         fragments: dict[int, dict[str, str]] = {}
+        usage_captured: dict[str, int] | None = None
         async for chunk in stream:
+            chunk_usage = self._read_attr(chunk, "usage")
+            if chunk_usage is not None:
+                usage_captured = self._record_usage(chunk_usage)
             choices = self._read_attr(chunk, "choices") or []
             if not choices:
                 continue
@@ -384,7 +425,12 @@ class BigModelProvider:
                     "arguments": parsed_arguments if isinstance(parsed_arguments, dict) else {},
                 }
             )
-        yield {"type": "decision", "content": "".join(parts), "tool_calls": normalized}
+        yield {
+            "type": "decision",
+            "content": "".join(parts),
+            "tool_calls": normalized,
+            **({"usage": usage_captured} if usage_captured else {}),
+        }
 
     async def complete(self, messages: list[ChatMessage]) -> str:
         api_key = self._api_key()

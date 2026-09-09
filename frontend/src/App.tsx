@@ -356,6 +356,7 @@ function StatsLine({ sessionId }: { sessionId: string | null }) {
         const items = result.items || []
         if (!alive) return
         let turns = 0, steps = 0, toolMs = 0
+        let promptTokens = 0, completionTokens = 0
         const spans: number[] = []
         let openAt: number | null = null
         for (const e of items) {
@@ -368,6 +369,13 @@ function StatsLine({ sessionId }: { sessionId: string | null }) {
             const d = (e as unknown as { duration_ms?: number }).duration_ms
             if (typeof d === "number") toolMs += d
           }
+          if (e.event_type === "tokens.usage") {
+            const d = (e as unknown as { data?: { prompt_tokens?: number; completion_tokens?: number } }).data
+            if (d) {
+              promptTokens += Number(d.prompt_tokens) || 0
+              completionTokens += Number(d.completion_tokens) || 0
+            }
+          }
         }
         if (openAt !== null) spans.push(Date.now() - openAt)
         if (turns === 0) { setText(""); return }
@@ -377,7 +385,11 @@ function StatsLine({ sessionId }: { sessionId: string | null }) {
           const sec = Math.round(ms / 1000)
           return sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m${String(sec % 60).padStart(2, "0")}s`
         }
-        setText(`${turns} 轮 · ${steps} 步 | LLM ${fmt(llmMs)} · 工具调用 ${fmt(toolMs)} | 平均每轮 ${fmt(wallMs / turns)}`)
+        // token-meter（dsh llm/token-meter）：provider 真实用量；无 usage 事件的旧会话隐藏该段
+        const tokenText = promptTokens + completionTokens > 0
+          ? ` | tokens ↑${promptTokens.toLocaleString()} ↓${completionTokens.toLocaleString()}`
+          : ""
+        setText(`${turns} 轮 · ${steps} 步 | LLM ${fmt(llmMs)} · 工具调用 ${fmt(toolMs)}${tokenText} | 平均每轮 ${fmt(wallMs / turns)}`)
       })
       .catch(() => { if (alive) setText("") })
     return () => { alive = false }
@@ -865,6 +877,18 @@ export default function App() {
             </div>
             <div className="toolbar-right">
               {streamState ? <span id="stream-state" className="stream-state" aria-live="polite">{streamState}</span> : null}
+              <MenuSelect
+                id="provider-select"
+                title="模型提供方"
+                value={String(runtimeConfig.provider_preset || "bigmodel")}
+                options={((runtimeConfig.provider_presets as { id: string; label: string; default_model?: string }[] | undefined) || []).map((p) => ({
+                  value: p.id,
+                  label: p.label + (p.default_model ? ` · ${p.default_model}` : ""),
+                }))}
+                onChange={(value) => {
+                  void api("/api/runtime/config", { method: "PATCH", body: JSON.stringify({ provider_preset: value }) }).then(reloadShell).catch(() => {})
+                }}
+              />
               <MenuSelect
                 id="model-select"
                 title="模型"

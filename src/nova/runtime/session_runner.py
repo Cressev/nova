@@ -250,6 +250,10 @@ class SessionRunner:
             yield event
         if self.deps.agent_sessions.is_cancel_requested(session_id):
             return
+        # dsh goal-round-driver 对齐：turn 结束后若同会话目标仍 active 且轮次未满，
+        # 自动注入续跑消息继续执行（有界：max_goal_rounds + 每轮检查取消）。
+        async for event in self._drive_goal_rounds(session_id):
+            yield event
         while True:
             queued = self.deps.agent_sessions.pop_queued_message(session_id)
             if queued is None:
@@ -262,6 +266,95 @@ class SessionRunner:
                 yield event
             if self.deps.agent_sessions.is_cancel_requested(session_id):
                 return
+            async for event in self._drive_goal_rounds(session_id):
+                yield event
+
+    def _session_goal(self, session_id: str):
+        """读取会话工具实例上的当前 goal 状态（无实例/无目标返回 None）。"""
+        try:
+            factory = getattr(self.deps, "tool_orchestrator_factory", None)
+            orchestrator = factory() if callable(factory) else None
+            tools = getattr(orchestrator, "tools", None) if orchestrator else None
+            goal = getattr(tools, "_goal", None) if tools else None
+            return dict(goal) if isinstance(goal, dict) else None
+        except Exception:
+            return None
+
+    async def _drive_goal_rounds(self, session_id: str) -> AsyncIterator[dict]:
+        """goal 续跑驱动（dsh goal-round-driver）。
+
+        条件：goal phase==active 且 (无上限或 completed_rounds < max_goal_rounds)。
+        每轮：completed_rounds += 1 → 落 goal.snapshot 事件 → 以系统续跑消息
+        再跑一个完整 turn。用户在任一环节取消即停止。
+        """
+        guard = 0
+        while guard < 24:  # 绝对上限防失控（dsh 每 goal 也有 round cap）
+            guard += 1
+            if self.deps.agent_sessions.is_cancel_requested(session_id):
+                return
+            goal = self._session_goal(session_id)
+            if not goal or goal.get("phase") != "active":
+                return
+            max_rounds = goal.get("max_goal_rounds")
+            done = int(goal.get("completed_rounds") or 0)
+            if isinstance(max_rounds, int) and done >= max_rounds:
+                return
+            # 续跑一轮
+            goal["completed_rounds"] = done + 1
+            self._persist_goal_snapshot(session_id, goal)
+            yield {
+                "type": "runtime_event",
+                "event": {
+                    "id": f"goaltick_{session_id}_{done + 1}",
+                    "session_id": session_id,
+                    "turn_id": "goal-driver",
+                    "event_type": "goal.round",
+                    "category": "goal",
+                    "phase": "running",
+                    "status": "ok",
+                    "title": f"目标续跑 第 {done + 1} 轮",
+                    "message": goal.get("objective", ""),
+                    "tool": None,
+                    "call_id": None,
+                    "arguments": {},
+                    "output": None,
+                    "data": dict(goal),
+                },
+            }
+            continuation = ChatMessage(
+                session_id=session_id,
+                role=ChatRole.USER,
+                content=(
+                    f"[goal 续跑 第 {done + 1} 轮] 同会话目标尚未完成：{goal.get('objective', '')}。"
+                    "继续执行剩余工作；若已完成请调用 update_goal complete，被阻塞请 update_goal blocked 并写明原因。"
+                ),
+            )
+            async for event in self.run_turn(session_id, continuation, emit_user=False):
+                yield event
+
+    def _persist_goal_snapshot(self, session_id: str, goal: dict) -> None:
+        """goal 状态快照落事件（进程重启后 _hydrate_session_tool_state 恢复）。"""
+        try:
+            self.deps.persist_event(
+                {
+                    "id": f"goalsnap_{goal.get('goal_id')}_{goal.get('revision')}_{goal.get('completed_rounds')}",
+                    "session_id": session_id,
+                    "turn_id": "goal-driver",
+                    "event_type": "goal.snapshot",
+                    "category": "goal",
+                    "phase": "completed",
+                    "status": "ok",
+                    "title": "目标状态快照",
+                    "message": str(goal.get("objective") or ""),
+                    "tool": None,
+                    "call_id": None,
+                    "arguments": {},
+                    "output": None,
+                    "data": {"goal": dict(goal)},
+                }
+            )
+        except Exception:
+            pass
 
     async def run_turn(
         self,

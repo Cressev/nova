@@ -317,6 +317,51 @@ class ToolExecutor:
         require_permission: bool = False,
         approved: bool = False,
     ) -> Iterator[dict[str, Any]]:
+        if tool_name == "plan_submit":
+            # dsh plan 对齐：模型提交计划 → 挂起等审批（复用 user_question 管线，
+            # data.plan=true 区分）；批准/拒绝后 _answers.plan_decision 注入续跑。
+            raw_arguments = dict(arguments)
+            answers = raw_arguments.pop("_answers", None)
+            if answers is None:
+                yield from self._ask_user_first_pass(
+                    call_id,
+                    {**raw_arguments, "questions": [{
+                        "id": "plan_approval",
+                        "header": "计划审批",
+                        "question": str(raw_arguments.get("title") or "模型提交了执行计划，请审批"),
+                        "multi_select": False,
+                        "options": [
+                            {"label": "批准执行", "description": "按计划继续执行"},
+                            {"label": "驳回", "description": "拒绝计划，模型需修订"},
+                        ],
+                    }]},
+                    plan_mode=True,
+                )
+                return
+            plan_decision = "approved" if any(
+                "批准" in str(a.get("selected") or a.get("label") or "") or "批准" in str(a)
+                for a in (answers if isinstance(answers, list) else [answers])
+            ) else "rejected"
+            yield {"type": "tool_start", "call_id": call_id, "tool": "plan_submit", "arguments": raw_arguments}
+            yield {
+                "type": "tool_done",
+                "call_id": call_id,
+                "tool": "plan_submit",
+                "ok": True,
+                "title": f"plan_submit ({plan_decision})",
+                "output": f"Plan {plan_decision}: {str(raw_arguments.get('title') or '')[:80]}",
+            }
+            yield {
+                "type": "tool_result_json",
+                "result_json": json.dumps({
+                    "tool": "plan_submit", "title": f"plan ({plan_decision})", "ok": True,
+                    "output": f"用户{'批准' if plan_decision == 'approved' else '驳回'}了该计划。"
+                              + ("继续执行计划中的步骤。" if plan_decision == "approved" else "请根据反馈修订计划后重新提交，或改用只读分析。"),
+                    "data": {"plan_decision": plan_decision, "plan_markdown": raw_arguments.get("plan") or ""},
+                }, ensure_ascii=False),
+            }
+            return
+
         if tool_name == "ask_user_question":
             # dsh ask-user：未回答 → 发 user_question 事件挂起本轮（同 permission_request
             # 机制注册 pending approval）；用户回答后续跑时 arguments 携带 _answers。
@@ -844,7 +889,7 @@ class ToolExecutor:
         finally:
             self.tools.permission_mode = original_mode
 
-    def _ask_user_first_pass(self, call_id: str, arguments: dict[str, Any]) -> Iterator[dict]:
+    def _ask_user_first_pass(self, call_id: str, arguments: dict[str, Any], *, plan_mode: bool = False) -> Iterator[dict]:
         """ask_user_question 首轮：验证契约 → user_question 事件（挂起等待回答）。
 
         事件结构与 permission_request 同形（call_id/tool/arguments/data），
@@ -878,8 +923,12 @@ class ToolExecutor:
                 "reason": "ask_user_question 需要用户输入",
                 "questions": questions,
                 "user_question": True,
+                **({"plan": True} if plan_mode else {}),
             },
         }
+        if plan_mode:
+            event["tool"] = "plan_submit"
+            event["title"] = f"计划审批：{str(arguments.get('title') or '')[:40]}"
         yield event
         yield {"type": "tool_result_json", "result_json": self._question_pending_json(event)}
 

@@ -146,8 +146,10 @@ async def runtime_statusline(
     background_task_count = len(
         [job for job in processes if job.get("status") in {"running", "started"}]
     )
+    session_usage = getattr(ctx.provider, "session_usage", None) or {}
     return {
         "model": ctx.provider.model,
+        "session_token_usage": dict(session_usage),
         "session_id": session.id if session else None,
         "thread_title": session.title if session else "新线程",
         "workspace": str(ctx.workspace_manager.current_root),

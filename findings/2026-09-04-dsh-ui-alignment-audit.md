@@ -122,12 +122,21 @@
 - **7.8** 设置菜单：Nova 是 dialog 另一套；dsh=菜单（通用设置/模型/插件/Agent预设/打开配置文件+快捷偏好行）（§1.7）
 
 ### P2 依赖后端/低频/细节
-- **7.9** 统计行 3/5 段：缺 首 token 平均/tok 速率/缓存命中/输入 tokens（需 provider 埋点，§5.2）
+- **7.9** 统计行 3/5 段：缺 首 token 平均/tok 速率/缓存命中/输入 tokens（需 provider 埋点，§5.2）→ **26/09/09 部分补齐**：provider usage 提取（非流式 response.usage + 流式 include_usage 尾块）→ `tokens.usage` 事件 → 统计行 `tokens ↑prompt ↓completion` 真实值（实测 11612/51）；首 token 速率/缓存命中仍缺。
 - **7.10** Read 工具行内嵌文件跳转钮（§3.5）
 - **7.11** 侧栏组操作：缺 视图选项/添加工作区 两钮（§1.4）
 - **7.12** 会话树工作区分组折叠交互（§1.6）
 - **7.13** 轨迹搜索索引跳转（现在只高亮+计数，dsh 跳转到匹配行）
 - **7.14** 时间线缩放/框选已做（wheel/drag/pan），与 dsh 拖拽缩放的交互细节未逐一手感对比——待核对项
+
+### 7.A 能力层差距批次（26/09/09 补齐记录）
+对 2026-09-09 全景盘点（dsh 51 包 vs Nova 22 模块）的落地批次：
+- **模型协作**：goal 续跑驱动（`SessionRunner._drive_goal_rounds`：turn 后 active 目标自动注入续跑轮，`goal.round`/`goal.snapshot` 事件，进程重启经事件快照恢复）✅；todo（文件持久 .nova/agent-todos.json，先前已有）✅；schedule（到期注入下一轮 turn 开头，先前已有）✅；plan_submit 计划审批（复用 user_question 挂起管线，data.plan 区分，批准/驳回续跑）✅；feedback API（POST /api/chat/sessions/{id}/feedback，👍/👎+评论落事件）✅。
+- **会话工具状态**：`_workspace_tools(session_id)` 会话级缓存（goal/todo/schedule 跨请求存活）+ `_hydrate_session_tool_state` 事件恢复 ✅。
+- **智能编排**：workflow_run 并行 fan-out（≤6 子代理线程池，失败隔离聚合 JSON 报告）✅。
+- **检索**：session_search 跨会话关键词检索（挂 session_store）✅。
+- **运行时底座**：token-meter（7.9 部分）✅；多 provider（registry 预设 bigmodel/deepseek/openai/moonshot/siliconflow/custom，PATCH 热切 base_url/model/api_key_env 三元组，设置工具条 provider-select）✅；PTY 持久终端（pty_start/write/read/list/kill，openpty+TIOCSWINSZ+滚动 256KB 缓冲，OS 沙箱内，permission=shell 走完整审批门）✅。
+- **仍缺**：e2b 云沙箱（POC 不搬）、acp 程序化接入、attachment 对话附件、credentials 三层分离、identity、feedback 前端按钮（7.5 关联）、subtool/context 轨迹行型（7.7）。
 
 
 ## 8. 布局不变量自检清单（2026-09-06 起强制：每次改轨迹页后必跑）

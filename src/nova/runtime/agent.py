@@ -209,6 +209,10 @@ class CodexLikeAgentRuntime:
         stream_with_tools = getattr(self.provider, "stream_with_tools", None)
         if not callable(stream_with_tools):
             decision = await self._complete_tool_decision(messages)
+            usage = getattr(self.provider, "last_usage", None)
+            if usage:
+                self._last_decision_usage = dict(usage)
+                decision = {**decision, "usage": dict(usage)}
             yield {"type": "decision", **decision}
             return
 
@@ -226,6 +230,7 @@ class CodexLikeAgentRuntime:
         gate = _ToolCallGate()
         native_calls: list = []
         content_parts: list[str] = []
+        self._last_decision_usage = None
         async for event in stream_with_tools(messages, tools=tools):
             if event.get("type") == "reasoning_delta":
                 yield {"type": "reasoning_delta", "delta": str(event.get("text") or "")}
@@ -238,9 +243,17 @@ class CodexLikeAgentRuntime:
             if event.get("type") == "decision":
                 native_calls = event.get("tool_calls") or []
                 content_parts = [str(event.get("content") or "") or "".join(content_parts)]
+                if event.get("usage"):
+                    self._last_decision_usage = event["usage"]
         full_text = "".join(content_parts)
         tool_calls = native_calls or (self._parse_tool_calls(full_text) if gate.tool_detected else [])
-        yield {"type": "decision", "content": full_text, "tool_calls": tool_calls}
+        decision_event: dict[str, object] = {"type": "decision", "content": full_text, "tool_calls": tool_calls}
+        # token-meter：把 provider 流末携带的 usage 透传给上层（可能不存在）
+        for event_src in [None]:
+            pass
+        if getattr(self, "_last_decision_usage", None):
+            decision_event["usage"] = self._last_decision_usage
+        yield decision_event
 
     async def _complete_tool_decision(self, messages: list[ChatMessage]) -> dict[str, object]:
         complete_with_tools = getattr(self.provider, "complete_with_tools", None)
@@ -1049,6 +1062,9 @@ class CodexLikeAgentRuntime:
 17. 长任务先 create_goal 建立同会话目标；每轮用 get_goal 校准，完成用 update_goal complete，被阻塞用 blocked 并写明原因。
 18. 会话内定时提醒用 schedule_create（after_seconds/at/every_seconds 恰选其一）、schedule_list、schedule_delete。
 19. 精确代码智能用 lsp（diagnostics / goToDefinition）；跨历史会话检索用 session_search。
+20. 大型改动先 plan_submit 提交计划等审批（批准后才执行）；只读分析或小改动不需要。
+21. 需要真终端的长驻/交互式命令（dev server、watch、交互式 CLI 提问）用 pty_start 启动持久会话：pty_read 读新输出、pty_write 回答交互、用完 pty_kill；一次性命令仍用 bash。
+22. 相互独立的批量任务（多文件审计、多角度调研）用 workflow_run 并行 fan-out，结果聚合成一份报告；上限 6 个。
 13. 当用户输入 $技能名 或请求明显匹配某个技能说明时，先引用对应技能；不要凭空假设技能内容，用户也可以用 /skill <技能名> 显式读取 SKILL.md。
 
 可用工具：

@@ -224,6 +224,28 @@ async def create_chat_message(
         return error_message
 
 
+@router.post("/api/chat/sessions/{session_id}/feedback")
+async def record_feedback(session_id: str, payload: dict) -> dict:
+    """记录人类反馈（dsh feedback 对齐：durable、可回放、绑定消息）。"""
+    message_id = str(payload.get("message_id") or "").strip()
+    rating = str(payload.get("rating") or "").strip()
+    if not message_id or rating not in {"up", "down"}:
+        raise ctx.HTTPException(status_code=422, detail="message_id 与 rating(up|down) 必填")
+    comment = str(payload.get("comment") or "").strip()
+    ctx.store.upsert_chat_event(
+        ctx.ChatEvent(
+            session_id=session_id,
+            type="feedback",
+            event_type="feedback.recorded",
+            phase="completed",
+            title="用户反馈" + ("👍" if rating == "up" else "👎"),
+            message=comment or ("正面反馈" if rating == "up" else "负面反馈"),
+            data={"message_id": message_id, "rating": rating, "comment": comment},
+        )
+    )
+    return {"ok": True, "message_id": message_id, "rating": rating}
+
+
 @router.post("/api/chat/sessions/{session_id}/stream")
 async def stream_chat_message(
     session_id: str,
@@ -279,7 +301,7 @@ async def stream_chat_message(
                 context_window_tokens=ctx.settings.context_window_tokens,
                 project_root_provider=lambda: ctx.workspace_manager.current_root,
                 global_agent_file_provider=lambda: ctx.settings.global_agent_file,
-                tool_orchestrator_factory=ctx._tool_orchestrator,
+                tool_orchestrator_factory=lambda sid=session_id: ctx._tool_orchestrator(sid),
                 event_builder_for_existing_turn=ctx._event_builder_for_existing_turn,
                 denied_tool_message_builder=ctx._denied_tool_alternative_message,
                 compaction_engine_factory=ctx._compaction_engine,

@@ -49,6 +49,7 @@ from ..skills import SkillManager
 from ..subagents import SubAgentManager, SubAgentRun
 from ..tools.executor import ToolExecutor
 from ..tools.workspace import WorkspaceTools
+from ..providers.registry import preset_catalog
 from ..models import (
     ChatEvent,
     ChatMessage,
@@ -117,14 +118,59 @@ app.state.core = core
 app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 
 
-def _workspace_tools() -> WorkspaceTools:
-    return WorkspaceTools(
-        workspace_manager.current_root,
-        permission_mode=settings.permission_mode,
-        sandbox_mode=settings.sandbox_mode,
-        network_access=settings.network_access,
-        zai_api_key=provider.api_key_for_tools(),
-    )
+_session_tools_cache: dict[str, WorkspaceTools] = {}
+_session_tools_lock = threading.Lock()
+
+
+def _workspace_tools(session_id: str | None = None) -> WorkspaceTools:
+    """会话级工具实例缓存（dsh goal/schedule/todo 会话内存活语义）。
+
+    同一 session 复用同一 WorkspaceTools：goal 状态机、todo 列表、提醒列表
+    跨请求存活（dsh 的 goal/schedule 本就是 session-log 的一部分）。
+    无 session_id 的调用（工具目录页等）退回无状态实例。
+    """
+    if session_id is None:
+        return WorkspaceTools(
+            workspace_manager.current_root,
+            permission_mode=settings.permission_mode,
+            sandbox_mode=settings.sandbox_mode,
+            network_access=settings.network_access,
+            zai_api_key=provider.api_key_for_tools(),
+        )
+    with _session_tools_lock:
+        tools = _session_tools_cache.get(session_id)
+        if tools is None:
+            tools = WorkspaceTools(
+                workspace_manager.current_root,
+                permission_mode=settings.permission_mode,
+                sandbox_mode=settings.sandbox_mode,
+                network_access=settings.network_access,
+                zai_api_key=provider.api_key_for_tools(),
+                session_store=store,
+            )
+            _hydrate_session_tool_state(tools, session_id)
+            _session_tools_cache[session_id] = tools
+        else:
+            # 配置可能已被 PATCH 切换：同步最新权限/沙箱/网络
+            tools.permission_mode = settings.permission_mode
+            tools.sandbox_mode = settings.sandbox_mode
+            tools.network_access = settings.network_access
+        return tools
+
+
+def _hydrate_session_tool_state(tools: WorkspaceTools, session_id: str) -> None:
+    """从会话事件恢复 goal/todo 状态（进程重启后的持久化语义）。"""
+    try:
+        for event in reversed(store.list_chat_events(session_id)):
+            data = event.data if isinstance(event.data, dict) else {}
+            if event.event_type == "goal.snapshot" and isinstance(data.get("goal"), dict):
+                tools._goal = dict(data["goal"])
+                break
+        # todo 清单由 .nova/agent-todos.json 文件持久化，无需事件恢复；
+        # schedule 是会话内存活语义（dsh 同样不跨重启），只有 goal 走事件快照。
+    except Exception:
+        # 恢复失败不阻断会话（状态可重建）
+        pass
 
 
 def _compaction_engine():
@@ -241,8 +287,8 @@ def app_module_tool_executor(tools: WorkspaceTools) -> ToolExecutor:
     return ToolExecutor(tools, process_manager=process_manager)
 
 
-def _tool_orchestrator() -> ToolOrchestrator:
-    tools = _workspace_tools()
+def _tool_orchestrator(session_id: str | None = None) -> ToolOrchestrator:
+    tools = _workspace_tools(session_id)
     return ToolOrchestrator(
         tools=tools,
         executor=app_module_tool_executor(tools),
@@ -327,6 +373,8 @@ def _runtime_config_payload() -> dict:
     effective = {
         "provider_model": provider.model,
         "provider_base_url": provider.base_url,
+        "provider_preset": getattr(settings, "provider_preset", "bigmodel"),
+        "provider_api_key_env": provider.api_key_env,
         "context_window_tokens": settings.context_window_tokens,
         "permission_mode": settings.permission_mode,
         "sandbox_mode": settings.sandbox_mode,
@@ -340,6 +388,8 @@ def _runtime_config_payload() -> dict:
     return {
         "model": provider.model,
         "base_url": provider.base_url,
+        "provider_preset": getattr(settings, "provider_preset", "bigmodel"),
+        "provider_api_key_env": provider.api_key_env,
         "permission_mode": settings.permission_mode,
         "sandbox_mode": settings.sandbox_mode,
         "approval_policy": settings.approval_policy,
@@ -354,6 +404,7 @@ def _runtime_config_payload() -> dict:
         "tool_hooks_file": str(_workspace_tool_hooks_file()),
         "permission_modes": PERMISSION_MODES,
         "sandbox_modes": SANDBOX_MODES,
+        "provider_presets": preset_catalog(),
         "approval_policies": APPROVAL_POLICIES,
         "editable": True,
         "restart_required": restart_required,
@@ -371,7 +422,20 @@ def _runtime_config_payload() -> dict:
 
 def _apply_runtime_config(update: dict) -> None:
     """把设置页保存的配置同步到当前进程，避免用户每次切换权限后都要重启。"""
+    from ..providers.registry import resolve_preset
+
     for key, value in update.items():
+        if key == "provider_preset" and isinstance(value, str):
+            preset = resolve_preset(value)
+            provider.api_key_env = str(preset["api_key_env"])
+            if preset["base_url"]:
+                provider.base_url = str(preset["base_url"]).rstrip("/")
+                object.__setattr__(settings, "provider_base_url", provider.base_url)
+            if preset["default_model"]:
+                provider.model = str(preset["default_model"])
+                object.__setattr__(settings, "provider_model", provider.model)
+            object.__setattr__(settings, "provider_preset", value.strip().lower())
+            continue
         if key == "provider_model" and isinstance(value, str):
             provider.model = value.strip()
             object.__setattr__(settings, key, provider.model)
@@ -656,6 +720,20 @@ def _runtime_event_from_agent_event(event: dict, build_event) -> dict | None:
                     if isinstance(event.get("data"), dict)
                     else []
                 ),
+            },
+        )
+    if event_type == "token_usage":
+        usage = event.get("usage") if isinstance(event.get("usage"), dict) else {}
+        return build_event(
+            "tokens.usage",
+            category="tokens",
+            phase="completed",
+            title="Token 用量",
+            message=f"prompt {usage.get('prompt_tokens', 0)} · completion {usage.get('completion_tokens', 0)} · total {usage.get('total_tokens', 0)}",
+            data={
+                "prompt_tokens": int(usage.get("prompt_tokens") or 0),
+                "completion_tokens": int(usage.get("completion_tokens") or 0),
+                "total_tokens": int(usage.get("total_tokens") or 0),
             },
         )
     if event_type == "permission_request":

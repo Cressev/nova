@@ -252,6 +252,84 @@ TOOL_SPECS: dict[str, ToolSpec] = {
         category="jobs",
         risk="medium",
     ),
+    "workflow_run": ToolSpec(
+        name="workflow_run",
+        description="Fan out independent subagent tasks in parallel and wait for all results (bounded fan-out for audits, migrations, multi-angle research). Each task gets a fresh agent with its own context; results aggregate into one JSON report. Max 6 tasks.",
+        read_only=False,
+        supports_parallel=False,
+        permission="shell",
+        schema={"name": "audit", "description": "短描述", "tasks": [{"label": "t1", "prompt": "自包含任务提示"}]},
+        category="orchestration",
+        risk="medium",
+    ),
+    "pty_start": ToolSpec(
+        name="pty_start",
+        description="Start a persistent interactive PTY terminal session (pseudo-terminal) for commands that need a real terminal or survive across tool calls: dev servers, watch modes, interactive CLIs. Returns a session id used with pty_write/pty_read.",
+        read_only=False,
+        supports_parallel=False,
+        permission="shell",
+        schema={"command": "npm run dev", "workdir": ".", "cols": 120, "rows": 30},
+        category="terminal",
+        risk="medium",
+        interrupt_behavior="cancel",
+    ),
+    "pty_write": ToolSpec(
+        name="pty_write",
+        description="Write a string to a PTY session's stdin (append \"\\n\" for Enter). Interactive prompts, hotkeys, confirmations.",
+        read_only=False,
+        supports_parallel=False,
+        permission="shell",
+        schema={"session_id": "pty_ab12", "data": "y\n"},
+        category="terminal",
+        risk="low",
+    ),
+    "pty_read": ToolSpec(
+        name="pty_read",
+        description="Read new output from a PTY session since the last read (streaming cursor semantics). Empty string means nothing new yet.",
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={"session_id": "pty_ab12"},
+        category="terminal",
+        risk="low",
+    ),
+    "pty_list": ToolSpec(
+        name="pty_list",
+        description="List every PTY terminal session with running state and exit codes.",
+        read_only=True,
+        supports_parallel=True,
+        permission="read",
+        schema={},
+        category="terminal",
+        risk="low",
+    ),
+    "pty_kill": ToolSpec(
+        name="pty_kill",
+        description="Kill a PTY terminal session (SIGKILL to its process group).",
+        read_only=False,
+        supports_parallel=False,
+        permission="shell",
+        schema={"session_id": "pty_ab12"},
+        category="terminal",
+        risk="medium",
+    ),
+    "plan_submit": ToolSpec(
+        name="plan_submit",
+        description="Present a plan for user approval before executing it. Use in plan mode or before large/multi-step changes: submit the plan markdown; the turn pauses until the user approves or rejects it.",
+        read_only=True,
+        supports_parallel=False,
+        permission="read",
+        schema={
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Short plan title"},
+                "plan": {"type": "string", "description": "Plan body in markdown: steps, files touched, risks"},
+            },
+            "required": ["title", "plan"],
+        },
+        category="collab",
+        risk="low",
+    ),
     "ask_user_question": ToolSpec(
         name="ask_user_question",
         description=(
@@ -854,6 +932,13 @@ class WorkspaceTools:
             "job_list": self.job_list,
             "job_kill": self.job_kill,
             "ask_user_question": self.ask_user_question_direct,
+            "plan_submit": self.plan_submit_direct,
+            "pty_start": self.pty_start,
+            "pty_write": self.pty_write,
+            "pty_read": self.pty_read,
+            "pty_list": self.pty_list,
+            "pty_kill": self.pty_kill,
+            "workflow_run": self.workflow_run,
             "subagent": self.subagent,
             "list_agents": self.list_agents,
             "send_message": self.send_message,
@@ -1662,6 +1747,139 @@ class WorkspaceTools:
                 + "\n(awaiting answer — the turn pauses until the user replies)"
             ),
             data={"questions": questions, "awaiting_answer": True},
+        )
+
+    def workflow_run(self, arguments: dict[str, Any]) -> ToolResult:
+        """workflow_run（dsh workflow 对齐）：有界并行 fan-out，聚合 JSON 报告。
+
+        每个任务一个全新子代理（无父上下文），并行线程执行，全部 settle 后
+        汇总。失败任务降级为 {"error": ...} 不拖垮整批（dsh pipeline 语义）。
+        """
+        import concurrent.futures as _futures
+
+        name = str(arguments.get("name") or "workflow").strip()
+        description = str(arguments.get("description") or "").strip()
+        tasks = arguments.get("tasks") if isinstance(arguments.get("tasks"), list) else []
+        if not tasks:
+            raise ToolExecutionError("workflow_run 需要 tasks 数组（每项 {label, prompt}）")
+        if len(tasks) > 6:
+            raise ToolExecutionError("tasks 超上限：最多 6 个并行子代理")
+        normalized = []
+        for i, task in enumerate(tasks):
+            if not isinstance(task, dict):
+                raise ToolExecutionError(f"tasks[{i}] 必须是对象")
+            prompt = str(task.get("prompt") or "").strip()
+            if not prompt:
+                raise ToolExecutionError(f"tasks[{i}].prompt 必填")
+            normalized.append({"label": str(task.get("label") or f"task-{i+1}"), "prompt": prompt})
+        manager = self._require_subagent_manager()
+
+        def run_task(task: dict) -> dict:
+            try:
+                created = manager.spawn(prompt=task["prompt"], name=task["label"], project_root=self.project_root)
+                settled = manager.wait(str(created["id"]), timeout_ms=110000) or created
+                return {"label": task["label"], "ok": True, "output": str(settled.get("output") or settled.get("result") or "")}
+            except Exception as exc:  # 单任务失败不拖垮整批
+                return {"label": task["label"], "ok": False, "error": str(exc)[:200]}
+
+        with _futures.ThreadPoolExecutor(max_workers=min(len(normalized), 6)) as pool:
+            results = list(pool.map(run_task, normalized))
+        ok_count = sum(1 for r in results if r.get("ok"))
+        summary_lines = [f"[{'ok' if r['ok'] else 'FAIL'}] {r['label']}: {(r.get('output') or r.get('error') or '')[:80].replace(chr(10), ' ')}" for r in results]
+        return ToolResult(
+            tool="workflow_run",
+            title=f"workflow {name}（{ok_count}/{len(results)} 完成）",
+            output="\n".join(summary_lines),
+            data={"name": name, "description": description, "results": results, "ok": ok_count, "total": len(results)},
+        )
+
+    def plan_submit_direct(self, arguments: dict[str, Any]) -> ToolResult:
+        """plan_submit 直连兜底：执行器在派发前拦下挂起；此路径仅说明等待审批。"""
+        title = str(arguments.get("title") or "执行计划")
+        return ToolResult(
+            tool="plan_submit",
+            title=f"计划审批：{title[:40]}",
+            output=f"Plan submitted for approval: {title}\n(awaiting approval — the turn pauses until the user decides)",
+            data={"plan": True, "awaiting_approval": True, "plan_markdown": str(arguments.get("plan") or "")},
+        )
+
+    # ---- PTY 终端（dsh terminal 对齐：持久交互式会话） ----
+
+    def _pty(self) -> Any:
+        from ..processes.pty_manager import pty_manager
+
+        return pty_manager()
+
+    def pty_start(self, arguments: dict[str, Any]) -> ToolResult:
+        command = str(arguments.get("command") or "").strip()
+        if not command:
+            raise ToolExecutionError("pty_start 需要 command")
+        workdir = self._resolve_workspace_path(str(arguments.get("workdir") or "."))
+        status = self._pty().start(
+            command,
+            cwd=str(workdir),
+            sandbox_mode=self.sandbox_mode,
+            workspace_root=str(self.project_root),
+            cols=int(arguments.get("cols") or 120),
+            rows=int(arguments.get("rows") or 30),
+        )
+        return ToolResult(
+            tool="pty_start",
+            title=f"PTY 启动：{command[:60]}",
+            output=f"PTY session {status['id']} started. Use pty_read for output and pty_write for input.",
+            data=status,
+        )
+
+    def pty_write(self, arguments: dict[str, Any]) -> ToolResult:
+        session_id = str(arguments.get("session_id") or "")
+        data = str(arguments.get("data") or "")
+        if not session_id or not data:
+            raise ToolExecutionError("pty_write 需要 session_id 与 data")
+        self._pty().get(session_id).write(data)
+        return ToolResult(
+            tool="pty_write",
+            title=f"PTY 写入 {session_id}",
+            output=f"Wrote {len(data)} chars to {session_id}.",
+            data={"session_id": session_id, "bytes": len(data)},
+        )
+
+    def pty_read(self, arguments: dict[str, Any]) -> ToolResult:
+        import time as _time
+
+        session_id = str(arguments.get("session_id") or "")
+        wait_ms = min(int(arguments.get("waitMs") or 800), 5000)
+        session = self._pty().get(session_id)
+        deadline = _time.monotonic() + wait_ms / 1000
+        out = session.read_new()
+        while not out and _time.monotonic() < deadline:
+            _time.sleep(0.15)
+            out = session.read_new()
+        status = session.status()
+        return ToolResult(
+            tool="pty_read",
+            title=f"PTY 读取 {session_id}",
+            output=out if out else "(no new output)",
+            data=status,
+        )
+
+    def pty_list(self, arguments: dict[str, Any]) -> ToolResult:
+        items = self._pty().list()
+        lines = [f"{i['id']}  {'running' if i['running'] else 'exited'}  {i['command'][:60]}" for i in items]
+        return ToolResult(
+            tool="pty_list",
+            title="PTY 会话列表",
+            output="\n".join(lines) if lines else "(no PTY sessions)",
+            data={"items": items},
+        )
+
+    def pty_kill(self, arguments: dict[str, Any]) -> ToolResult:
+        session_id = str(arguments.get("session_id") or "")
+        status = self._pty().kill(session_id)
+        return ToolResult(
+            tool="pty_kill",
+            title=f"PTY 终止 {session_id}",
+            output=f"Killed {session_id}.",
+            data=status,
         )
 
     def _require_subagent_manager(self) -> Any:

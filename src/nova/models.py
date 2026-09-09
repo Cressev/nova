@@ -52,6 +52,7 @@ class WorktreeCreate(BaseModel):
 
 
 class RuntimeConfigUpdate(BaseModel):
+    provider_preset: str | None = Field(default=None, min_length=1, max_length=40)
     provider_model: str | None = Field(default=None, min_length=1, max_length=80)
     provider_base_url: str | None = Field(default=None, min_length=1, max_length=300)
     context_window_tokens: int | None = Field(default=None, ge=8192, le=1000000)

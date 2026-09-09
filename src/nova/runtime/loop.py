@@ -72,6 +72,9 @@ class AgentLoop:
             async for event in runtime._stream_tool_decision(working_messages):
                 if event.get("type") == "decision":
                     decision = event
+                    if event.get("usage"):
+                        # token-meter（dsh llm/token-meter）：每轮决策的真实用量
+                        yield {"type": "token_usage", "usage": event["usage"]}
                     continue
                 if event.get("type") == "assistant_delta":
                     streamed_answer = True
