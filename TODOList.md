@@ -2342,3 +2342,11 @@ api 就不能再拆了吗？拆。
 [x] 判定：拒绝来自 _resolve_workspace_path 的应用层路径检查（错误文本"拒绝访问工作区外路径"），不是 OS 沙箱（sandbox-exec 只作用于 bash；write 工具走应用层）。live=workspace_write+workspace_write，行为完全正确：写严格（拒）、读宽松（read /etc/hosts 放行）。这是前两轮修复后的预期效果，不是 bug
 [x] 复盘：无需修改。Nova 对用户的解释文案（"安全限制，不允许在工作区外写文件"）准确；若用户想写区外路径，正确做法是显式切 danger 沙箱或 bypass 权限
 ------ todo-list end at 2026/09/09 14:44:24 -----
+
+------ todo-list begin at 2026/09/09 15:08:30 -----
+用户请求原文：那现在除了工具和沙箱，nova和dsh还差哪些
+
+[x] 盘点 dsh 51 个包职责 vs Nova 22 个模块+24 组 API 路由
+[x] 已对齐域：会话/事件流/审批审计/沙箱/compaction(阈值压缩)/多工作区/worktree/subagents(壳)/MCP(壳)/skills(目录)/memory(10 路由最完整)/processes/LSP/hooks/spill
+[x] 差距定稿（见最终回复四层清单）：模型协作 5 项（goal/plan/todo/schedule/feedback）、智能编排 3 项（workflow 编排/subagent 深度/ralf 类 fresh-loop）、检索 2 项（session-query 会话检索/context 注入）、扩展生态 5 项（acp/attachment/credentials/identity/settings 族）、运行时 3 项（多 provider/token-meter/terminal、e2b 云执行）
+------ todo-list end at 2026/09/09 15:10:18 -----
