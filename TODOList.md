@@ -2287,3 +2287,11 @@ api 就不能再拆了吗？拆。
 [x] 停服(12263)→重置 chats.json 为空结构→删 traces→重启(35721)
 [x] 验证：API 返回 []、侧栏 0 会话、空态显示、traces 目录空
 ------ todo-list end at 2026/09/09 10:59:28 -----
+
+------ todo-list begin at 2026/09/09 11:01:08 -----
+用户请求原文：现在所有的权限设计和拦截策略，安全都和dsh是对齐的吗
+
+[x] 盘点 Nova：8 权限模式(CC 风格)+3 档沙箱+工具四级(read/write/shell/network)+hooks+protected paths；拦截=workspace.py _check_permission/_resolve_workspace_path 应用层检查
+[x] 读 dsh：sandbox-policy(3 模式,fail-safe 默认 read-only)+bash-sandbox(每条 bash confine→sandbox-exec/bwrap/ACL 内核级,runner 起不来→SandboxUnavailableError 宁败不裸跑)+user-approval(ask/never 2 态+approval/asked·decided·policy 事件可回放审计)
+[x] 定性：概念层对齐、执行层与审计层未对齐——Nova bash=subprocess shell=True 完全无内核级约束(可写工作区外/可联网)，审批 store 仅内存无 durable 审计，ask 模式 gate 抛"尚未实现前端审批确认"(Takeover 预审批是另一条路)
+------ todo-list end at 2026/09/09 11:03:08 -----

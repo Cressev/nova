@@ -171,3 +171,4 @@
 - [26/09/07-11:38:21 CST] 工具层差距盘点：实测 Nova 工具行(展开/Think/变体体/取消重试)已齐 6 项，读 dsh ui-tool/toolviews 对照定稿 5 项差距(bash 退出码红态、Read 跳转钮、search 结果卡、subtool/context 轨迹行型、token 统计)。产物：TODOList.md。验证：浏览器实测+源码比对。
 - [26/09/09-10:48:14 CST] 工具层 5 差距定性：#1 前端显示层（exitCode 数据已在）、#2 前端显示层+轻解析、#3 产品能力缺口（无跳转目标）、#4 数据链层（subagent 事件不进会话流）、#5 数据链层（provider usage 未提取）。验证：workspace.py 1271 行 ok=True、bigmodel.py 无 usage、manager.py add_event 只进 run 内部。
 - [26/09/09-10:59:28 CST] 清空 Nova 测试会话历史：备份后重置 ~/.nova/sessions/chats.json（1439 会话）并删除 traces/（1453 份），重启服务至 PID 35721。验证：GET /api/chat/sessions 返回 []、侧栏 0 项+空态、备份在 /tmp/nova-chats-backup-09091058.json。验证 URL：http://127.0.0.1:8765。
+- [26/09/09-11:03:08 CST] 权限/安全对齐评估：概念层(模式名/三档沙箱/工具分级/hooks)对齐；执行层差距大——dsh 每条 bash 经内核级 confine(Seatbelt/bwrap/ACL)+fail-closed(runner 失败宁可拒绝)，Nova bash 无任何 OS 级约束；审计层差距——dsh 审批三事件可回放，Nova 审批仅内存。产物：TODOList.md。验证：两边源码逐文件比对(workspace.py vs bash-sandbox/sandbox-policy/user-approval)。
