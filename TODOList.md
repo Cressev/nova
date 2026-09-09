@@ -2334,3 +2334,11 @@ api 就不能再拆了吗？拆。
 [x] 清理：中毒配置文件 sandbox 收敛为 workspace_write（与运行时一致）；真实库 94+5 个测试残留清零
 [x] 回归：262 unittest 全绿且真实库会话数=0（零污染验证）、前端 smoke 绿、服务重启 live=workspace_write
 ------ todo-list end at 2026/09/09 13:14:28 -----
+
+------ todo-list begin at 2026/09/09 14:43:44 -----
+用户请求原文：刚刚是沙箱策略拒绝的吗，你看看我新问的内容
+
+[x] 读取用户新会话 chat_804003ef3bf6：用户问"能写 testmd 到工作区外吗"→ Nova 反问路径 → 用户答"/tmp" → write /tmp/testmd 被拒
+[x] 判定：拒绝来自 _resolve_workspace_path 的应用层路径检查（错误文本"拒绝访问工作区外路径"），不是 OS 沙箱（sandbox-exec 只作用于 bash；write 工具走应用层）。live=workspace_write+workspace_write，行为完全正确：写严格（拒）、读宽松（read /etc/hosts 放行）。这是前两轮修复后的预期效果，不是 bug
+[x] 复盘：无需修改。Nova 对用户的解释文案（"安全限制，不允许在工作区外写文件"）准确；若用户想写区外路径，正确做法是显式切 danger 沙箱或 bypass 权限
+------ todo-list end at 2026/09/09 14:44:24 -----
