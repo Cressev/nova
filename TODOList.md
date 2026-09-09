@@ -2278,3 +2278,12 @@ api 就不能再拆了吗？拆。
 
 [x] 逐项定性 5 个差距的所属层面（前端/数据链/产品能力），验证关键事实：bash exitCode 已在后端 data 里（前端没消费=显示层）；token usage 在 bigmodel provider 完全未提取（数据链层）；subagents/manager.py 事件只进自己的 run.events 不进会话事件流（数据链层）
 ------ todo-list end at 2026/09/09 10:48:14 -----
+
+------ todo-list begin at 2026/09/09 10:59:28 -----
+用户请求原文：你先给我把测试时候的所有的会话历史全部清空吧，nova 的
+
+[x] 定位存储：~/.nova/sessions/chats.json（1439 会话，17MB）+ traces/（1453 份）
+[x] 备份到 /tmp/nova-chats-backup-09091058.json
+[x] 停服(12263)→重置 chats.json 为空结构→删 traces→重启(35721)
+[x] 验证：API 返回 []、侧栏 0 会话、空态显示、traces 目录空
+------ todo-list end at 2026/09/09 10:59:28 -----
