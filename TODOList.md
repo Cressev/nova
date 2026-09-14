@@ -2382,3 +2382,15 @@ api 就不能再拆了吗？拆。
 [x] e2e 复验：goal turn.started=2 + goal.round 落库=1；workflow 真模型 144/巴黎 无兜底
 [x] 262 测试绿；审计 7.A 诚实修正；会话清理
 ------ todo-list end at 2026/09/14 11:10:46 -----
+
+------ todo-list begin at 2026/09/14 15:21:33 -----
+用户请求原文：对齐dsh（context：补齐 workflow 与 dsh 的三项差距——JS 脚本编排/schema 校验/逐 agent provider·model 覆盖）
+
+[x] W1 子代理 runner 工厂化（model_runner.py，支持 provider/schema 参数，routes 委托）
+[x] W2 JS 脚本编排宿主（host.js：node vm 受限上下文 + agent/pipeline/parallel/phase/log 钩子 + stdio JSON 协议）
+[x] W3 Python 桥（workflow/orchestrator.py：node 子进程跑在只读 seatbelt 内、并发≤6、总超时、schema 子集校验器）
+[x] W4 workflow_run 增加 script 模式 + spec/系统提示更新
+[x] W5 单测（schema 校验器 + 假 agent 编排语义：并行/流水线/失败置 null/误用杀脚本）
+[x] W6 全量回归 273 绿 + e2e 实证：mode=script、calc=144、schema 返 {capital:Paris}、deepseek 无 key → null+错误记录；期间修 3 个真 bug（ls 子串劫持/WorkflowScriptError 未导出/桥线程裸抛挂死）+ 超时表补 workflow 600s
+[x] W7 收尾
+------ todo-list end at 2026/09/14 15:47:22 -----

@@ -255,55 +255,20 @@ _original_agent_runtime = _agent_runtime
 
 
 def _subagent_runner(run: SubAgentRun) -> str:
-    """在受限上下文中运行一个子 Agent；模型不可用时回退到本地摘要。"""
+    """受限子 Agent 运行器（dsh tool-subagent 语义）；委托 model_runner 工厂。"""
+    from ..subagents.model_runner import build_subagent_runner
 
-    async def collect() -> str:
-        runtime = CodexLikeAgentRuntime(
-            provider=provider,
-            project_root=Path(run.workspace),
-            global_agent_file=settings.global_agent_file,
-            max_tool_rounds=min(settings.max_tool_rounds, 4),
-            permission_mode="read_only",
-            sandbox_mode="read_only",
-            approval_policy="never",
-            network_access=False,
-            process_manager=ProcessManager(),
-            trace_recorder=LangfuseTraceRecorder(
-                load_langfuse_config(
-                    _workspace_runtime_secret_file(Path(run.workspace))
-                )
-            ),
-        )
-        prompt = (
-            "你是 Nova 的子 Agent。只处理下面委派给你的范围，不要再 spawn 子 Agent。"
-            "先用只读方式核对事实，最后必须用以下格式回答：\n"
-            "Scope: <你的任务范围>\nResult: <结论>\nKey files: <相关文件>\nIssues: <需要主 Agent 知道的问题>\n\n"
-            f"委派任务：{run.prompt}"
-        )
-        content = ""
-        messages = [ChatMessage(session_id=run.id, role=ChatRole.USER, content=prompt)]
-        async for event in runtime.stream(messages):
-            if run.cancel_requested:
-                return content or "Scope: 已取消\nResult: 子 Agent 收到取消请求。"
-            if event.get("type") == "agent_status":
-                run.add_event("status", str(event.get("status") or "子 Agent 状态"))
-            if event.get("type") == "assistant_done_content":
-                content = str(event.get("content") or "")
-        return content or "Scope: 子 Agent\nResult: 未收到模型最终回答。"
-
-    try:
-        return asyncio.run(asyncio.wait_for(collect(), timeout=100.0))
-    except (
-        asyncio.TimeoutError,
-        ProviderError,
-        RuntimeError,
-        OSError,
-        ValueError,
-    ) as exc:
-        run.add_event(
-            "fallback", "子 Agent 使用本地兜底", f"{type(exc).__name__}: {exc}"
-        )
-        return SubAgentManager(Path(run.workspace))._local_summary_runner(run)
+    runner = build_subagent_runner(
+        provider=provider,
+        global_agent_file=settings.global_agent_file,
+        max_tool_rounds=min(settings.max_tool_rounds, 4),
+        langfuse_factory=lambda ws: LangfuseTraceRecorder(
+            load_langfuse_config(_workspace_runtime_secret_file(Path(ws)))
+        ),
+        fallback_summary=True,
+        fallback_summary_fn=lambda r: SubAgentManager(Path(r.workspace))._local_summary_runner(r),
+    )
+    return runner(run)
 
 
 subagent_manager.default_runner = _subagent_runner

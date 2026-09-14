@@ -14,10 +14,16 @@ from nova.subagents import SubAgentManager
 
 class SubAgentRunnerSourceTest(unittest.TestCase):
     def test_main_subagent_runner_has_timeout_fallback(self) -> None:
-        source = Path(app_module.__file__).read_text(encoding="utf-8")
+        # 26/09/14：runner 逻辑抽到 subagents/model_runner.py（供 workflow 逐
+        # agent provider/schema 覆盖复用）；routes 只委托。超时+兜底断言跟着搬。
+        from nova.subagents import model_runner
+
+        source = Path(model_runner.__file__).read_text(encoding="utf-8")
         self.assertIn("asyncio.wait_for(collect()", source)
         self.assertIn("TimeoutError", source)
         self.assertIn("子 Agent 使用本地兜底", source)
+        routes_source = Path(app_module.__file__).read_text(encoding="utf-8")
+        self.assertIn("build_subagent_runner", routes_source)
 
 
 class SubAgentApiTest(unittest.TestCase):

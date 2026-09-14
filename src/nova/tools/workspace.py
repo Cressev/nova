@@ -254,11 +254,17 @@ TOOL_SPECS: dict[str, ToolSpec] = {
     ),
     "workflow_run": ToolSpec(
         name="workflow_run",
-        description="Fan out independent subagent tasks in parallel and wait for all results (bounded fan-out for audits, migrations, multi-angle research). Each task gets a fresh agent with its own context; results aggregate into one JSON report. Max 6 tasks.",
+        description=(
+            "Orchestrate multi-agent work two ways. Static: pass tasks=[{label,prompt}] for bounded parallel fan-out. "
+            "Dynamic (dsh workflow parity): pass script=<JavaScript body> using hooks agent(prompt, opts?) -> final text "
+            "or schema-validated object (null on failure), pipeline(items, ...stages), parallel(thunks), phase(title), log(msg), "
+            "and args; opts: {label, schema (object-rooted JSON Schema subset), provider, model}. Runs read-sandboxed; "
+            "no fs/net/timers in script. End the script with return <value>."
+        ),
         read_only=False,
         supports_parallel=False,
         permission="shell",
-        schema={"name": "audit", "description": "短描述", "tasks": [{"label": "t1", "prompt": "自包含任务提示"}]},
+        schema={"name": "audit", "description": "短描述", "tasks": [{"label": "t1", "prompt": "自包含任务提示"}], "script": "const r = await parallel([...]); return r", "args": {}},
         category="orchestration",
         risk="medium",
     ),
@@ -847,6 +853,15 @@ _TOOL_TIMEOUTS: dict[str, int] = {
     "schedule_delete": 10000,
     "lsp": 30000,
     "session_search": 30000,
+    # workflow 脚本编排：最多 6 个 agent 串/并行，每个子代理上限 100s——
+    # 总预算须覆盖串行最坏情形（dsh workflow 前台跑完整脚本同语义）。
+    "workflow_run": 600000,
+    "pty_start": 30000,
+    "pty_write": 10000,
+    "pty_read": 30000,
+    "pty_list": 10000,
+    "pty_kill": 10000,
+    "plan_submit": 10000,
 }
 
 # read 工具的渲染上限（dsh read-render 同值）
@@ -1750,7 +1765,121 @@ class WorkspaceTools:
         )
 
     def workflow_run(self, arguments: dict[str, Any]) -> ToolResult:
-        """workflow_run（dsh workflow 对齐）：有界并行 fan-out，聚合 JSON 报告。
+        """workflow_run（dsh workflow 对齐）：静态 fan-out 或 JS 脚本编排。"""
+        script = str(arguments.get("script") or "").strip()
+        if script:
+            return self._workflow_run_script(arguments, script)
+        return self._workflow_run_tasks(arguments)
+
+    def _workflow_run_script(self, arguments: dict[str, Any], script: str) -> ToolResult:
+        """脚本编排（dsh workflow）：agent/pipeline/parallel/phase/log 钩子。"""
+        from ..workflow import WorkflowScriptError, run_workflow_script
+        from ..workflow.orchestrator import extract_json_object, validate_schema_subset
+
+        def spawn_agent(prompt: str, opts: dict[str, Any]) -> dict[str, Any]:
+            manager = self._require_subagent_manager()
+            label = str(opts.get("label") or "").strip()
+            schema = opts.get("schema") if isinstance(opts.get("schema"), dict) else None
+            provider_name = opts.get("provider")
+            model_override = opts.get("model")
+            runner = None
+            if provider_name or model_override:
+                try:
+                    runner = self._custom_subagent_runner(provider_name, model_override, schema)
+                except ToolExecutionError as exc:
+                    return {"ok": False, "result": None, "error": str(exc)}
+            elif schema is not None:
+                runner = self._schema_subagent_runner(schema)
+            created = manager.spawn(
+                prompt=prompt,
+                name=label or "workflow-agent",
+                project_root=self.project_root,
+                runner=runner,
+            )
+            settled = manager.wait(str(created["id"]), timeout_ms=110000) or created
+            text = str(settled.get("output") or settled.get("result") or "")
+            if schema is not None:
+                try:
+                    parsed = extract_json_object(text)
+                    violations = validate_schema_subset(parsed, schema)
+                    if violations:
+                        return {"ok": False, "error": "schema violations: " + "; ".join(violations[:4]), "result": None}
+                    return {"ok": True, "result": parsed, "error": None}
+                except (ValueError, json.JSONDecodeError) as exc:
+                    return {"ok": False, "error": f"output is not valid JSON: {exc}", "result": None}
+            if not text.strip():
+                return {"ok": False, "error": "empty output", "result": None}
+            return {"ok": True, "result": text, "error": None}
+
+        try:
+            outcome = run_workflow_script(
+                script,
+                arguments.get("args") if isinstance(arguments.get("args"), dict) else {},
+                spawn_agent=spawn_agent,
+            )
+        except WorkflowScriptError as exc:
+            raise ToolExecutionError(str(exc), code="WORKFLOW_SCRIPT_FAILED") from exc
+        value_json = json.dumps(outcome["value"], ensure_ascii=False, default=str)
+        agents = outcome["agents"]
+        ok_count = sum(1 for a in agents if a["ok"])
+        lines = [f"[{'ok' if a['ok'] else 'FAIL'}] {a['label']}: {str(a.get('result') if a['ok'] else a.get('error'))[:70]}".replace(chr(10), " ") for a in agents]
+        return ToolResult(
+            tool="workflow_run",
+            title=f"workflow script（{ok_count}/{len(agents)} agent 成功）",
+            output=("\n".join(lines) if lines else "(no agents)") + f"\n\nreturn → {value_json[:1500]}",
+            data={
+                "mode": "script",
+                "name": str(arguments.get("name") or "workflow"),
+                "value": outcome["value"],
+                "events": outcome["events"],
+                "agents": agents,
+            },
+        )
+
+    def _custom_subagent_runner(self, provider_name: Any, model_override: Any, schema: dict[str, Any] | None):
+        """逐 agent provider/model 覆盖（dsh opts.provider/model）：无 key 直接失败，不伪造结果。"""
+        from ..providers.bigmodel import BigModelProvider
+        from ..providers.registry import resolve_preset
+        from ..subagents.model_runner import build_subagent_runner
+
+        preset = resolve_preset(str(provider_name or "bigmodel"))
+        provider = BigModelProvider(
+            base_url=str(preset["base_url"]) or None,
+            model=str(model_override or preset.get("default_model") or "") or None,
+            api_key_env=str(preset["api_key_env"]),
+        )
+        if not provider.is_configured():
+            raise ToolExecutionError(
+                f"workflow agent 的 provider「{provider_name}」未配置 {provider.api_key_env}（拒绝降级到别的模型）",
+                code="PROVIDER_NOT_CONFIGURED",
+            )
+        return build_subagent_runner(
+            provider=provider,
+            fallback_summary=False,
+            schema=schema,
+        )
+
+    def _schema_subagent_runner(self, schema: dict[str, Any]):
+        from ..subagents.model_runner import build_subagent_runner
+
+        return build_subagent_runner(
+            provider=self._main_provider(),
+            fallback_summary=False,
+            schema=schema,
+        )
+
+    def _main_provider(self):
+        """主 provider 代理：优先复用 runtime 注入的工具 key（设置页写入的运行时 key）。"""
+        from ..providers.bigmodel import BigModelProvider
+
+        provider = BigModelProvider()
+        key = getattr(self, "zai_api_key", None)
+        if key:
+            provider.set_runtime_api_key(str(key))
+        return provider
+
+    def _workflow_run_tasks(self, arguments: dict[str, Any]) -> ToolResult:
+        """静态任务 fan-out（原 tasks 模式，保持不变）。
 
         每个任务一个全新子代理（无父上下文），并行线程执行，全部 settle 后
         汇总。失败任务降级为 {"error": ...} 不拖垮整批（dsh pipeline 语义）。

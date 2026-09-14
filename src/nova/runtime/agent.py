@@ -603,9 +603,12 @@ class CodexLikeAgentRuntime:
             "文件目录",
             "当前目录",
             "list files",
-            "ls",
         ]
-        if any(intent in normalized for intent in directory_intents):
+        # "ls" 必须整词匹配：子串会把 false/tools/also 一并命中，劫持正常
+        # 工具决策轮（26/09/14 实测 additionalProperties:false 触发 glob 直达）。
+        if any(intent in normalized for intent in directory_intents) or re.search(
+            r"\bls\b", normalized
+        ):
             return [{"tool": "glob", "arguments": {"pattern": "*", "path": "."}}]
         return []
 
@@ -1070,7 +1073,7 @@ class CodexLikeAgentRuntime:
 19. 精确代码智能用 lsp（diagnostics / goToDefinition）；跨历史会话检索用 session_search。
 20. 大型改动先 plan_submit 提交计划等审批（批准后才执行）；只读分析或小改动不需要。
 21. 需要真终端的长驻/交互式命令（dev server、watch、交互式 CLI 提问）用 pty_start 启动持久会话：pty_read 读新输出、pty_write 回答交互、用完 pty_kill；一次性命令仍用 bash。
-22. 相互独立的批量任务（多文件审计、多角度调研）用 workflow_run 并行 fan-out，结果聚合成一份报告；上限 6 个。
+22. 相互独立的批量任务（多文件审计、多角度调研）用 workflow_run：静态并行给 tasks=[{label,prompt}]；需要动态编排（分阶段、流水线、按结果分支）时给 script——JS 里用 agent(prompt,{label,schema,provider,model})（schema 校验 JSON 结果、失败返回 null）、pipeline(items,...stages)、parallel(thunks)、phase/log，结尾 return 汇总值；脚本里没有 fs/网络/定时器，实际工作都在 agent 里做。并发上限 6。
 13. 当用户输入 $技能名 或请求明显匹配某个技能说明时，先引用对应技能；不要凭空假设技能内容，用户也可以用 /skill <技能名> 显式读取 SKILL.md。
 
 可用工具：
