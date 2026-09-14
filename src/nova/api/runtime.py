@@ -38,6 +38,35 @@ async def runtime_model_list() -> dict:
     }
 
 
+@router.post("/api/runtime/models")
+async def probe_model_list(payload: dict) -> dict:
+    """设置面板"获取可用模型"（dsh 探测语义）：用表单当前填的端点/协议/密钥
+    临时构造 provider 拉列表，不改动全局 provider、不写配置。
+
+    支持对任意供应商组探测——包括尚未保存的 key（dsh：asking with a key
+    the form has but not yet stored）。
+    """
+    protocol = str(payload.get("protocol") or "openai")
+    base_url = str(payload.get("base_url") or "").rstrip("/")
+    api_key = str(payload.get("api_key") or "").strip()
+    if not api_key:
+        raise ctx.HTTPException(status_code=400, detail="请先填写该供应商的 API Key。")
+    if protocol == "anthropic":
+        from ..providers.anthropic import AnthropicProvider
+        probe = AnthropicProvider(base_url=base_url or None)
+    else:
+        from ..providers.bigmodel import BigModelProvider
+        probe = BigModelProvider(base_url=base_url or None)
+    probe.set_runtime_api_key(api_key)
+    if not hasattr(probe, "list_models"):
+        raise ctx.HTTPException(status_code=501, detail="该协议不支持模型列表获取。")
+    try:
+        models = await probe.list_models()
+    except ctx.ProviderError as exc:
+        raise ctx.HTTPException(status_code=502, detail=str(exc))
+    return {"ok": True, "count": len(models), "models": models}
+
+
 @router.patch("/api/runtime/config")
 async def update_runtime_config(payload: ctx.RuntimeConfigUpdate) -> dict:
     pending = ctx._read_runtime_config_overrides()
@@ -72,6 +101,33 @@ async def update_runtime_config(payload: ctx.RuntimeConfigUpdate) -> dict:
     return result
 
 
+def _write_profile_api_key(profile_id: str, api_key: str, secret_file) -> None:
+    """把某组的密钥写到 api_keys[profile_id] 槽位（多组隔离）。"""
+    import json as _json
+    try:
+        existing: dict = {}
+        if secret_file.exists():
+            loaded = _json.loads(secret_file.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                existing = loaded
+    except (OSError, _json.JSONDecodeError):
+        existing = {}
+    keys = existing.get("api_keys")
+    if not isinstance(keys, dict):
+        keys = {}
+    value = (api_key or "").strip()
+    if value:
+        keys[profile_id] = value
+    else:
+        keys.pop(profile_id, None)
+    existing["api_keys"] = keys
+    try:
+        secret_file.parent.mkdir(parents=True, exist_ok=True)
+        secret_file.write_text(_json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def _emit_permission_policy_event(update: dict) -> None:
     active = [sid for sid in ctx.agent_sessions.active_session_ids]
     if not active:
@@ -103,10 +159,14 @@ def _emit_permission_policy_event(update: dict) -> None:
 async def update_runtime_secrets(payload: ctx.RuntimeSecretUpdate) -> dict:
     langfuse_status = None
     if payload.bigmodel_api_key is not None:
+        # 多供应商组：按 profile_id 写到 api_keys[profile_id] 槽位（dsh 语义：
+        # 每组独立密钥）；未指定时回落到旧的单 api_key 槽位（向后兼容）。
         ctx.provider.set_runtime_api_key(
             payload.bigmodel_api_key,
             api_key_file=ctx._workspace_runtime_secret_file(),
         )
+        profile_id = payload.profile_id or getattr(ctx.settings, "provider_preset", "bigmodel")
+        _write_profile_api_key(profile_id, payload.bigmodel_api_key, ctx._workspace_runtime_secret_file())
     if (
         payload.langfuse_public_key is not None
         or payload.langfuse_secret_key is not None

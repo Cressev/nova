@@ -2442,3 +2442,30 @@ api 就不能再拆了吗？拆。
 [x] D3 设置面板模型列表管理：chip 增删 + ＋添加模型行 + 获取候选→勾选→添加所选；composer 下拉读 models union
 [x] D4 279 测试绿；e2e 手动添加→获取10候选→勾选采纳→删除联动→composer 下拉同步
 ------ todo-list end at 2026/09/14 17:55:36 -----
+
+------ todo-list begin at 2026/09/14 18:10:25 -----
+用户请求原文：一个供应商相当于一个组，一个组里可以添加很多模型，这些都可以选择使用
+
+[x] P1 研读 dsh store/ModelSelect：groups=[{id,name,models}] + current={provider,model}，composer 按组渲染
+[x] P2 ProviderProfile 模型 + provider_profiles/active_provider_id 持久化 + _rebuild_provider_from_profile 热换 + 多组密钥槽 api_keys[id] + POST probe 端点
+[x] P3 SettingsDialog 多组卡片（label/协议/base_url/key/模型 chip 增删/probe 候选/启用/删除/添加新组）+ MenuSelect groups 渲染 + composer 按组列模型
+[x] P4 279+测试绿；e2e 两组并存→切 anthropic 显式报错→切回 bigmodel 真调用 ok；composer 分组下拉验证；视觉评审达标
+
+------ todo-list begin at 2026/09/14 18:16:18 -----
+用户请求原文：我想把这个项当做我的简历的个人项目，你可以先看看我的简历：/Users/liam/Documents/简历/北京理工大学-控制工程-2027届-袁祥清的副本.docx 我将会替换项目经历中的前两个
+
+[x] R1 简历读取完成（docx 解包提取段落），前两条=ECG系统/MCP助手，写法=标题加粗+右对齐日期+密集编号点
+[x] R2 两条条目交付（运行时+工具引擎 / 双协议模型接入+前端），真实数据：1.6万行Py+0.87万前端+279测+8预设
+[x] R3 已交付，待用户确认是否写进 docx / 合并 / 调侧重
+------ todo-list end at 2026/09/14 18:19:30 -----
+NOW=26/09/14-18:19:30 CST
+python3 << PYEOF
+s = open('user-queries.md').read()
+blocks = s.split('[Recieve:')
+assert len(blocks) >= 2
+tail = '[Recieve:' + blocks[-1]
+line_end = tail.index('\n')
+blocks[-1] = tail[:line_end + 1] + '[Done:]\n' + tail[line_end + 1:]
+open('user-queries.md', 'w').write(''.join(blocks))
+PYEOF
+------ todo-list end at 2026/09/14 18:21:48 -----

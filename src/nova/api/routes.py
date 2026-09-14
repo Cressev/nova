@@ -399,10 +399,45 @@ def _runtime_config_payload() -> dict:
     for name in custom_models:
         if name not in model_options:
             model_options.append(name)
+    # 多供应商组（dsh groups 语义）：每组的 id/label/协议/端点/密钥状态/模型清单；
+    # composer 按 group 渲染（组标题 + 该组模型）。无组时种子化一个默认组。
+    profiles_raw = pending.get("provider_profiles")
+    profiles: list[dict] = []
+    if isinstance(profiles_raw, list):
+        for p in profiles_raw:
+            if isinstance(p, dict) and p.get("id"):
+                pid = str(p["id"])
+                models = [str(m) for m in p.get("models", []) if isinstance(m, str) and m.strip()]
+                # 当前模型若不在组内模型清单，补进去（保证可选）
+                if provider.model and pid == getattr(settings, "provider_preset", "") and provider.model not in models:
+                    models.insert(0, provider.model)
+                profiles.append({
+                    "id": pid,
+                    "label": str(p.get("label") or pid),
+                    "protocol": str(p.get("protocol") or "openai"),
+                    "base_url": str(p.get("base_url") or ""),
+                    "api_key_env": str(p.get("api_key_env") or "API_KEY"),
+                    "api_key_set": bool(_load_profile_api_key(pid, _workspace_runtime_secret_file()) or os.getenv(str(p.get("api_key_env") or "API_KEY"))),
+                    "models": models,
+                })
+    if not profiles:
+        profiles = [{
+            "id": getattr(settings, "provider_preset", "bigmodel"),
+            "label": "BigModel（GLM）",
+            "protocol": "openai",
+            "base_url": provider.base_url,
+            "api_key_env": provider.api_key_env,
+            "api_key_set": provider.is_configured(),
+            "models": model_options,
+        }]
+    model_groups = [{"id": p["id"], "label": p["label"], "models": p["models"]} for p in profiles]
     return {
         "model": provider.model,
         "models": model_options,
         "custom_models": custom_models,
+        "provider_profiles": profiles,
+        "active_provider_id": getattr(settings, "provider_preset", profiles[0]["id"] if profiles else "bigmodel"),
+        "model_groups": model_groups,
         "base_url": provider.base_url,
         "provider_preset": getattr(settings, "provider_preset", "bigmodel"),
         "provider_api_key_env": provider.api_key_env,
@@ -442,7 +477,43 @@ def _apply_runtime_config(update: dict) -> None:
 
     global provider
 
+    # 多供应商组：profile 列表或 active 切换 → 按 active profile 重建 provider 实例
+    # （dsh groups 语义：当前 provider = active 组的端点/协议/密钥；模型 = active_model）
+    profiles_payload = update.get("provider_profiles")
+    active_id = update.get("active_provider_id")
+    if profiles_payload is not None or active_id is not None:
+        profiles_raw = profiles_payload if isinstance(profiles_payload, list) else _read_runtime_config_overrides().get("provider_profiles", [])
+        profiles: list[dict] = []
+        for p in profiles_raw if isinstance(profiles_raw, list) else []:
+            if isinstance(p, dict) and p.get("id"):
+                profiles.append({
+                    "id": str(p["id"]),
+                    "label": str(p.get("label") or p["id"]),
+                    "protocol": str(p.get("protocol") or "openai"),
+                    "base_url": str(p.get("base_url") or ""),
+                    "api_key_env": str(p.get("api_key_env") or "API_KEY"),
+                    "models": [str(m) for m in p.get("models", []) if isinstance(m, str) and m],
+                })
+        if not profiles:
+            profiles = [{
+                "id": "bigmodel", "label": "BigModel（GLM）", "protocol": "openai",
+                "base_url": "https://open.bigmodel.cn/api/paas/v4",
+                "api_key_env": "BIGMODEL_API_KEY", "models": ["glm-4.7"],
+            }]
+        target_id = str(active_id) if active_id else getattr(settings, "provider_preset", profiles[0]["id"])
+        target = next((p for p in profiles if p["id"] == target_id), profiles[0])
+        _rebuild_provider_from_profile(target)
+        object.__setattr__(settings, "provider_preset", target["id"])
+        object.__setattr__(settings, "provider_base_url", provider.base_url)
+        object.__setattr__(settings, "provider_model", provider.model)
+        # 跳过下方 provider_preset/model/base_url 单字段分支（已由 profile 覆盖）
+        skip_single = {"provider_preset", "provider_model", "provider_base_url"}
+    else:
+        skip_single = set()
+
     for key, value in update.items():
+        if key in skip_single:
+            continue
         if key == "provider_preset" and isinstance(value, str):
             preset = resolve_preset(value)
             protocol = str(preset.get("protocol") or "openai")
@@ -493,6 +564,51 @@ def _apply_runtime_config(update: dict) -> None:
         if hasattr(settings, key):
             object.__setattr__(settings, key, value)
     _enforce_permission_sandbox_consistency()
+
+
+def _rebuild_provider_from_profile(profile: dict) -> None:
+    """按一个供应商组（profile）重建全局 provider 实例。
+
+    协议 openai → BigModelProvider；anthropic → AnthropicProvider。
+    密钥从运行时密钥文件的 api_keys[profile_id] 槽位读取（多组隔离），
+    回落到旧的单一 api_key 槽位（向后兼容）。
+    """
+    global provider
+
+    protocol = str(profile.get("protocol") or "openai")
+    base_url = str(profile.get("base_url") or "").rstrip("/")
+    api_key_env = str(profile.get("api_key_env") or "API_KEY")
+    # 组内默认模型 = 第一个；用户切换 active_model 后由 provider_model 覆盖
+    models = profile.get("models") or []
+    model = str(models[0]) if models else ""
+    secret_file = _workspace_runtime_secret_file()
+    runtime_key = _load_profile_api_key(profile["id"], secret_file)
+    previous_key = getattr(provider, "_runtime_api_key", None)
+    if protocol == "anthropic":
+        from ..providers.anthropic import AnthropicProvider
+        provider = AnthropicProvider(base_url=base_url or None, model=model or None, api_key_env=api_key_env)
+    else:
+        from ..providers.bigmodel import BigModelProvider
+        provider = BigModelProvider(base_url=base_url or None, model=model or None, api_key_env=api_key_env)
+    if runtime_key:
+        provider.set_runtime_api_key(runtime_key)
+    elif previous_key and provider.api_key_env == api_key_env:
+        provider.set_runtime_api_key(previous_key)
+
+
+def _load_profile_api_key(profile_id: str, secret_file: Path) -> str | None:
+    """从运行时密钥文件读取某组的密钥（api_keys[profile_id]，回落旧 api_key）。"""
+    try:
+        payload = json.loads(secret_file.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    keys = payload.get("api_keys")
+    if isinstance(keys, dict) and isinstance(keys.get(profile_id), str) and keys[profile_id]:
+        return str(keys[profile_id])
+    legacy = payload.get("api_key")
+    return str(legacy) if isinstance(legacy, str) and legacy else None
 
 
 def _enforce_permission_sandbox_consistency() -> None:

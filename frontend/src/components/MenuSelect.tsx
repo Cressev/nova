@@ -16,13 +16,20 @@ export interface MenuOption {
   hint?: string
 }
 
-export function MenuSelect({ id, value, options, onChange, title, leadingIcon }: {
+export interface MenuGroup {
+  id: string
+  label: string
+  options: MenuOption[]
+}
+
+export function MenuSelect({ id, value, options, onChange, title, leadingIcon, groups }: {
   id?: string
   value: string
   options: MenuOption[]
   onChange: (value: string) => void
   title: string
   leadingIcon?: React.ReactNode
+  groups?: MenuGroup[]
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -59,20 +66,42 @@ export function MenuSelect({ id, value, options, onChange, title, leadingIcon }:
       </button>
       {open ? (
         <div className="menu-select-list" role="listbox">
-          {options.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              role="option"
-              aria-selected={option.value === value}
-              className={`menu-select-item${option.value === value ? " selected" : ""}`}
-              onClick={() => { onChange(option.value); setOpen(false) }}
-            >
-              {option.icon !== undefined ? <span className="menu-select-item-icon">{option.icon}</span> : null}
-              <span className="menu-select-item-label">{option.label}</span>
-              {option.hint ? <span className="menu-select-item-hint">{option.hint}</span> : null}
-            </button>
-          ))}
+          {groups ? (
+            groups.map((group) => (
+              <div className="menu-select-group" key={group.id} role="group" aria-label={group.label}>
+                <div className="menu-select-group-title">{group.label}</div>
+                {group.options.map((option) => (
+                  <button
+                    key={`${group.id}/${option.value}`}
+                    type="button"
+                    role="option"
+                    aria-selected={option.value === value}
+                    className={`menu-select-item${option.value === value ? " selected" : ""}`}
+                    onClick={() => { onChange(option.value); setOpen(false) }}
+                  >
+                    {option.icon !== undefined ? <span className="menu-select-item-icon">{option.icon}</span> : null}
+                    <span className="menu-select-item-label">{option.label}</span>
+                    {option.hint ? <span className="menu-select-item-hint">{option.hint}</span> : null}
+                  </button>
+                ))}
+              </div>
+            ))
+          ) : (
+            options.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={option.value === value}
+                className={`menu-select-item${option.value === value ? " selected" : ""}`}
+                onClick={() => { onChange(option.value); setOpen(false) }}
+              >
+                {option.icon !== undefined ? <span className="menu-select-item-icon">{option.icon}</span> : null}
+                <span className="menu-select-item-label">{option.label}</span>
+                {option.hint ? <span className="menu-select-item-hint">{option.hint}</span> : null}
+              </button>
+            ))
+          )}
         </div>
       ) : null}
     </div>

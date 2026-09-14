@@ -51,6 +51,22 @@ class WorktreeCreate(BaseModel):
     name: str = Field(min_length=1, max_length=64)
 
 
+class ProviderProfile(BaseModel):
+    """一个供应商组（dsh 语义：provider = group，组内多个模型可选）。
+
+    id 稳定（切换/密钥槽位的 key）；protocol 决定实例类（openai/anthropic）；
+    models 是该组下用户维护的模型清单，composer 按组列出供选用。
+    """
+    id: str = Field(min_length=1, max_length=40)
+    label: str = Field(default="", max_length=60)
+    protocol: str = Field(default="openai", pattern="^(openai|anthropic)$")
+    base_url: str = Field(default="", max_length=300)
+    api_key_env: str = Field(default="API_KEY", max_length=60)
+    models: list[Annotated[str, StringConstraints(min_length=1, max_length=80)]] = Field(
+        default_factory=list, max_length=200
+    )
+
+
 class RuntimeConfigUpdate(BaseModel):
     provider_preset: str | None = Field(default=None, min_length=1, max_length=40)
     provider_model: str | None = Field(default=None, min_length=1, max_length=80)
@@ -61,6 +77,10 @@ class RuntimeConfigUpdate(BaseModel):
     custom_models: list[Annotated[str, StringConstraints(min_length=1, max_length=80)]] | None = Field(
         default=None, max_length=60
     )
+    # 多供应商组（dsh groups 语义）：每个 profile 自带端点/协议/密钥/模型组；
+    # active_provider_id 指向当前启用的组，provider 实例按该组重建。
+    provider_profiles: list[ProviderProfile] | None = None
+    active_provider_id: str | None = Field(default=None, min_length=1, max_length=40)
     context_window_tokens: int | None = Field(default=None, ge=8192, le=1000000)
     permission_mode: str | None = Field(default=None, pattern="^(read_only|ask|workspace_write|default|plan|accept_edits|dont_ask|bypass_permissions)$")
     sandbox_mode: str | None = Field(default=None, pattern="^(read_only|workspace_write|danger_full_access)$")
@@ -71,6 +91,8 @@ class RuntimeConfigUpdate(BaseModel):
 
 class RuntimeSecretUpdate(BaseModel):
     bigmodel_api_key: str | None = Field(default=None, max_length=3000)
+    # 多供应商组：密钥写到哪组（dsh 语义：每组独立密钥槽）。
+    profile_id: str | None = Field(default=None, min_length=1, max_length=40)
     langfuse_public_key: str | None = Field(default=None, max_length=3000)
     langfuse_secret_key: str | None = Field(default=None, max_length=3000)
     langfuse_host: str | None = Field(default=None, max_length=300)

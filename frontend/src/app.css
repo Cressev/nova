@@ -5233,88 +5233,128 @@ body.inspector-collapsed .inspector-toggle {
   background: var(--dsw-static-red-50, #fef2f2);
   border-radius: 8px;
 }
-.settings-control-mono {
-  font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+/* ---- 多供应商组管理 ---- */
+.settings-profiles-hint {
   font-size: 12px;
+  color: var(--faint);
+  padding: 2px 0 10px;
 }
-
-
-/* ---- 模型列表管理（dsh ModelListEditor/addModelButton 语义） ---- */
-.settings-models-block {
+.settings-profile {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  transition: border-color 120ms ease;
+}
+.settings-profile-active {
+  border-color: var(--dsw-alias-brand-primary, #415eef);
+  box-shadow: 0 0 0 3px var(--dsw-static-deepseek-50, rgba(65, 118, 230, 0.1));
+}
+.settings-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.settings-profile-label {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  outline: none;
+  padding: 2px 0;
+}
+.settings-profile-label:focus { color: var(--blue, #415eef); }
+.settings-profile-protocol {
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  border-radius: 6px;
+  padding: 2px 8px;
+  flex: none;
+}
+.settings-profile-tag {
+  font-size: 10px;
+  color: #fff;
+  background: var(--dsw-alias-brand-primary, #415eef);
+  border-radius: 8px;
+  padding: 2px 8px;
+  flex: none;
+}
+.settings-profile-delete {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--faint);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.settings-profile-delete:hover { background: var(--dsw-static-red-50, #fef2f2); color: var(--red); }
+.settings-profile-fields {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.settings-profile-field {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 0 14px;
+  gap: 4px;
+  min-width: 0;
 }
-.settings-models-head {
+.settings-profile-field > span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.settings-profile-field .settings-control { width: 100%; flex: none; height: 30px; }
+.settings-profile-models {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-profile-models-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
 }
-.settings-models-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.settings-link-button {
-  border: none;
-  background: transparent;
-  color: var(--blue, #415eef);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  padding: 0;
-}
-.settings-link-button:hover { text-decoration: underline; }
-.settings-link-button:disabled { opacity: 0.5; cursor: default; text-decoration: none; }
-.settings-add-model {
+.settings-models-actions { display: flex; align-items: center; gap: 10px; }
+.settings-model-add-input { width: 100%; flex: none; height: 30px; }
+.settings-models-empty { font-size: 12px; color: var(--faint); padding: 2px 0; }
+.settings-models-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.settings-model-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   height: 26px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: 12px;
-  line-height: 18px;
-  cursor: pointer;
-  transition: background 120ms ease;
-}
-.settings-add-model:hover { background: var(--surface-soft); }
-.settings-model-add-input {
-  width: 100%;
-  flex: 1;
-  height: 30px;
-}
-.settings-models-empty {
-  font-size: 12px;
-  color: var(--faint);
-  padding: 2px 0;
-}
-.settings-models-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.settings-model-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 4px 0 10px;
+  padding: 0 4px 0 0;
   border: 1px solid var(--line);
   border-radius: 13px;
   background: var(--surface);
   font-size: 12px;
 }
-.settings-model-chip-name {
-  font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  color: var(--text);
+.settings-model-chip-current {
+  border-color: var(--dsw-alias-brand-primary, #415eef);
+  background: var(--dsw-static-deepseek-50, rgba(65, 118, 230, 0.06));
 }
+.settings-model-chip-name {
+  border: none;
+  background: transparent;
+  font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--text);
+  padding: 0 4px 0 10px;
+  cursor: pointer;
+  height: 26px;
+}
+.settings-model-chip-name:hover { color: var(--blue, #415eef); }
 .settings-model-chip-tag {
   font-size: 10px;
   color: var(--blue, #415eef);
@@ -5336,11 +5376,76 @@ body.inspector-collapsed .inspector-toggle {
   line-height: 1;
   cursor: pointer;
 }
-.settings-model-chip-remove:hover {
-  background: var(--dsw-static-red-50, #fef2f2);
-  color: var(--red);
+.settings-model-chip-remove:hover { background: var(--dsw-static-red-50, #fef2f2); color: var(--red); }
+.settings-add-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
 }
-/* ---- 候选勾选（dsh fetchDialog） ---- */
+.settings-add-model:hover { background: var(--surface-soft); }
+.settings-link-button {
+  border: none;
+  background: transparent;
+  color: var(--blue, #415eef);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+.settings-link-button:hover { text-decoration: underline; }
+.settings-link-button:disabled { opacity: 0.5; cursor: default; text-decoration: none; }
+.settings-add-profile {
+  width: 100%;
+  height: 36px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+.settings-add-profile:hover { border-color: var(--dsw-alias-brand-primary, #415eef); color: var(--blue, #415eef); }
+.settings-profile-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.settings-ghost-button {
+  height: 28px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.settings-ghost-button:hover { background: var(--surface-soft); }
+.settings-primary-button {
+  height: 28px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--dsw-alias-brand-primary, #415eef);
+  color: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.settings-primary-button:disabled { opacity: 0.45; cursor: default; }
 .settings-candidates {
   display: flex;
   flex-direction: column;
@@ -5377,35 +5482,9 @@ body.inspector-collapsed .inspector-toggle {
 }
 .settings-candidate:hover { background: var(--surface-soft); }
 .settings-candidate-dim { opacity: 0.55; cursor: default; }
-.settings-candidate-id {
-  font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-}
+.settings-candidate-id { font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
 .settings-candidates-foot {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
 }
-.settings-ghost-button {
-  height: 28px;
-  padding: 0 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.settings-ghost-button:hover { background: var(--surface-soft); }
-.settings-primary-button {
-  height: 28px;
-  padding: 0 14px;
-  border: none;
-  border-radius: 8px;
-  background: var(--dsw-alias-brand-primary, #415eef);
-  color: #fff;
-  font: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.settings-primary-button:disabled { opacity: 0.45; cursor: default; }

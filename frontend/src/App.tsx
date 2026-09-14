@@ -899,8 +899,22 @@ export default function App() {
                 title="模型"
                 value={model}
                 options={modelOptions.map((m) => ({ value: m, label: m }))}
+                groups={(Array.isArray(runtimeConfig.model_groups) ? runtimeConfig.model_groups : [])
+                  .filter((g: any) => Array.isArray(g.models) && g.models.length > 0)
+                  .map((g: any) => ({
+                    id: String(g.id || ""),
+                    label: String(g.label || g.id || ""),
+                    options: (g.models as string[]).map((m) => ({ value: String(m), label: String(m) })),
+                  }))}
                 onChange={(value) => {
-                  void api("/api/runtime/config", { method: "PATCH", body: JSON.stringify({ model: value }) }).then(reloadShell).catch(() => {})
+                  // 选中即启用该模型所属的供应商组（dsh groups 语义）
+                  const grp = (Array.isArray(runtimeConfig.model_groups) ? runtimeConfig.model_groups : [])
+                    .find((g: any) => Array.isArray(g.models) && (g.models as string[]).includes(value)) as any
+                  const patch: Record<string, unknown> = { provider_model: value }
+                  if (grp && String(grp.id) !== String(runtimeConfig.active_provider_id)) {
+                    patch.active_provider_id = String(grp.id)
+                  }
+                  void api("/api/runtime/config", { method: "PATCH", body: JSON.stringify(patch) }).then(reloadShell).catch(() => {})
                 }}
               />
               {hasContent ? <button id="regenerate-button" className="round-button ghost" type="button" aria-label="重新生成" title="重新生成最后一轮" onClick={() => void regenerate()}><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M12.2 6.2A5 5 0 1 0 12.5 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><path d="M12.6 2.8v3.6H9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg></button> : null}
