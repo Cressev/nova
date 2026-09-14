@@ -916,18 +916,22 @@ export default function App() {
                 id="model-select"
                 title="模型"
                 value={model}
-                options={modelOptions.map((m) => ({ value: m, label: m }))}
+                options={[{ value: model, label: model }]}
                 groups={(Array.isArray(runtimeConfig.model_groups) ? runtimeConfig.model_groups : [])
                   .filter((g: any) => Array.isArray(g.models) && g.models.length > 0)
                   .map((g: any) => ({
                     id: String(g.id || ""),
                     label: String(g.label || g.id || ""),
-                    options: (g.models as string[]).map((m) => ({ value: String(m), label: String(m) })),
+                    // dsh 语义：同模型跨组是不同端点，不去重——都列出
+                    options: (g.models as { id: string; name?: string | null }[]).map((m) => ({
+                      value: String(m.id),
+                      label: String(m.name || m.id),
+                    })),
                   }))}
                 onChange={(value) => {
                   // 选中即启用该模型所属的供应商组（dsh groups 语义）
                   const grp = (Array.isArray(runtimeConfig.model_groups) ? runtimeConfig.model_groups : [])
-                    .find((g: any) => Array.isArray(g.models) && (g.models as string[]).includes(value)) as any
+                    .find((g: any) => Array.isArray(g.models) && (g.models as { id: string }[]).some((m) => m.id === value)) as any
                   const patch: Record<string, unknown> = { provider_model: value }
                   if (grp && String(grp.id) !== String(runtimeConfig.active_provider_id)) {
                     patch.active_provider_id = String(grp.id)

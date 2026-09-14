@@ -5514,3 +5514,57 @@ body.inspector-collapsed .inspector-toggle {
   margin-right: 2px;
   flex: none;
 }
+
+/* ---- 模型行（dsh ModelListEditor 语义：行 + 展开高级配置） ---- */
+.settings-model-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+}
+.settings-model-row:last-child { border-bottom: none; }
+.settings-model-row-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.settings-model-row-current .settings-model-chip-name {
+  color: var(--blue, #415eef);
+  font-weight: 600;
+}
+.settings-model-id-hint {
+  color: var(--muted);
+  font-size: 11px;
+  font-family: var(--mono, monospace);
+}
+.settings-model-expand {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.settings-model-expand:hover { color: var(--blue, #415eef); background: rgba(65,118,230,0.06); }
+.settings-model-advanced {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  padding: 6px 8px 8px;
+  background: var(--bg-soft, rgba(0,0,0,0.02));
+  border-radius: 8px;
+}
+.settings-model-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.settings-model-field input {
+  width: 100%;
+  padding: 3px 6px;
+  font-size: 12px;
+}

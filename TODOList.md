@@ -2497,3 +2497,13 @@ PYEOF
 [x] X4 重启后 selectSession 正常加载 timeline；provider-select 删除后工具栏不再冲突
 [x] X5 280 测试绿；浏览器实测：触发器"glm-4.7" + 2组4项无重复 + 聊天窗口正常显示
 ------ todo-list end at 2026/09/15 01:02:28 -----
+
+------ todo-list begin at 2026/09/15 01:11:03 -----
+用户请求原文：bigmodel team 的模型在对话页不显示；添加模型要支持高级配置（像 dsh）
+
+[x] G1 根因：之前加的跨组去重错误——DSH 不去重，同模型跨组是不同端点都该显示。去掉去重
+[x] G2 dsh DeepSeekModelDraft：id（必填）+ name + contextWindow + maxTokens；行展开编辑
+[x] G3 ModelEntry{id,name,context_window,max_tokens} + _normalize_model_entry 向后兼容字符串
+[x] G4 ModelRow 组件：行展开高级配置（显示名/上下文窗口/最大输出）+ 删除/使用
+[x] G5 286 测试绿；下拉 2组7项全显示（不去重）；高级配置展开3字段；截图确认
+------ todo-list end at 2026/09/15 01:19:38 -----

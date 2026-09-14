@@ -409,10 +409,14 @@ def _runtime_config_payload() -> dict:
         for p in profiles_raw:
             if isinstance(p, dict) and p.get("id"):
                 pid = str(p["id"])
-                models = [str(m) for m in p.get("models", []) if isinstance(m, str) and m.strip()]
+                models_raw = p.get("models", [])
+                models = [_normalize_model_entry(m) for m in models_raw]
+                models = [m for m in models if m is not None]
                 # 当前模型若不在组内模型清单，补进去（保证可选）
-                if provider.model and pid == getattr(settings, "provider_preset", "") and provider.model not in models:
-                    models.insert(0, provider.model)
+                if provider.model and pid == getattr(settings, "provider_preset", ""):
+                    model_ids = [str(m["id"]) for m in models]
+                    if provider.model not in model_ids:
+                        models.insert(0, {"id": provider.model})
                 profiles.append({
                     "id": pid,
                     "label": str(p.get("label") or pid),
@@ -430,7 +434,7 @@ def _runtime_config_payload() -> dict:
             "base_url": provider.base_url,
             "api_key_env": provider.api_key_env,
             "api_key_set": provider.is_configured(),
-            "models": model_options,
+            "models": [{"id": m} for m in model_options],
         }]
     model_groups = [{"id": p["id"], "label": p["label"], "models": p["models"]} for p in profiles]
     return {
@@ -596,6 +600,33 @@ def _rebuild_provider_from_profile(profile: dict) -> None:
         provider.set_runtime_api_key(runtime_key)
     elif previous_key and provider.api_key_env == api_key_env:
         provider.set_runtime_api_key(previous_key)
+
+
+def _normalize_model_entry(raw: object) -> dict[str, object] | None:
+    """把任意格式模型条目统一成 dict（dsh ModelEntry 语义）。
+
+    兼容旧字符串格式（"glm-4.7" → {"id": "glm-4.7"}）和对象格式
+   （{"id": ..., "name": ..., "context_window": ..., "max_tokens": ...}）。
+    """
+    if isinstance(raw, str):
+        sid = raw.strip()
+        return {"id": sid} if sid else None
+    if isinstance(raw, dict):
+        sid = str(raw.get("id") or "").strip()
+        if not sid:
+            return None
+        entry: dict[str, object] = {"id": sid}
+        name = raw.get("name")
+        if isinstance(name, str) and name.strip():
+            entry["name"] = name.strip()
+        cw = raw.get("context_window")
+        if isinstance(cw, int) and cw > 0:
+            entry["context_window"] = cw
+        mt = raw.get("max_tokens")
+        if isinstance(mt, int) and mt > 0:
+            entry["max_tokens"] = mt
+        return entry
+    return None
 
 
 def _load_profile_api_key(profile_id: str, secret_file: Path) -> str | None:

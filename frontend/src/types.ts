@@ -72,12 +72,38 @@ export interface BgProcess {
   status: string
 }
 
+export interface ModelEntry {
+  id: string
+  name?: string | null
+  context_window?: number | null
+  max_tokens?: number | null
+}
+
+export interface ModelGroup {
+  id: string
+  label: string
+  models: ModelEntry[]
+}
+
+export interface ProviderProfile {
+  id: string
+  label: string
+  protocol: string
+  base_url: string
+  api_key_env: string
+  api_key_set: boolean
+  models: ModelEntry[]
+}
+
 export interface RuntimeConfig {
   model?: string
   models?: string[]
   permission_mode?: string
   network_access?: boolean
   version?: string
+  provider_profiles?: ProviderProfile[]
+  active_provider_id?: string
+  model_groups?: ModelGroup[]
   [key: string]: unknown
 }
 

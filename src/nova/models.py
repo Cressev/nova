@@ -64,20 +64,31 @@ class WorktreeCreate(BaseModel):
     name: str = Field(min_length=1, max_length=64)
 
 
+class ModelEntry(BaseModel):
+    """单个模型条目（dsh DeepSeekModelDraft 语义：id 必填，name/context_window/max_tokens 可选）。
+
+    id 是发给 API 的模型标识；name 是显示名（留空则回退 id）；
+    context_window/max_tokens 为高级配置，留空时用 provider 默认值。
+    """
+    id: str = Field(min_length=1, max_length=80)
+    name: str | None = Field(default=None, max_length=80)
+    context_window: int | None = Field(default=None, ge=1, le=10_000_000)
+    max_tokens: int | None = Field(default=None, ge=1, le=1_000_000)
+
+
 class ProviderProfile(BaseModel):
     """一个供应商组（dsh 语义：provider = group，组内多个模型可选）。
 
     id 稳定（切换/密钥槽位的 key）；protocol 决定实例类（openai/anthropic）；
-    models 是该组下用户维护的模型清单，composer 按组列出供选用。
+    models 是该组下用户维护的模型清单（dsh ModelListEditor：每行 id + 高级配置），
+    composer 按组列出供选用。
     """
     id: str = Field(min_length=1, max_length=40)
     label: str = Field(default="", max_length=60)
     protocol: str = Field(default="openai", pattern="^(openai|anthropic)$")
     base_url: str = Field(default="", max_length=300)
     api_key_env: str = Field(default="API_KEY", max_length=60)
-    models: list[Annotated[str, StringConstraints(min_length=1, max_length=80)]] = Field(
-        default_factory=list, max_length=200
-    )
+    models: list[ModelEntry] = Field(default_factory=list, max_length=200)
 
 
 class RuntimeConfigUpdate(BaseModel):

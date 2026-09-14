@@ -66,38 +66,27 @@ export function MenuSelect({ id, value, options, onChange, title, leadingIcon, g
       </button>
       {open ? (
         <div className="menu-select-list" role="listbox">
-          {groups ? (() => {
-            // 跨组去重：同名模型只显示一次（dsh ModelSelect 语义：
-            // 一个模型只属于一个组，重复配置时第一组赢）
-            const seen = new Set<string>()
-            return groups.map((group) => {
-              const dedupedOptions = group.options.filter((option) => {
-                if (seen.has(option.value)) return false
-                seen.add(option.value)
-                return true
-              })
-              if (dedupedOptions.length === 0) return null
-              return (
-                <div className="menu-select-group" key={group.id} role="group" aria-label={group.label}>
-                  <div className="menu-select-group-title">{group.label}</div>
-                  {dedupedOptions.map((option) => (
-                    <button
-                      key={`${group.id}/${option.value}`}
-                      type="button"
-                      role="option"
-                      aria-selected={option.value === value}
-                      className={`menu-select-item${option.value === value ? " selected" : ""}`}
-                      onClick={() => { onChange(option.value); setOpen(false) }}
-                    >
-                      {option.icon !== undefined ? <span className="menu-select-item-icon">{option.icon}</span> : null}
-                      <span className="menu-select-item-label">{option.label}</span>
-                      {option.hint ? <span className="menu-select-item-hint">{option.hint}</span> : null}
-                    </button>
-                  ))}
-                </div>
-              )
-            })
-          })() : (
+          {groups ? (
+            groups.map((group) => (
+              <div className="menu-select-group" key={group.id} role="group" aria-label={group.label}>
+                <div className="menu-select-group-title">{group.label}</div>
+                {group.options.map((option) => (
+                  <button
+                    key={`${group.id}/${option.value}`}
+                    type="button"
+                    role="option"
+                    aria-selected={option.value === value}
+                    className={`menu-select-item${option.value === value ? " selected" : ""}`}
+                    onClick={() => { onChange(option.value); setOpen(false) }}
+                  >
+                    {option.icon !== undefined ? <span className="menu-select-item-icon">{option.icon}</span> : null}
+                    <span className="menu-select-item-label">{option.label}</span>
+                    {option.hint ? <span className="menu-select-item-hint">{option.hint}</span> : null}
+                  </button>
+                ))}
+              </div>
+            ))
+          ) : (
             options.map((option) => (
               <button
                 key={option.value}

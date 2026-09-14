@@ -8,6 +8,13 @@ import { api } from "../lib/api"
  * api_key_set,models[]}；active_provider_id 指向当前启用组。
  * 全部即时生效（无保存按钮）。 */
 
+interface ModelEntry {
+  id: string
+  name?: string | null
+  context_window?: number | null
+  max_tokens?: number | null
+}
+
 interface Profile {
   id: string
   label: string
@@ -15,7 +22,7 @@ interface Profile {
   base_url: string
   api_key_env: string
   api_key_set?: boolean
-  models: string[]
+  models: ModelEntry[]
 }
 
 interface ModelItem {
@@ -105,7 +112,7 @@ export function SettingsDialog({ open, onClose, onSaved }: { open: boolean; onCl
 
   const saveProfiles = async (next: Profile[]) => {
     setProfiles(next)
-    await patch({ provider_profiles: next.map((p) => ({ id: p.id, label: p.label, protocol: p.protocol, base_url: p.base_url, api_key_env: p.api_key_env, models: p.models })) })
+    await patch({ provider_profiles: next.map((p) => ({ id: p.id, label: p.label, protocol: p.protocol, base_url: p.base_url, api_key_env: p.api_key_env, models: p.models.map((m) => ({ id: m.id, name: m.name || null, context_window: m.context_window || null, max_tokens: m.max_tokens || null })) })) })
   }
 
   const setActive = async (pid: string) => {
@@ -148,8 +155,9 @@ export function SettingsDialog({ open, onClose, onSaved }: { open: boolean; onCl
     const target = profiles.find((p) => p.id === candidates.pid)
     if (!target) return
     const next = [...target.models]
+    const existingIds = new Set(next.map((m) => m.id))
     for (const c of candidates.items) {
-      if (candidates.picked.has(c.id) && !next.includes(c.id)) next.push(c.id)
+      if (candidates.picked.has(c.id) && !existingIds.has(c.id)) next.push({ id: c.id, name: c.display_name || null })
     }
     const updated = profiles.map((p) => p.id === candidates.pid ? { ...p, models: next } : p)
     setCandidates(null)
@@ -162,8 +170,8 @@ export function SettingsDialog({ open, onClose, onSaved }: { open: boolean; onCl
     setAddValue("")
     if (!value) return
     const target = profiles.find((p) => p.id === pid)
-    if (!target || target.models.includes(value)) return
-    const updated = profiles.map((p) => p.id === pid ? { ...p, models: [...p.models, value] } : p)
+    if (!target || target.models.some((m) => m.id === value)) return
+    const updated = profiles.map((p) => p.id === pid ? { ...p, models: [...p.models, { id: value }] } : p)
     await saveProfiles(updated)
   }
 
@@ -274,16 +282,15 @@ export function SettingsDialog({ open, onClose, onSaved }: { open: boolean; onCl
                   <div className="settings-models-empty">暂无模型，可获取或手动添加</div>
                 ) : (
                   <div className="settings-models-list">
-                    {p.models.map((m) => (
-                      <span key={m} className={`settings-model-chip${p.id === activeId && m === config.model ? " settings-model-chip-current" : ""}`}>
-                        <button
-                          type="button"
-                          className="settings-model-chip-name"
-                          title={`使用 ${m}`}
-                          onClick={() => { setConfig((c) => ({ ...c, model: m })); void patch({ provider_model: m, active_provider_id: p.id }) }}
-                        >{m}</button>
-                        <button type="button" className="settings-model-chip-remove" aria-label={`删除 ${m}`} onClick={() => void saveProfiles(profiles.map((x) => x.id === p.id ? { ...x, models: x.models.filter((mm) => mm !== m) } : x))}>×</button>
-                      </span>
+                    {p.models.map((m, mi) => (
+                      <ModelRow
+                        key={`${p.id}/${m.id}/${mi}`}
+                        model={m}
+                        isCurrent={p.id === activeId && m.id === config.model}
+                        onUse={() => { setConfig((c) => ({ ...c, model: m.id })); void patch({ provider_model: m.id, active_provider_id: p.id }) }}
+                        onRemove={() => void saveProfiles(profiles.map((x) => x.id === p.id ? { ...x, models: x.models.filter((_, i) => i !== mi) } : x))}
+                        onUpdate={(patch) => void saveProfiles(profiles.map((x) => x.id === p.id ? { ...x, models: x.models.map((mm, i) => i === mi ? { ...mm, ...patch } : mm) } : x))}
+                      />
                     ))}
                   </div>
                 )}
@@ -329,7 +336,7 @@ export function SettingsDialog({ open, onClose, onSaved }: { open: boolean; onCl
             <ul className="settings-candidates-list">
               {candidates.items.map((c) => {
                 const target = profiles.find((p) => p.id === candidates.pid)
-                const already = target ? target.models.includes(c.id) : false
+                const already = target ? target.models.some((m) => m.id === c.id) : false
                 return (
                   <li key={c.id}>
                     <label className={already ? "settings-candidate settings-candidate-dim" : "settings-candidate"}>
@@ -355,6 +362,74 @@ export function SettingsDialog({ open, onClose, onSaved }: { open: boolean; onCl
           </div>
         ) : null}
       </div>
+    </div>
+  )
+}
+
+/* 模型行（dsh ModelListEditor 语义）：显示 id/name + 展开后编辑 context_window/max_tokens。
+ * 每行：使用按钮 + 显示名 + 删除按钮 + 展开折叠高级配置。 */
+function ModelRow({ model, isCurrent, onUse, onRemove, onUpdate }: {
+  model: ModelEntry
+  isCurrent: boolean
+  onUse: () => void
+  onRemove: () => void
+  onUpdate: (patch: Partial<ModelEntry>) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const displayName = model.name || model.id
+  return (
+    <div className={`settings-model-row${isCurrent ? " settings-model-row-current" : ""}`}>
+      <div className="settings-model-row-main">
+        <button
+          type="button"
+          className={`settings-model-chip-name${isCurrent ? " settings-model-chip-name-current" : ""}`}
+          title={`使用 ${model.id}`}
+          onClick={onUse}
+        >{displayName}</button>
+        {model.name ? <span className="settings-model-id-hint">{model.id}</span> : null}
+        <button
+          type="button"
+          className="settings-model-expand"
+          aria-label="高级配置"
+          title="高级配置"
+          onClick={() => setExpanded((v) => !v)}
+        >{expanded ? "▾" : "▸"}</button>
+        <button type="button" className="settings-model-chip-remove" aria-label={`删除 ${model.id}`} onClick={onRemove}>×</button>
+      </div>
+      {expanded ? (
+        <div className="settings-model-advanced">
+          <label className="settings-model-field">
+            <span>显示名</span>
+            <input
+              className="settings-control"
+              type="text"
+              defaultValue={model.name || ""}
+              placeholder={model.id}
+              onBlur={(e) => { const v = e.target.value.trim(); if (v !== (model.name || "")) onUpdate({ name: v || null }) }}
+            />
+          </label>
+          <label className="settings-model-field">
+            <span>上下文窗口</span>
+            <input
+              className="settings-control"
+              type="number"
+              defaultValue={model.context_window ?? ""}
+              placeholder="留空用默认"
+              onBlur={(e) => { const v = e.target.value.trim(); const n = v ? parseInt(v, 10) : null; if (n !== model.context_window) onUpdate({ context_window: n && n > 0 ? n : null }) }}
+            />
+          </label>
+          <label className="settings-model-field">
+            <span>最大输出</span>
+            <input
+              className="settings-control"
+              type="number"
+              defaultValue={model.max_tokens ?? ""}
+              placeholder="留空用默认"
+              onBlur={(e) => { const v = e.target.value.trim(); const n = v ? parseInt(v, 10) : null; if (n !== model.max_tokens) onUpdate({ max_tokens: n && n > 0 ? n : null }) }}
+            />
+          </label>
+        </div>
+      ) : null}
     </div>
   )
 }
