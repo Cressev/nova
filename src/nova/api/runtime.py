@@ -43,12 +43,28 @@ async def probe_model_list(payload: dict) -> dict:
     """设置面板"获取可用模型"（dsh 探测语义）：用表单当前填的端点/协议/密钥
     临时构造 provider 拉列表，不改动全局 provider、不写配置。
 
-    支持对任意供应商组探测——包括尚未保存的 key（dsh：asking with a key
-    the form has but not yet stored）。
+    密钥优先级：前端传入（用户刚输入未保存的）> 该组已存储的密钥槽位 >
+    active provider 的运行时密钥（兼容单组场景）。任何一层有值即可探测，
+    不要求用户每次重新输入已配置的密钥。
     """
     protocol = str(payload.get("protocol") or "openai")
     base_url = str(payload.get("base_url") or "").rstrip("/")
     api_key = str(payload.get("api_key") or "").strip()
+    profile_id = str(payload.get("profile_id") or "").strip()
+    secret_file = ctx._workspace_runtime_secret_file()
+    # 前端没传 key → 从已存储的密钥槽位补
+    if not api_key and profile_id:
+        api_key = ctx._load_profile_api_key(profile_id, secret_file) or ""
+    # 仍然没有 → 试 active provider 的运行时密钥（单组兼容）
+    if not api_key:
+        runtime_key = getattr(ctx.provider, "_runtime_api_key", None)
+        if runtime_key and ctx.provider.api_key_env:
+            api_key = runtime_key
+    # 仍然没有 → 试环境变量
+    if not api_key:
+        env_name = str(payload.get("api_key_env") or "")
+        if env_name:
+            api_key = ctx.os.getenv(env_name, "") or ""
     if not api_key:
         raise ctx.HTTPException(status_code=400, detail="请先填写该供应商的 API Key。")
     if protocol == "anthropic":

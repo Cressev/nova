@@ -131,7 +131,7 @@ export function SettingsDialog({ open, onClose, onSaved }: { open: boolean; onCl
     try {
       const result = await api<{ models?: ModelItem[] }>("/api/runtime/models", {
         method: "POST",
-        body: JSON.stringify({ protocol: p.protocol, base_url: p.base_url, api_key: keyOverride || "" }),
+        body: JSON.stringify({ protocol: p.protocol, base_url: p.base_url, api_key: keyOverride || "", profile_id: p.id, api_key_env: p.api_key_env }),
       })
       const items = (result.models || []) as ModelItem[]
       if (items.length === 0) { setError("该供应商返回空模型列表。"); return }
@@ -249,7 +249,7 @@ export function SettingsDialog({ open, onClose, onSaved }: { open: boolean; onCl
                 <div className="settings-profile-models-head">
                   <span className="settings-row-title">模型</span>
                   <div className="settings-models-actions">
-                    <button type="button" className="settings-link-button" disabled={probing === p.id} onClick={() => void probe(p)}>
+                    <button type="button" id={`settings-model-fetch-${p.id}`} className="settings-link-button" disabled={probing === p.id} onClick={() => void probe(p)}>
                       {probing === p.id ? "获取中…" : "获取可用模型"}
                     </button>
                     <button type="button" className="settings-add-model" onClick={() => { setAdding({ pid: p.id }); setAddValue("") }}>＋ 添加</button>

@@ -1,0 +1,1 @@
+- [26/09/15-00:42:08 CST] 修复 probe 获取模型要求重输密钥：根因是 probe 端点只接受前端传入的 api_key，而密钥已存储不回显→前端传空串→报 400。改为密钥优先级链：前端传入 > profile_id 已存槽位 > active provider 运行时密钥 > 环境变量。产物：api/runtime.py、SettingsDialog.tsx。验证：280 测试绿；API 不传 key 拉到 10 模型；浏览器候选面板正常。URL：http://127.0.0.1:8765。
