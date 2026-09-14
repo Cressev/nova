@@ -2406,3 +2406,21 @@ api 就不能再拆了吗？拆。
 [x] S6 e2e 四步全通：bigmodel 真调用 ok / key_set runtime / anthropic 无 key 显式错 / 切回 key 不丢
 [x] S7 收尾
 ------ todo-list end at 2026/09/14 16:04:06 -----
+
+------ todo-list begin at 2026/09/14 16:08:47 -----
+用户请求原文：设置是全局的，只要模型设置
+
+[x] G1 读写单源化
+[x] G2 迁移+移除（备份 /tmp/runtime-config.project.bak.json）
+[x] G3 对话框瘦身只留模型
+[x] G4 277 绿
+[x] G5 断言切换不漂移（待本轮 UI 一并提交）
+------ todo-list end at $(date '+%Y/%m/%d %H:%M:%S') -----
+
+------ todo-list begin at $(date '+%Y/%m/%d %H:%M:%S') -----
+用户请求原文：ui好看点啊，和dsh学习
+
+[x] U1 研读 dsh ui-theme/ui-settings/Modal 源码 + 截图 3080 实机（r24 面板/188px 导航/行式布局/即时生效/mask 24%+blur）
+[x] U2 重写 SettingsDialog：根因是旧版硬编码深色 fallback（--bg-elevated 等变量不存在）导致深色块与全站浅色割裂；改为 dsw token 驱动浅色 + 行式布局 + 即时生效 + Esc/遮罩关闭
+[x] U3 三轮视觉评审迭代（关闭钮右上/阴影加强/行高均匀/Ellipsis+等宽），277 测试绿 + 真调用 ok
+------ todo-list end at 2026/09/14 16:27:28 -----

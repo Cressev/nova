@@ -496,24 +496,18 @@ def _enforce_permission_sandbox_consistency() -> None:
 
 
 def _read_runtime_config_overrides(root: Path | None = None) -> dict:
-    merged: dict = {}
+    """全局单源（26/09/14 起）：设置只存 ~/.nova/config/runtime-config.json。
+
+    旧的"项目级 .nova/config 覆盖用户级"链路按用户要求移除——设置是全局
+    的，切工作区不再漂移；项目目录里遗留的旧配置文件不再被读取。
+    """
     try:
         user_payload = json.loads(
             settings.runtime_config_file.read_text(encoding="utf-8")
         )
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         user_payload = {}
-    if isinstance(user_payload, dict):
-        merged.update(user_payload)
-    project_file = _workspace_runtime_config_file(root)
-    if project_file != settings.runtime_config_file:
-        try:
-            project_payload = json.loads(project_file.read_text(encoding="utf-8"))
-        except (FileNotFoundError, json.JSONDecodeError, OSError):
-            project_payload = {}
-        if isinstance(project_payload, dict):
-            merged.update(project_payload)
-    return merged
+    return dict(user_payload) if isinstance(user_payload, dict) else {}
 
 
 def _permission_mode_label(permission_mode: str) -> str:

@@ -623,34 +623,34 @@ class ApiTest(unittest.TestCase):
             self.addCleanup(lambda: setattr(app_module.provider, "model", old_model))
             self.addCleanup(lambda: setattr(app_module.provider, "base_url", old_base_url))
 
+            # 26/09/14 起设置是全局单源：PATCH 写 ~/.nova/config/runtime-config.json，
+            # 不再落项目目录，切工作区配置不漂移（用户明确要求全局设置）。
             response_a = self.client.patch(
                 "/api/runtime/config",
                 json={"permission_mode": "ask", "sandbox_mode": "workspace_write", "approval_policy": "on_request"},
             )
             self.assertEqual(response_a.status_code, 200)
-            self.assertTrue((project_a / ".nova" / "config" / "runtime-config.json").exists())
+            self.assertFalse((project_a / ".nova" / "config" / "runtime-config.json").exists())
+            self.assertFalse((project_b / ".nova" / "config" / "runtime-config.json").exists())
 
             switch_b = self.client.post("/api/workspace/select", json={"path": str(project_b)})
             self.assertEqual(switch_b.status_code, 200)
+            config_b = self.client.get("/api/runtime/config").json()
+            # 切走后仍是同一份全局配置
+            self.assertEqual(config_b["permission_mode"], "ask")
+            self.assertEqual(config_b["approval_policy"], "on_request")
+
             response_b = self.client.patch(
                 "/api/runtime/config",
                 json={"permission_mode": "read_only", "sandbox_mode": "read_only", "approval_policy": "never"},
             )
             self.assertEqual(response_b.status_code, 200)
-            self.assertTrue((project_b / ".nova" / "config" / "runtime-config.json").exists())
 
             switch_a_again = self.client.post("/api/workspace/select", json={"path": str(project_a)})
-
             self.assertEqual(switch_a_again.status_code, 200)
             config_a = self.client.get("/api/runtime/config").json()
-            self.assertEqual(config_a["permission_mode"], "ask")
-            self.assertEqual(config_a["approval_policy"], "on_request")
-
-            switch_b_again = self.client.post("/api/workspace/select", json={"path": str(project_b)})
-            self.assertEqual(switch_b_again.status_code, 200)
-            config_b = self.client.get("/api/runtime/config").json()
-            self.assertEqual(config_b["permission_mode"], "read_only")
-            self.assertEqual(config_b["sandbox_mode"], "read_only")
+            self.assertEqual(config_a["permission_mode"], "read_only")
+            self.assertEqual(config_a["sandbox_mode"], "read_only")
 
     def test_stream_missing_provider_key(self) -> None:
         session_response = self.client.post(

@@ -21,7 +21,8 @@ async def update_runtime_config(payload: ctx.RuntimeConfigUpdate) -> dict:
             pending[key] = value.strip()
         else:
             pending[key] = value
-    config_file = ctx._workspace_runtime_config_file()
+    # 全局单源：设置写入 ~/.nova/config/runtime-config.json（不随工作区分裂）
+    config_file = ctx.settings.runtime_config_file
     config_file.parent.mkdir(parents=True, exist_ok=True)
     config_file.write_text(
         ctx.json.dumps(pending, ensure_ascii=False, indent=2),
