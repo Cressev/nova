@@ -4910,22 +4910,26 @@ body.inspector-collapsed .inspector-toggle {
   transform: rotate(180deg);
 }
 
-/* 浮层卡（figma MenuDropdown：r12、4px 内衬、发丝边、lv3 阴影） */
+/* 浮层卡（dsh MenuDropdown：r12、4px 内衬、发丝边、lv3 阴影）。
+ * 定位：默认向下弹出（composer 在底部，向下不会被视口裁切）；
+ * 用 max-height + 滚动保证不溢出。 */
 .menu-select-list {
   position: absolute;
-  bottom: calc(100% + 4px);
-  left: 0;
+  bottom: calc(100% + 6px);
+  right: 0;
   z-index: 100;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  min-width: 218px;
-  max-width: 360px;
-  max-height: calc(100vh - 24px);
+  min-width: 240px;
+  max-width: 380px;
+  /* 向上弹出：高度不超过视口的 60%，也不超过 320px，超出则内部滚动 */
+  max-height: min(320px, 60vh);
+  overflow: hidden;
   overflow-y: auto;
   padding: 4px;
   gap: 0;
-  border: 1px solid rgba(255, 255, 255, 0.64);
+  border: 1px solid var(--line-strong, rgba(0, 0, 0, 0.08));
   border-radius: 12px;
   background: #fff;
   box-shadow:
@@ -4933,19 +4937,40 @@ body.inspector-collapsed .inspector-toggle {
     0 2px 8px rgba(15, 23, 42, 0.08);
 }
 
+.menu-select-groups {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.menu-select-group + .menu-select-group {
+  margin-top: 4px;
+}
+
+.menu-select-group-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 10px 4px;
+  background: #fff;
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+}
+
 .menu-select-item {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 40px;
-  padding: 8px 10px;
+  min-height: 38px;
+  padding: 6px 10px;
   border: none;
   border-radius: 10px;
   background: transparent;
   cursor: pointer;
   font-size: 14px;
-  line-height: 22px;
+  line-height: 20px;
   color: #33363c;
   text-align: left;
 }
@@ -4954,9 +4979,17 @@ body.inspector-collapsed .inspector-toggle {
   background: rgba(0, 0, 0, 0.05);
 }
 
+/* 选中态：dsh 用 trailing check，不用填充背景 */
 .menu-select-item.selected {
   color: #171717;
   font-weight: 500;
+}
+
+.menu-select-check {
+  display: grid;
+  place-items: center;
+  flex: 0 0 18px;
+  color: var(--blue, #415eef);
 }
 
 .menu-select-item-icon {
@@ -5515,56 +5548,136 @@ body.inspector-collapsed .inspector-toggle {
   flex: none;
 }
 
-/* ---- 模型行（dsh ModelListEditor 语义：行 + 展开高级配置） ---- */
+
+/* ---- 设置面板模型区（dsh ModelsSection + DeepSeekModelsEditor 对齐） ---- */
+
+/* 模型行容器：dsh .modelEntry——带边框的卡片行 */
 .settings-model-row {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 4px 0;
-  border-bottom: 1px solid var(--line);
+  border: 1px solid var(--line-strong, rgba(0, 0, 0, 0.08));
+  border-radius: 8px;
+  padding: 4px 6px;
+  transition: border-color 120ms ease;
 }
-.settings-model-row:last-child { border-bottom: none; }
+.settings-model-row-current {
+  border-color: var(--blue, #415eef);
+}
+
+/* 行主区：dsh .modelRow——grid 布局 */
 .settings-model-row-main {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-height: 28px;
 }
-.settings-model-row-current .settings-model-chip-name {
-  color: var(--blue, #415eef);
-  font-weight: 600;
-}
-.settings-model-id-hint {
-  color: var(--muted);
-  font-size: 11px;
-  font-family: var(--mono, monospace);
-}
-.settings-model-expand {
+
+/* 模型名按钮：dsh 选中态用 ✓ 不用填充；当前模型加粗 + 蓝色 */
+.settings-model-chip-name {
+  flex: 1 1 auto;
+  min-width: 0;
   border: none;
   background: transparent;
-  color: var(--muted);
+  color: #33363c;
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-model-chip-name:hover {
+  color: var(--blue, #415eef);
+}
+.settings-model-chip-name-current {
+  font-weight: 500;
+  color: var(--blue, #415eef);
+}
+
+/* 模型 id 提示（有 display name 时显示真实 id） */
+.settings-model-id-hint {
+  flex: 0 0 auto;
+  color: var(--muted, #6b7280);
+  font-size: 11px;
+  font-family: var(--mono, ui-monospace, monospace);
+  line-height: 18px;
+}
+
+/* 展开按钮：dsh .iconButton——28px 方形透明 */
+.settings-model-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted, #8a8f98);
   cursor: pointer;
   font-size: 12px;
-  padding: 2px 4px;
-  border-radius: 4px;
 }
-.settings-model-expand:hover { color: var(--blue, #415eef); background: rgba(65,118,230,0.06); }
+.settings-model-expand:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #33363c;
+}
+
+/* 删除按钮：dsh .iconButtonDanger */
+.settings-model-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted, #8a8f98);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.settings-model-chip-remove:hover {
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+}
+
+/* 高级配置展开区：dsh .modelAdvanced——grid 自适应 */
 .settings-model-advanced {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 8px;
-  padding: 6px 8px 8px;
-  background: var(--bg-soft, rgba(0,0,0,0.02));
-  border-radius: 8px;
+  padding: 8px 4px 2px;
 }
+
 .settings-model-field {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  font-size: 11px;
-  color: var(--muted);
+  gap: 4px;
+}
+.settings-model-field > span {
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
 }
 .settings-model-field input {
+  box-sizing: border-box;
   width: 100%;
-  padding: 3px 6px;
-  font-size: 12px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong, rgba(0, 0, 0, 0.08));
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  background: var(--bg, #fff);
+  color: #33363c;
+}
+.settings-model-field input:focus {
+  outline: none;
+  border-color: var(--blue, #415eef);
 }

@@ -2507,3 +2507,13 @@ PYEOF
 [x] G4 ModelRow 组件：行展开高级配置（显示名/上下文窗口/最大输出）+ 删除/使用
 [x] G5 286 测试绿；下拉 2组7项全显示（不去重）；高级配置展开3字段；截图确认
 ------ todo-list end at 2026/09/15 01:19:38 -----
+
+------ todo-list begin at 2026/09/15 01:27:47 -----
+用户请求原文：设置中模型设置太丑 + 对话框模型选择应该下拉列表，学 dsh
+
+[x] U1 诊断：下拉向上弹被裁切、无✓、触发器不像按钮；模型 chip 散落无选中态
+[x] U2 dsh ModelSelect CSS + ModelsSection CSS：trigger 28px capsule、menu 向上弹+max-height+滚动、✓ check、modelEntry 带边框卡片
+[x] U3 模型行改为 dsh modelEntry 带边框卡片 + 选中蓝边框 + 展开高级配置 grid
+[x] U4 下拉：向上弹+max-height+overflow滚动、✓勾选标记、分组标题 sticky、触发器 28px capsule
+[x] U5 286测试绿；下拉7项全可见无裁切+✓；设置模型卡片化+蓝边框选中+高级配置3字段
+------ todo-list end at 2026/09/15 01:47:23 -----

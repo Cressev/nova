@@ -66,42 +66,52 @@ export function MenuSelect({ id, value, options, onChange, title, leadingIcon, g
       </button>
       {open ? (
         <div className="menu-select-list" role="listbox">
-          {groups ? (
-            groups.map((group) => (
-              <div className="menu-select-group" key={group.id} role="group" aria-label={group.label}>
-                <div className="menu-select-group-title">{group.label}</div>
-                {group.options.map((option) => (
+          <div className="menu-select-groups">
+            {groups ? (
+              groups.map((group) => (
+                <div className="menu-select-group" key={group.id} role="group" aria-label={group.label}>
+                  <div className="menu-select-group-title">{group.label}</div>
+                  {group.options.map((option) => {
+                    const isSelected = option.value === value
+                    return (
+                      <button
+                        key={`${group.id}/${option.value}`}
+                        type="button"
+                        role="option"
+                        aria-selected={isSelected}
+                        className={`menu-select-item${isSelected ? " selected" : ""}`}
+                        onClick={() => { onChange(option.value); setOpen(false) }}
+                      >
+                        <span className="menu-select-check">{isSelected ? "✓" : ""}</span>
+                        {option.icon !== undefined ? <span className="menu-select-item-icon">{option.icon}</span> : null}
+                        <span className="menu-select-item-label">{option.label}</span>
+                        {option.hint ? <span className="menu-select-item-hint">{option.hint}</span> : null}
+                      </button>
+                    )
+                  })}
+                </div>
+              ))
+            ) : (
+              options.map((option) => {
+                const isSelected = option.value === value
+                return (
                   <button
-                    key={`${group.id}/${option.value}`}
+                    key={option.value}
                     type="button"
                     role="option"
-                    aria-selected={option.value === value}
-                    className={`menu-select-item${option.value === value ? " selected" : ""}`}
+                    aria-selected={isSelected}
+                    className={`menu-select-item${isSelected ? " selected" : ""}`}
                     onClick={() => { onChange(option.value); setOpen(false) }}
                   >
+                    <span className="menu-select-check">{isSelected ? "✓" : ""}</span>
                     {option.icon !== undefined ? <span className="menu-select-item-icon">{option.icon}</span> : null}
                     <span className="menu-select-item-label">{option.label}</span>
                     {option.hint ? <span className="menu-select-item-hint">{option.hint}</span> : null}
                   </button>
-                ))}
-              </div>
-            ))
-          ) : (
-            options.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                role="option"
-                aria-selected={option.value === value}
-                className={`menu-select-item${option.value === value ? " selected" : ""}`}
-                onClick={() => { onChange(option.value); setOpen(false) }}
-              >
-                {option.icon !== undefined ? <span className="menu-select-item-icon">{option.icon}</span> : null}
-                <span className="menu-select-item-label">{option.label}</span>
-                {option.hint ? <span className="menu-select-item-hint">{option.hint}</span> : null}
-              </button>
-            ))
-          )}
+                )
+              })
+            )}
+          </div>
         </div>
       ) : null}
     </div>
