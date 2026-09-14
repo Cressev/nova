@@ -660,8 +660,12 @@ class ApiTest(unittest.TestCase):
         session = session_response.json()
 
         # 隔离工作区 runtime-config（preset 可能切换 api_key_env）；本测
-        # 固定回到 bigmodel 预设语义再清 key。
+        # 固定回到 bigmodel 预设语义，并清除运行时密钥（多组密钥槽位写入后
+        # provider._runtime_api_key 可能残留真 key 导致真调 API）。
         app_module.provider.api_key_env = "BIGMODEL_API_KEY"
+        saved_runtime_key = getattr(app_module.provider, "_runtime_api_key", None)
+        app_module.provider._runtime_api_key = None
+        self.addCleanup(lambda: setattr(app_module.provider, "_runtime_api_key", saved_runtime_key))
         with patch.dict("os.environ", {"BIGMODEL_API_KEY": ""}, clear=False):
             with self.client.stream(
                 "POST",
