@@ -4,6 +4,8 @@ export interface ChatSession {
   workspace: string | null
   created_at: string
   updated_at: string
+  parent_session_id?: string | null
+  seed_length?: number | null
 }
 
 export interface ChatMessage {

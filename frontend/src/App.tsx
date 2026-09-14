@@ -160,7 +160,7 @@ function foldTimeline(items: Array<{ kind: string; item: Record<string, unknown>
   return entries
 }
 
-function MessageView({ message }: { message: ChatMessage }) {
+function MessageView({ message, onForkAt }: { message: ChatMessage; onForkAt?: (messageId: string, messageRole: string) => void }) {
   const [collapsedTools, setCollapsedTools] = useState(false)
   if (message.role === "user") {
     return (
@@ -188,6 +188,14 @@ function MessageView({ message }: { message: ChatMessage }) {
       <div className="message-actions" data-role={message.role}>
         {message.created_at ? <span className="message-clock">{formatTime(message.created_at)}</span> : null}
         <CopyButton text={message.content || ""} />
+        {onForkAt && message.role === "assistant" && message.id ? (
+          <button
+            className="message-fork-button"
+            type="button"
+            title="从该回复处分叉出新会话"
+            onClick={() => onForkAt(message.id, message.role)}
+          >分支</button>
+        ) : null}
       </div>
     </article>
   )
@@ -283,6 +291,7 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, on
                     onClick={() => onSelect(session)}
                   >
                     <span className="session-dot" aria-hidden="true" />
+                    {session.parent_session_id ? <span className="session-fork-icon" title="分支会话">⑂</span> : null}
                     <strong>{shortText(session.title || "新会话", 28)}</strong>
                     <span className="session-time">{relativeTime(session.updated_at || session.created_at)}</span>
                     <span
@@ -401,7 +410,10 @@ function StatsLine({ sessionId }: { sessionId: string | null }) {
 }
 
 /* ---- 主时间线 ---- */
-function ConversationView({ entries, streamingText }: { entries: TimelineEntry[]; streamingText: string | null }) {
+function ConversationView({ entries, streamingText, onForkAt }: { entries: TimelineEntry[]
+  streamingText: string | null
+  onForkAt?: (messageId: string, messageRole: string) => void
+}) {
   const bottomRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" })
@@ -410,7 +422,7 @@ function ConversationView({ entries, streamingText }: { entries: TimelineEntry[]
     <div className="scroll-body" id="messages-scroll">
       <div className="messages" id="messages">
       {entries.map((entry) => {
-        if (entry.kind === "message") return <MessageView key={entry.key} message={entry.message} />
+        if (entry.kind === "message") return <MessageView key={entry.key} message={entry.message} onForkAt={onForkAt} />
         if (entry.kind === "checkpoint") return <CheckpointView key={entry.key} message={entry.message} />
         if (entry.kind === "think") return <ThinkRow key={entry.key} text={entry.text} running={entry.running} />
         if (entry.kind === "tool") {
@@ -492,6 +504,20 @@ export default function App() {
     void reloadSessions()
     void reloadShell()
   }, [])
+
+  const handleForkAt = async (messageId: string, _role: string) => {
+    if (!selectedId) return
+    try {
+      const child = await api<ChatSession>(
+        `/api/chat/sessions/${encodeURIComponent(selectedId)}/fork`,
+        { method: "POST", body: JSON.stringify({ at_seq: null }) },
+      )
+      await reloadSessions()
+      await selectSession(child)
+    } catch (exc) {
+      console.error("fork failed", exc)
+    }
+  }
 
   const selectSession = async (session: ChatSession) => {
     setSelectedId(session.id)
@@ -809,7 +835,11 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <ConversationView entries={entries} streamingText={streamingText} />
+          <ConversationView
+            entries={entries}
+            streamingText={streamingText}
+            onForkAt={handleForkAt}
+          />
         )}
         <div className="takeover-dock" id="takeover-dock">
           {takeovers.map((item) => (

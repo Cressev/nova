@@ -33,10 +33,23 @@ class ChatSession(BaseModel):
     workspace: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    # dsh fork 谱系：parent_session_id 指向 fork 来源会话；
+    # seed_length 标记从父会话继承的事件边界（前 N 条是继承的，之后是子会话自己的）。
+    parent_session_id: str | None = None
+    seed_length: int | None = None
 
 
 class ChatMessageCreate(BaseModel):
     content: str = Field(min_length=1, max_length=12000)
+
+
+class ChatSessionFork(BaseModel):
+    """会话 fork 请求（dsh session.fork 语义）。
+
+    at_seq 指定在哪个事件边界切片；省略则取最后一个事件的 seq。
+    边界不得落在未关闭的 turn 内（OPEN_TURN 校验）。
+    """
+    at_seq: int | None = Field(default=None, ge=0)
 
 
 class WorkspaceSelect(BaseModel):

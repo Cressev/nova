@@ -2469,3 +2469,12 @@ blocks[-1] = tail[:line_end + 1] + '[Done:]\n' + tail[line_end + 1:]
 open('user-queries.md', 'w').write(''.join(blocks))
 PYEOF
 ------ todo-list end at 2026/09/14 18:21:48 -----
+
+------ todo-list begin at 2026/09/14 22:25:29 -----
+用户请求原文：添加会话fork功能，仿照dsh，不要只抄表面，其内部实现完整实现要
+
+[x] F1 研读 dsh SessionStore.fork 完整实现：_forkSeed 切片事件 + OPEN_TURN 校验 + parentSession/seedLength 谱系 + increasedForkTitle 标题递增 + session.fork RPC + forkAt UI 入口
+[x] F2 ChatSession 加 parent_session_id/seed_length + SessionStore.fork_session（OPEN_TURN/INVALID_BOUNDARY/SESSION_NOT_FOUND 校验 + 消息切片 + 标题递增避碰撞）+ POST /api/chat/sessions/{id}/fork
+[x] F3 assistant 消息尾部"分支"按钮（dsh TurnTailNodeView onBranch 对齐）+ 侧栏 ⑂ 谱系图标 + fork 后自动切换到子会话 + 子会话继承消息
+[x] F4 7 fork 单测 + 280 全量绿；e2e 真对话→fork→子会话继承消息→继续对话；浏览器分支按钮→⑂图标→子会话切换
+------ todo-list end at 2026/09/14 22:42:46 -----

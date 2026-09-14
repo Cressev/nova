@@ -7,6 +7,27 @@ from . import routes as ctx
 router = APIRouter()
 
 
+@router.post("/api/chat/sessions/{session_id}/fork", status_code=201)
+async def fork_chat_session(session_id: str, payload: ctx.ChatSessionFork) -> ctx.ChatSession:
+    """会话 fork（dsh session.fork 对齐）：从 source 切片创建子会话。
+
+    at_seq 指定事件边界；省略取最后一个事件。子会话继承父会话到该边界的
+    全部对话历史 + 事件，之后是新分支。标题自动递增（Title (N)）。
+    """
+    source = ctx.store.get_chat_session(session_id)
+    if source is None:
+        raise ctx.HTTPException(status_code=404, detail="Chat session not found")
+    try:
+        child = ctx.store.fork_session(
+            session_id,
+            at_seq=payload.at_seq,
+        )
+    except ctx.SessionForkError as exc:
+        status_code = 404 if exc.code == "SESSION_NOT_FOUND" else 400
+        raise ctx.HTTPException(status_code=status_code, detail=f"{exc.code}: {exc}")
+    return child
+
+
 @router.post("/api/chat/sessions/{session_id}/cancel")
 async def cancel_chat_session_turn(session_id: str) -> dict:
     if ctx.store.get_chat_session(session_id) is None:

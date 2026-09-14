@@ -1,11 +1,38 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from threading import Lock
+from typing import Any
 
-from ..models import ChatEvent, ChatMessage, ChatSession, utc_now
+from ..models import ChatEvent, ChatMessage, ChatSession, new_id, utc_now
 from ..observability.trace import TraceRecorder
+
+
+class SessionForkError(RuntimeError):
+    """会话 fork 失败（dsh SessionForkError 对齐）。
+
+    code 取 dsh 的拒绝码语义：SESSION_NOT_FOUND / INVALID_BOUNDARY /
+    OPEN_TURN。
+    """
+    def __init__(self, message: str, code: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+def _increased_fork_title(title: str) -> str:
+    """fork 子会话标题递增（dsh increasedForkTitle 对齐）。
+
+    半角 (N) 和全角（N）都支持；无编号则追加 (1)。
+    """
+    ascii_match = re.match(r"^(.*?)\((\d+)\)$", title)
+    if ascii_match and ascii_match[2] is not None:
+        return f"{ascii_match[1]}({int(ascii_match[2]) + 1})"
+    full_match = re.match(r"^(.*?)（(\d+)）$", title)
+    if full_match and full_match[2] is not None:
+        return f"{full_match[1]}（{int(full_match[2]) + 1}）"
+    return f"{title} (1)"
 
 
 class SessionStore:
@@ -157,3 +184,129 @@ class SessionStore:
     def list_chat_events(self, session_id: str) -> list[ChatEvent]:
         with self._lock:
             return list(self._chat_events.get(session_id, []))
+
+    # ---- fork（dsh SessionStore.fork 完整对齐） ----
+
+    def fork_session(
+        self,
+        source_id: str,
+        *,
+        at_seq: int | None = None,
+        child_id: str | None = None,
+    ) -> ChatSession:
+        """从 source 会话切片创建子会话（dsh fork 语义）。
+
+        1. 解析源会话（不存在 → SESSION_NOT_FOUND）
+        2. 确定 boundary：at_seq 给定则用之，否则取最后一个事件的 seq
+        3. 校验 boundary 是合法的事件 seq（INVALID_BOUNDARY）
+        4. 校验 boundary 不落在未关闭的 turn 内（OPEN_TURN）——
+           即 boundary 之前最后一个 turn 事件不能是 turn.started
+           （没有对应的 turn.completed/turn.failed）
+        5. 复制 events[0..boundary] + messages（到 boundary 对应的消息为止）
+        6. 创建子会话：parent_session_id=source_id, seed_length=boundary+1
+        7. 标题递增（dsh increasedForkTitle）
+        """
+        with self._lock:
+            source = self._chat_sessions.get(source_id)
+            if source is None:
+                raise SessionForkError(
+                    f'会话 "{source_id}" 不存在', "SESSION_NOT_FOUND"
+                )
+
+            source_events = list(self._chat_events.get(source_id, []))
+            source_messages = list(self._chat_messages.get(source_id, []))
+
+            # 确定 boundary
+            if not source_events:
+                boundary = -1  # 空会话也能 fork（子会话也是空的）
+            elif at_seq is not None:
+                if at_seq < 0 or at_seq >= len(source_events):
+                    last_seq = source_events[-1].sequence
+                    raise SessionForkError(
+                        f'fork 边界 {at_seq} 不在会话 "{source_id}" 的事件范围内'
+                        f"（最后 seq: {last_seq}）",
+                        "INVALID_BOUNDARY",
+                    )
+                boundary = at_seq
+            else:
+                boundary = len(source_events) - 1
+
+            # OPEN_TURN 校验：boundary 之前最后一个 turn 事件若是 turn.started（无匹配结束），拒绝
+            if boundary >= 0:
+                seed_slice = source_events[: boundary + 1]
+                last_turn_event = None
+                for evt in reversed(seed_slice):
+                    if evt.event_type in (
+                        "turn.started",
+                        "turn.completed",
+                        "turn.failed",
+                        "turn.cancelled",
+                    ):
+                        last_turn_event = evt.event_type
+                        break
+                if last_turn_event == "turn.started":
+                    raise SessionForkError(
+                        f'fork 边界 {boundary} 落在会话 "{source_id}" 的未关闭 turn 内',
+                        "OPEN_TURN",
+                    )
+
+            # 切片事件
+            child_events = [evt.model_copy(deep=True) for evt in source_events[: boundary + 1]] if boundary >= 0 else []
+
+            # 切片消息：到 boundary 对应 turn 的 user message 为止
+            # （dsh：fork 继承的是对话历史到某 turn 结束，之后是新分支）
+            child_messages: list[ChatMessage] = []
+            if boundary >= 0:
+                # 找到 boundary 对应的最后一个 turn.completed/failed 的 message_id
+                cutoff_message_id: str | None = None
+                for evt in source_events[: boundary + 1]:
+                    if evt.event_type in ("turn.completed", "turn.failed", "turn.cancelled"):
+                        msg_data = evt.data or {}
+                        if isinstance(msg_data.get("message_id"), str):
+                            cutoff_message_id = msg_data["message_id"]
+                # 如果 boundary 落在 turn.started（但 OPEN_TURN 已拒绝），这里 cutoff 为 None → 取所有
+                if cutoff_message_id is not None:
+                    for msg in source_messages:
+                        child_messages.append(msg.model_copy(deep=True))
+                        if msg.id == cutoff_message_id:
+                            break
+                else:
+                    # 没有完成的 turn，取到 boundary 的 user message
+                    for msg in source_messages:
+                        child_messages.append(msg.model_copy(deep=True))
+                    # 只保留 user/assistant 到对应位置
+                    if child_events:
+                        # 找到最后一个 user message
+                        user_msgs = [m for m in child_messages if m.role.value == "user"]
+                        if user_msgs:
+                            last_user = user_msgs[-1]
+                            child_messages = [
+                                m for m in child_messages
+                                if m.created_at <= last_user.created_at
+                            ]
+
+            # 重置子会话事件的 sequence 起点（子会话从自己的 seq=1 开始计数）
+            for i, evt in enumerate(child_events):
+                evt.sequence = i + 1
+
+            # 创建子会话
+            child_session_id = child_id or new_id("chat")
+            # 标题递增 + 避名碰撞：若已有同名会话，继续递增直到唯一
+            child_title = _increased_fork_title(source.title)
+            existing_titles = {s.title for s in self._chat_sessions.values()}
+            while child_title in existing_titles:
+                child_title = _increased_fork_title(child_title)
+            child_session = ChatSession(
+                id=child_session_id,
+                title=child_title,
+                workspace=source.workspace,
+                parent_session_id=source_id,
+                seed_length=boundary + 1 if boundary >= 0 else 0,
+            )
+
+            self._chat_sessions[child_session_id] = child_session
+            self._chat_messages[child_session_id] = child_messages
+            self._chat_events[child_session_id] = child_events
+            self._save_chats()
+
+            return child_session

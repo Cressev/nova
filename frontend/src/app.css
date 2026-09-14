@@ -5488,3 +5488,29 @@ body.inspector-collapsed .inspector-toggle {
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* ---- 会话分支按钮（dsh TurnTailNodeView onBranch 对齐） ---- */
+.message-fork-button {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  height: 22px;
+  padding: 0 10px;
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+}
+.message-fork-button:hover {
+  color: var(--blue, #415eef);
+  border-color: var(--blue, #415eef);
+  background: var(--dsw-static-deepseek-50, rgba(65, 118, 230, 0.06));
+}
+.session-fork-icon {
+  color: var(--blue, #415eef);
+  font-size: 11px;
+  margin-right: 2px;
+  flex: none;
+}

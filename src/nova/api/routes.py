@@ -45,6 +45,7 @@ from ..runtime import (
 )
 from ..runtime.commands import list_builtin_commands
 from ..sessions import AgentSessionService, SessionStore
+from ..sessions.store import SessionForkError
 from ..skills import SkillManager
 from ..subagents import SubAgentManager, SubAgentRun
 from ..tools.executor import ToolExecutor
@@ -57,6 +58,7 @@ from ..models import (
     ChatRole,
     ChatSession,
     ChatSessionCreate,
+    ChatSessionFork,
     Health,
     RuntimeConfigUpdate,
     RuntimeSecretUpdate,
