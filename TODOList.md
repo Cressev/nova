@@ -2424,3 +2424,12 @@ api 就不能再拆了吗？拆。
 [x] U2 重写 SettingsDialog：根因是旧版硬编码深色 fallback（--bg-elevated 等变量不存在）导致深色块与全站浅色割裂；改为 dsw token 驱动浅色 + 行式布局 + 即时生效 + Esc/遮罩关闭
 [x] U3 三轮视觉评审迭代（关闭钮右上/阴影加强/行高均匀/Ellipsis+等宽），277 测试绿 + 真调用 ok
 ------ todo-list end at 2026/09/14 16:27:28 -----
+
+------ todo-list begin at 2026/09/14 17:35:00 -----
+用户请求原文：设置中增加自动获取模型列表
+
+[x] M1 双协议 list_models 完成（BigModel 走 openai SDK models.list；Anthropic 走 /v1/models + display_name）
+[x] M2 路由完成（无 key 400 / 拉取失败 502 显式 detail，不静默）
+[x] M3 datalist + ↻ 按钮（描述行反馈"已获取 N 个模型，可下拉选择"）
+[x] M4 279 测试绿；真拉 10 个 GLM 模型（含 glm-5）；浏览器全流程：获取→下拉→切换即时生效→还原
+------ todo-list end at 2026/09/14 17:37:30 -----

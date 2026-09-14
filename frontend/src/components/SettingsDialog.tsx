@@ -28,11 +28,19 @@ const PROTOCOL_LABELS: Record<string, string> = {
   anthropic: "Anthropic Messages",
 }
 
+interface ModelItem {
+  id: string
+  owned_by?: string
+  display_name?: string
+}
+
 export function SettingsDialog({ open, onClose, onSaved }: { open: boolean; onClose: () => void; onSaved: () => void }) {
   const [config, setConfig] = useState<ConfigShape>({})
   const [apiKeyInput, setApiKeyInput] = useState("")
   const [flash, setFlash] = useState("")
   const [error, setError] = useState("")
+  const [models, setModels] = useState<ModelItem[]>([])
+  const [modelsLoading, setModelsLoading] = useState(false)
   const flashTimer = useRef<number | null>(null)
 
   useEffect(() => {
@@ -52,17 +60,33 @@ export function SettingsDialog({ open, onClose, onSaved }: { open: boolean; onCl
     return () => window.removeEventListener("keydown", onKey)
   }, [open, onClose])
 
-  if (!open) return null
-
-  const presets = (config.provider_presets || []) as PresetItem[]
-  const currentPreset = presets.find((p) => p.id === (config.provider_preset || "bigmodel"))
-  const protocol = currentPreset?.protocol || "openai"
-
   const showFlash = (text: string) => {
     setFlash(text)
     if (flashTimer.current) window.clearTimeout(flashTimer.current)
     flashTimer.current = window.setTimeout(() => setFlash(""), 1600)
   }
+
+  /* 自动获取模型列表（当前 provider 的 /models 端点；失败提示手动输入）。 */
+  const fetchModels = async () => {
+    setModelsLoading(true)
+    setError("")
+    try {
+      const result = await api<{ models?: ModelItem[]; count?: number }>("/api/runtime/models")
+      const items = (result.models || []) as ModelItem[]
+      setModels(items)
+      showFlash(`已获取 ${items.length} 个模型`)
+    } catch (exc) {
+      setError(`模型列表获取失败：${String((exc as Error)?.message || exc)}，可手动输入模型名。`)
+    } finally {
+      setModelsLoading(false)
+    }
+  }
+
+  if (!open) return null
+
+  const presets = (config.provider_presets || []) as PresetItem[]
+  const currentPreset = presets.find((p) => p.id === (config.provider_preset || "bigmodel"))
+  const protocol = currentPreset?.protocol || "openai"
 
   /* 即时生效（dsh 语义：改动即落盘，没有保存按钮）。 */
   const patch = async (update: Record<string, unknown>) => {
@@ -155,24 +179,44 @@ export function SettingsDialog({ open, onClose, onSaved }: { open: boolean; onCl
             <div className="settings-row">
               <div className="settings-row-text">
                 <span className="settings-row-title">模型</span>
-                <span className="settings-row-desc">模型名</span>
+                <span className="settings-row-desc">
+                  {models.length > 0 ? `已获取 ${models.length} 个模型，可下拉选择` : "模型名，可点击右侧按钮自动获取"}
+                </span>
               </div>
-              <input
-                id="settings-model"
-                className="settings-control settings-control-mono"
-                type="text"
-                title={String(config.model || "")}
-                defaultValue={String(config.model || "")}
-                key={`model-${config.provider_preset}`}
-                placeholder="glm-4.7"
-                onBlur={(e) => {
-                  const value = e.target.value.trim()
-                  if (value && value !== String(config.model || "")) {
-                    setConfig((c) => ({ ...c, model: value }))
-                    void patch({ provider_model: value })
-                  }
-                }}
-              />
+              <div className="settings-model-cell">
+                <input
+                  id="settings-model"
+                  className="settings-control settings-control-mono"
+                  type="text"
+                  list="settings-model-options"
+                  title={String(config.model || "")}
+                  defaultValue={String(config.model || "")}
+                  key={`model-${config.provider_preset}-${models.length}`}
+                  placeholder="glm-4.7"
+                  onBlur={(e) => {
+                    const value = e.target.value.trim()
+                    if (value && value !== String(config.model || "")) {
+                      setConfig((c) => ({ ...c, model: value }))
+                      void patch({ provider_model: value })
+                    }
+                  }}
+                />
+                <datalist id="settings-model-options">
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>{m.display_name || m.owned_by || ""}</option>
+                  ))}
+                </datalist>
+                <button
+                  id="settings-model-fetch"
+                  className="settings-model-fetch"
+                  type="button"
+                  title="从提供方获取可用模型列表"
+                  disabled={modelsLoading}
+                  onClick={() => void fetchModels()}
+                >
+                  {modelsLoading ? "…" : "↻"}
+                </button>
+              </div>
             </div>
             <div className="settings-row">
               <div className="settings-row-text">

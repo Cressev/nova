@@ -211,6 +211,44 @@ class AnthropicProvider:
         self.session_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         return snapshot
 
+    # ---- 模型列表 ----
+
+    async def list_models(self) -> list[dict[str, Any]]:
+        """拉取可用模型列表（GET /v1/models，Anthropic 原生分页端点）。"""
+        api_key = self._require_api_key()
+        client = self._client()
+        try:
+            response = await client.get(
+                f"{self.base_url}/v1/models",
+                headers=self._headers(api_key),
+                params={"limit": 100},
+            )
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"模型列表获取失败：{exc}") from exc
+        finally:
+            await client.aclose()
+        if response.status_code >= 400:
+            raise ProviderError(f"Anthropic 接口错误 {response.status_code}：{response.text[:300]}")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise ProviderError("Anthropic 返回非 JSON 响应。") from exc
+        items = payload.get("data") if isinstance(payload.get("data"), list) else []
+        models: list[dict[str, Any]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            model_id = str(item.get("id") or "").strip()
+            if not model_id:
+                continue
+            entry: dict[str, Any] = {"id": model_id}
+            display = str(item.get("display_name") or "").strip()
+            if display and display != model_id:
+                entry["display_name"] = display
+            models.append(entry)
+        models.sort(key=lambda m: m["id"])
+        return models
+
     # ---- 非流式 ----
 
     async def complete_with_tools(

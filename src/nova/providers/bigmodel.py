@@ -225,6 +225,35 @@ class BigModelProvider:
             }
         return {"description": str(value)}
 
+    async def list_models(self) -> list[dict[str, Any]]:
+        """拉取提供方可用模型列表（OpenAI 兼容 GET {base_url}/models）。
+
+        返回 [{id, ...}]；失败抛 ProviderError（调用方转显式错误，绝不静默）。
+        """
+        api_key = self._api_key()
+        if not api_key:
+            raise ProviderError(
+                f"未配置 {self.api_key_env}，请在设置页填写 API Key，或在启动服务前设置环境变量。"
+            )
+        client = self._openai_client(api_key)
+        try:
+            response = await client.models.list()
+        except Exception as exc:
+            raise ProviderError(f"模型列表获取失败：{exc}") from exc
+        items = self._read_attr(response, "data")
+        models: list[dict[str, Any]] = []
+        if isinstance(items, list):
+            for item in items:
+                model_id = self._read_attr(item, "id")
+                if isinstance(model_id, str) and model_id:
+                    entry: dict[str, Any] = {"id": model_id}
+                    owned = self._read_attr(item, "owned_by")
+                    if isinstance(owned, str) and owned:
+                        entry["owned_by"] = owned
+                    models.append(entry)
+        models.sort(key=lambda m: m["id"])
+        return models
+
     async def complete_with_tools(
         self,
         messages: list[ChatMessage],

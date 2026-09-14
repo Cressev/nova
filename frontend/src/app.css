@@ -5237,3 +5237,36 @@ body.inspector-collapsed .inspector-toggle {
   font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   font-size: 12px;
 }
+.settings-model-cell {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.settings-model-cell .settings-control {
+  width: 186px;
+}
+.settings-model-fetch {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+}
+.settings-model-fetch:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+.settings-model-fetch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

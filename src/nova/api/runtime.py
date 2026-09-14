@@ -12,6 +12,32 @@ async def runtime_config() -> dict:
     return ctx._runtime_config_payload()
 
 
+@router.get("/api/runtime/models")
+async def runtime_model_list() -> dict:
+    """设置面板"自动获取模型列表"：用当前全局 provider 拉可用模型。
+
+    OpenAI 兼容协议走 GET {base_url}/models，Anthropic 走 /v1/models；
+    失败返回 502 + 明确原因（不静默降级），前端提示改手动输入。
+    """
+    if not hasattr(ctx.provider, "list_models"):
+        raise ctx.HTTPException(status_code=501, detail="当前提供方不支持模型列表获取。")
+    if not ctx.provider.is_configured():
+        raise ctx.HTTPException(
+            status_code=400,
+            detail=f"未配置 {ctx.provider.api_key_env}，请先在设置页填写 API Key。",
+        )
+    try:
+        models = await ctx.provider.list_models()
+    except ctx.ProviderError as exc:
+        raise ctx.HTTPException(status_code=502, detail=str(exc))
+    return {
+        "ok": True,
+        "count": len(models),
+        "models": models,
+        "current": ctx.provider.model,
+    }
+
+
 @router.patch("/api/runtime/config")
 async def update_runtime_config(payload: ctx.RuntimeConfigUpdate) -> dict:
     pending = ctx._read_runtime_config_overrides()

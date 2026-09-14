@@ -131,3 +131,36 @@ class AnthropicProtocolTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ListModelsTest(unittest.TestCase):
+    def test_anthropic_list_models(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path.endswith("/v1/models")
+            assert request.headers["x-api-key"] == "test-key"
+            return httpx.Response(200, json={"data": [
+                {"id": "claude-sonnet-4-5", "display_name": "Sonnet 4.5"},
+                {"id": "claude-opus-4", "display_name": "Opus 4"},
+            ]})
+
+        provider = AnthropicProvider(
+            base_url="https://api.anthropic.com",
+            http_client_factory=lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        provider.set_runtime_api_key("test-key")
+        models = asyncio.run(provider.list_models())
+        self.assertEqual([m["id"] for m in models], ["claude-opus-4", "claude-sonnet-4-5"])
+        self.assertEqual(models[1]["display_name"], "Sonnet 4.5")
+
+    def test_anthropic_list_models_error(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(401, json={"error": "invalid key"})
+
+        provider = AnthropicProvider(
+            base_url="https://api.anthropic.com",
+            http_client_factory=lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        provider.set_runtime_api_key("bad")
+        from nova.providers.anthropic import ProviderError as AnthropicError
+        with self.assertRaises(AnthropicError):
+            asyncio.run(provider.list_models())
