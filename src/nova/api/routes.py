@@ -146,8 +146,8 @@ def _workspace_tools(session_id: str | None = None) -> WorkspaceTools:
                 sandbox_mode=settings.sandbox_mode,
                 network_access=settings.network_access,
                 zai_api_key=provider.api_key_for_tools(),
-                session_store=store,
             )
+            tools.session_store = store
             _hydrate_session_tool_state(tools, session_id)
             _session_tools_cache[session_id] = tools
         else:
@@ -171,6 +171,40 @@ def _hydrate_session_tool_state(tools: WorkspaceTools, session_id: str) -> None:
     except Exception:
         # 恢复失败不阻断会话（状态可重建）
         pass
+
+
+def _agent_runtime_for_session(session_id: str) -> CodexLikeAgentRuntime:
+    """会话级 runtime：tools 用 _workspace_tools(session_id) 缓存实例。
+
+    模型工具调用（update_goal/schedule_create/todo_write）与 goal 续跑驱动、
+    审批续跑读的是同一实例——否则每轮新建 runtime 会把会话态清零（26/09/14
+    修复：此前驱动读 orchestrator 实例而模型写 runtime 自有实例，永不相见）。
+    """
+    if _runtime_override is not None:
+        return _runtime_override
+    # 测试 seam：patch.object(routes, "_agent_runtime", FakeRuntime) 的旧用法保持
+    # 生效——模块属性被替换过（不再指向本模块原函数）就尊重替换结果。
+    current_factory = globals().get("_agent_runtime")
+    if current_factory is not None and current_factory is not _original_agent_runtime:
+        return current_factory()
+    return CodexLikeAgentRuntime(
+        provider=provider,
+        project_root=workspace_manager.current_root,
+        global_agent_file=settings.global_agent_file,
+        max_tool_rounds=settings.max_tool_rounds,
+        permission_mode=settings.permission_mode,
+        sandbox_mode=settings.sandbox_mode,
+        approval_policy=settings.approval_policy,
+        network_access=settings.network_access,
+        tool_hooks_file=_workspace_tool_hooks_file(),
+        process_manager=process_manager,
+        trace_recorder=LangfuseTraceRecorder(
+            load_langfuse_config(_workspace_runtime_secret_file())
+        ),
+        subagent_manager=subagent_manager,
+        session_store=store,
+        tools=_workspace_tools(session_id),
+    )
 
 
 def _compaction_engine():
@@ -217,6 +251,9 @@ def _agent_runtime() -> CodexLikeAgentRuntime:
     )
 
 
+_original_agent_runtime = _agent_runtime
+
+
 def _subagent_runner(run: SubAgentRun) -> str:
     """在受限上下文中运行一个子 Agent；模型不可用时回退到本地摘要。"""
 
@@ -255,7 +292,7 @@ def _subagent_runner(run: SubAgentRun) -> str:
         return content or "Scope: 子 Agent\nResult: 未收到模型最终回答。"
 
     try:
-        return asyncio.run(asyncio.wait_for(collect(), timeout=20.0))
+        return asyncio.run(asyncio.wait_for(collect(), timeout=100.0))
     except (
         asyncio.TimeoutError,
         ProviderError,

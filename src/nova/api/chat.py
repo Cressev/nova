@@ -293,7 +293,7 @@ async def stream_chat_message(
             ctx.SessionRunDependencies(
                 store=ctx.store,
                 agent_sessions=ctx.agent_sessions,
-                runtime_factory=ctx._agent_runtime,
+                runtime_factory=lambda sid=session_id: ctx._agent_runtime_for_session(sid),
                 id_factory=ctx.new_id,
                 persist_event=ctx._persist_runtime_event,
                 runtime_event_from_agent_event=ctx._runtime_event_from_agent_event,

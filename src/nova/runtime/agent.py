@@ -101,19 +101,25 @@ class CodexLikeAgentRuntime:
         trace_recorder: object | None = None,
         subagent_manager: object | None = None,
         session_store: object | None = None,
+        tools: WorkspaceTools | None = None,
     ) -> None:
         tool_api_key = None
         api_key_for_tools = getattr(provider, "api_key_for_tools", None)
         if callable(api_key_for_tools):
             tool_api_key = api_key_for_tools()
         self.provider = provider
-        self.tools = WorkspaceTools(
-            project_root,
-            permission_mode=permission_mode,
-            sandbox_mode=sandbox_mode,
-            network_access=network_access,
-            zai_api_key=tool_api_key,
-        )
+        if tools is not None:
+            # 会话级注入：goal/schedule/todo 状态与执行器共享同一实例
+            # （dsh 语义：goal 状态属于会话，不属于某一次 turn 的 runtime）。
+            self.tools = tools
+        else:
+            self.tools = WorkspaceTools(
+                project_root,
+                permission_mode=permission_mode,
+                sandbox_mode=sandbox_mode,
+                network_access=network_access,
+                zai_api_key=tool_api_key,
+            )
         self.hooks = ToolHookRunner.from_file(tool_hooks_file, cwd=project_root)
         self.process_manager = process_manager or ProcessManager()
         # dsh 语义：取消权威在会话层（AgentSessionRegistry 在 runtime 上置

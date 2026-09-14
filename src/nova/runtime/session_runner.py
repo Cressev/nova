@@ -299,28 +299,30 @@ class SessionRunner:
             done = int(goal.get("completed_rounds") or 0)
             if isinstance(max_rounds, int) and done >= max_rounds:
                 return
-            # 续跑一轮
+            # 续跑一轮（快照+goal.round 双双落库：stream 可见 + trace/replay 可回放）
             goal["completed_rounds"] = done + 1
             self._persist_goal_snapshot(session_id, goal)
-            yield {
-                "type": "runtime_event",
-                "event": {
-                    "id": f"goaltick_{session_id}_{done + 1}",
-                    "session_id": session_id,
-                    "turn_id": "goal-driver",
-                    "event_type": "goal.round",
-                    "category": "goal",
-                    "phase": "running",
-                    "status": "ok",
-                    "title": f"目标续跑 第 {done + 1} 轮",
-                    "message": goal.get("objective", ""),
-                    "tool": None,
-                    "call_id": None,
-                    "arguments": {},
-                    "output": None,
-                    "data": dict(goal),
-                },
+            round_event = {
+                "id": f"goaltick_{session_id}_{done + 1}",
+                "session_id": session_id,
+                "turn_id": "goal-driver",
+                "event_type": "goal.round",
+                "category": "goal",
+                "phase": "running",
+                "status": "ok",
+                "title": f"目标续跑 第 {done + 1} 轮",
+                "message": goal.get("objective", ""),
+                "tool": None,
+                "call_id": None,
+                "arguments": {},
+                "output": None,
+                "data": dict(goal),
             }
+            try:
+                self.deps.persist_event(round_event)
+            except Exception:
+                pass
+            yield {"type": "runtime_event", "event": round_event}
             continuation = ChatMessage(
                 session_id=session_id,
                 role=ChatRole.USER,

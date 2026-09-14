@@ -2372,3 +2372,13 @@ api 就不能再拆了吗？拆。
 [x] C2 多 provider：registry 六预设+PATCH 热切三元组+provider-select 工具条；实测 deepseek↔bigmodel 往返
 [x] 全量验收：262 测试绿+tsc/build 过+8765 端到端（token/统计行/工具清单）+审计文档 7.A 更新
 ------ todo-list end at 2026/09/09 16:15:30 -----
+
+------ todo-list begin at 2026/09/14 11:10:46 -----
+用户请求原文：workflow 工具复现得如何了
+
+[x] 核查 workflow/subagent 真实链路：编排层真；直连冒烟走占位 runner（上轮"2/2"是空心的）；_subagent_runner 20s 超时必降级
+[x] 发现并修复更大的假对齐：goal 续跑驱动读的实例 ≠ 模型写 goal 的实例，续跑从未触发（runtime 支持注入 tools + 会话级 runtime 工厂 + 测试 seam）
+[x] goal.round/goal.snapshot 双落库（stream + trace 回放）
+[x] e2e 复验：goal turn.started=2 + goal.round 落库=1；workflow 真模型 144/巴黎 无兜底
+[x] 262 测试绿；审计 7.A 诚实修正；会话清理
+------ todo-list end at 2026/09/14 11:10:46 -----

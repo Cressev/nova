@@ -131,9 +131,11 @@
 
 ### 7.A 能力层差距批次（26/09/09 补齐记录）
 对 2026-09-09 全景盘点（dsh 51 包 vs Nova 22 模块）的落地批次：
-- **模型协作**：goal 续跑驱动（`SessionRunner._drive_goal_rounds`：turn 后 active 目标自动注入续跑轮，`goal.round`/`goal.snapshot` 事件，进程重启经事件快照恢复）✅；todo（文件持久 .nova/agent-todos.json，先前已有）✅；schedule（到期注入下一轮 turn 开头，先前已有）✅；plan_submit 计划审批（复用 user_question 挂起管线，data.plan 区分，批准/驳回续跑）✅；feedback API（POST /api/chat/sessions/{id}/feedback，👍/👎+评论落事件）✅。
+- **模型协作**：goal 续跑驱动（`SessionRunner._drive_goal_rounds`：turn 后 active 目标自动注入续跑轮，`goal.round`/`goal.snapshot` 事件，进程重启经事件快照恢复）✅
+  - **26/09/14 修正**：09/09 版有假——驱动读 orchestrator 缓存实例而模型写每轮新建的 runtime 自有 tools，两实例永不相见，续跑从未真正触发（当日 e2e 只有 1 个 turn.started，被我误标 ✅）。修复：`CodexLikeAgentRuntime` 支持注入 tools 实例 + `_agent_runtime_for_session(session_id)` 会话级工厂（chat.py 的 SessionRunner 全走它），模型/驱动/审批续跑共享同一实例。复验：turn.started=2、goal.round+goal.snapshot 各 1 落库、续跑注入消息可见。todo（文件持久 .nova/agent-todos.json，先前已有）✅；schedule（到期注入下一轮 turn 开头，先前已有）✅；plan_submit 计划审批（复用 user_question 挂起管线，data.plan 区分，批准/驳回续跑）✅；feedback API（POST /api/chat/sessions/{id}/feedback，👍/👎+评论落事件）✅。
 - **会话工具状态**：`_workspace_tools(session_id)` 会话级缓存（goal/todo/schedule 跨请求存活）+ `_hydrate_session_tool_state` 事件恢复 ✅。
-- **智能编排**：workflow_run 并行 fan-out（≤6 子代理线程池，失败隔离聚合 JSON 报告）✅。
+- **智能编排**：workflow_run 并行 fan-out（≤6 子代理线程池，失败隔离聚合 JSON 报告）✅
+  - **26/09/14 补验**：09/09 冒烟走的是旁路（直连 WorkspaceTools → 本地占位 runner），"2/2 完成"是空心胜利；且 `_subagent_runner` 20s 超时会让真模型必然降级占位。修复：超时放宽到 100s；经服务端 chat 链路复验（runtime 注入全局打过补丁的 manager），两 worker 输出真模型答案（12×12=144 / 巴黎）。距 dsh 仍有差距：无 JS 脚本编排（agent/pipeline/parallel/phase 钩子）、无 schema 校验结果、无逐 agent 模型覆盖。
 - **检索**：session_search 跨会话关键词检索（挂 session_store）✅。
 - **运行时底座**：token-meter（7.9 部分）✅；多 provider（registry 预设 bigmodel/deepseek/openai/moonshot/siliconflow/custom，PATCH 热切 base_url/model/api_key_env 三元组，设置工具条 provider-select）✅；PTY 持久终端（pty_start/write/read/list/kill，openpty+TIOCSWINSZ+滚动 256KB 缓冲，OS 沙箱内，permission=shell 走完整审批门）✅。
 - **仍缺**：e2b 云沙箱（POC 不搬）、acp 程序化接入、attachment 对话附件、credentials 三层分离、identity、feedback 前端按钮（7.5 关联）、subtool/context 轨迹行型（7.7）。
