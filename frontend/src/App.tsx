@@ -4,6 +4,7 @@ import { api, cx, formatTime, projectName, relativeTime, shortText, workspaceGro
 import { Markdown, CopyButton } from "./components/Markdown"
 import { ToolEventRow, deriveToolSummary, type ToolEventView } from "./components/ToolEvent"
 import { PermissionCard, QuestionCard } from "./components/Takeover"
+import { SettingsDialog } from "./components/SettingsDialog"
 import { TraceView } from "./components/TraceView"
 import { ThinkRow } from "./components/ThinkRow"
 import { MenuSelect } from "./components/MenuSelect"
@@ -206,13 +207,14 @@ function CheckpointView({ message }: { message: ChatMessage }) {
 }
 
 /* ---- 侧栏 ---- */
-function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, onDelete, onNewChat }: {
+function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, onDelete, onNewChat, onOpenSettings }: {
   sessions: ChatSession[]
   selectedId: string | null
   currentWorkspace: string
   version: string
   onSelect: (session: ChatSession) => void
   onDelete: (id: string) => void
+  onOpenSettings: () => void
   onNewChat: () => void
 }) {
   const [query, setQuery] = useState("")
@@ -307,7 +309,7 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, on
         </nav>
       </div>
       <div className="sidebar-foot">
-        <button className="sidebar-foot-button" type="button" id="open-settings">
+        <button className="sidebar-foot-button" type="button" id="open-settings" onClick={onOpenSettings}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6.8 1.8h2.4l.4 1.7 1.5.9 1.6-.7 1.2 2.1-1.2 1.2v1.7l1.2 1.2-1.2 2.1-1.6-.7-1.5.9-.4 1.7H6.8l-.4-1.7-1.5-.9-1.6.7-1.2-2.1 1.2-1.2V8.2L2.1 7l1.2-2.1 1.6.7 1.5-.9.4-1.7Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><circle cx="8" cy="8" r="2.1" stroke="currentColor" strokeWidth="1.2"/></svg>
           <span>设置</span>
         </button>
@@ -443,6 +445,7 @@ export default function App() {
   const [streamState, setStreamState] = useState("")
   const [streamingText, setStreamingText] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<"chat" | "trace">("chat")
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [draft, setDraft] = useState("")
   const [running, setRunning] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
@@ -761,6 +764,7 @@ export default function App() {
 
   return (
     <div className="app-shell" data-main-state={mainState}>
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={() => void reloadShell()} />
       <Sidebar
         sessions={sessions}
         selectedId={selectedId}
@@ -769,6 +773,7 @@ export default function App() {
         onSelect={selectSession}
         onDelete={deleteSession}
         onNewChat={newChat}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
       <main className="main-col">
         {hasContent || streamingText !== null ? (

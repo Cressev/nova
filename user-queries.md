@@ -1182,3 +1182,10 @@ workflow 工具复现得如何了
 
 [Recieve:26/09/14-15:21:33 CST]
 [Done:26/09/14-15:47:22 CST | fc47fd1]
+
+---
+
+设置点开都没用，不能配置模型呢，要支持的协议（openai 的 chat response；anthroic格式）
+
+[Recieve:26/09/14-15:56:38 CST]
+[Done:26/09/14-16:04:06 CST | ab34dfc]

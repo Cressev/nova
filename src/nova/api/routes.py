@@ -426,16 +426,46 @@ def _apply_runtime_config(update: dict) -> None:
     """把设置页保存的配置同步到当前进程，避免用户每次切换权限后都要重启。"""
     from ..providers.registry import resolve_preset
 
+    global provider
+
     for key, value in update.items():
         if key == "provider_preset" and isinstance(value, str):
             preset = resolve_preset(value)
-            provider.api_key_env = str(preset["api_key_env"])
+            protocol = str(preset.get("protocol") or "openai")
+            previous = provider
+            previous_key_env = getattr(previous, "api_key_env", "")
+            previous_runtime_key = getattr(previous, "_runtime_api_key", None)
+            new_env = str(preset["api_key_env"])
+            # 协议切换 = 换 provider 实例；同形接口 + 持久化 key 文件随身携带
+            # （设置页写过的 key 在预设间切换不丢；同 env 的运行时 key 直接继承）。
+            if protocol == "anthropic":
+                from ..providers.anthropic import AnthropicProvider
+
+                provider = AnthropicProvider(
+                    base_url=str(preset["base_url"]) or None,
+                    model=str(preset.get("default_model") or "") or None,
+                    api_key_env=new_env,
+                    api_key_file=settings.runtime_secret_file,
+                )
+            elif provider.__class__.__name__ != "BigModelProvider":
+                from ..providers.bigmodel import BigModelProvider
+
+                provider = BigModelProvider(
+                    base_url=str(preset["base_url"]) or None,
+                    model=str(preset.get("default_model") or "") or None,
+                    api_key_env=new_env,
+                    api_key_file=settings.runtime_secret_file,
+                )
+            else:
+                provider.api_key_env = new_env
+            if previous_key_env == new_env and previous_runtime_key and not getattr(provider, "_runtime_api_key", None):
+                provider.set_runtime_api_key(previous_runtime_key)
             if preset["base_url"]:
                 provider.base_url = str(preset["base_url"]).rstrip("/")
-                object.__setattr__(settings, "provider_base_url", provider.base_url)
+            object.__setattr__(settings, "provider_base_url", provider.base_url)
             if preset["default_model"]:
                 provider.model = str(preset["default_model"])
-                object.__setattr__(settings, "provider_model", provider.model)
+            object.__setattr__(settings, "provider_model", provider.model)
             object.__setattr__(settings, "provider_preset", value.strip().lower())
             continue
         if key == "provider_model" and isinstance(value, str):

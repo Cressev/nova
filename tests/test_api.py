@@ -659,6 +659,9 @@ class ApiTest(unittest.TestCase):
         )
         session = session_response.json()
 
+        # 隔离工作区 runtime-config（preset 可能切换 api_key_env）；本测
+        # 固定回到 bigmodel 预设语义再清 key。
+        app_module.provider.api_key_env = "BIGMODEL_API_KEY"
         with patch.dict("os.environ", {"BIGMODEL_API_KEY": ""}, clear=False):
             with self.client.stream(
                 "POST",

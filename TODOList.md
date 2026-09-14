@@ -2394,3 +2394,15 @@ api 就不能再拆了吗？拆。
 [x] W6 全量回归 273 绿 + e2e 实证：mode=script、calc=144、schema 返 {capital:Paris}、deepseek 无 key → null+错误记录；期间修 3 个真 bug（ls 子串劫持/WorkflowScriptError 未导出/桥线程裸抛挂死）+ 超时表补 workflow 600s
 [x] W7 收尾
 ------ todo-list end at 2026/09/14 15:47:22 -----
+
+------ todo-list begin at 2026/09/14 15:56:38 -----
+用户请求原文：设置点开都没用，不能配置模型呢，要支持的协议（openai 的 chat response；anthroic格式）
+
+[x] S1 根因：#open-settings 是死按钮（无 onClick）
+[x] S2 AnthropicProvider 完成（system 顶层/tools input_schema/content blocks 归一化/SSE 聚合/usage 同口径，4 单测绿）
+[x] S3 registry protocol + 实例热换 + runtime key 文件随身（同 env key 直接继承）
+[x] S4 SettingsDialog 11 字段（浏览器实测：打开/切预设联动/保存生效/关闭）
+[x] S5 277 测试绿（新增 4 anthropic 协议测试）+ tsc/build 过
+[x] S6 e2e 四步全通：bigmodel 真调用 ok / key_set runtime / anthropic 无 key 显式错 / 切回 key 不丢
+[x] S7 收尾
+------ todo-list end at 2026/09/14 16:04:06 -----
