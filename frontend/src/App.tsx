@@ -913,18 +913,6 @@ export default function App() {
             <div className="toolbar-right">
               {streamState ? <span id="stream-state" className="stream-state" aria-live="polite">{streamState}</span> : null}
               <MenuSelect
-                id="provider-select"
-                title="模型提供方"
-                value={String(runtimeConfig.provider_preset || "bigmodel")}
-                options={((runtimeConfig.provider_presets as { id: string; label: string; default_model?: string }[] | undefined) || []).map((p) => ({
-                  value: p.id,
-                  label: p.label + (p.default_model ? ` · ${p.default_model}` : ""),
-                }))}
-                onChange={(value) => {
-                  void api("/api/runtime/config", { method: "PATCH", body: JSON.stringify({ provider_preset: value }) }).then(reloadShell).catch(() => {})
-                }}
-              />
-              <MenuSelect
                 id="model-select"
                 title="模型"
                 value={model}

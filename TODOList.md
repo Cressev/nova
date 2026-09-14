@@ -2487,3 +2487,13 @@ PYEOF
 [x] K3 280 测试绿；API 不传 key 拉到 10 模型；浏览器候选面板正常
 
 ------ todo-list end at 2026/09/15 00:42:52 -----
+
+------ todo-list begin at 2026/09/15 00:52:50 -----
+用户请求原文：配置完聊天窗口显示不出来；模型下拉菜单乱七八糟只显示配置的
+
+[x] X1 诊断：触发器显示"BigModel·glm-4.7"太长 + provider-select 多余 + 下拉跨组重复（7项含重复）
+[x] X2 dsh 触发器只显示 modelLabel（当前模型名）
+[x] X3 触发器只显示模型名 + 删 provider-select + MenuSelect 跨组去重（7→4项无重复）
+[x] X4 重启后 selectSession 正常加载 timeline；provider-select 删除后工具栏不再冲突
+[x] X5 280 测试绿；浏览器实测：触发器"glm-4.7" + 2组4项无重复 + 聊天窗口正常显示
+------ todo-list end at 2026/09/15 01:02:28 -----
