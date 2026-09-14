@@ -20,6 +20,7 @@ interface ConfigShape {
   api_key_set?: boolean
   api_key_source?: string
   provider_presets?: PresetItem[]
+  custom_models?: string[]
   [key: string]: unknown
 }
 
@@ -41,6 +42,10 @@ export function SettingsDialog({ open, onClose, onSaved }: { open: boolean; onCl
   const [error, setError] = useState("")
   const [models, setModels] = useState<ModelItem[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
+  const [candidates, setCandidates] = useState<ModelItem[] | null>(null)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [adding, setAdding] = useState(false)
+  const [addValue, setAddValue] = useState("")
   const flashTimer = useRef<number | null>(null)
 
   useEffect(() => {
@@ -74,7 +79,12 @@ export function SettingsDialog({ open, onClose, onSaved }: { open: boolean; onCl
       const result = await api<{ models?: ModelItem[]; count?: number }>("/api/runtime/models")
       const items = (result.models || []) as ModelItem[]
       setModels(items)
-      showFlash(`已获取 ${items.length} 个模型`)
+      if (items.length === 0) {
+        setError("提供方返回空列表，可手动添加模型。")
+        return
+      }
+      setCandidates(items)
+      setPicked(new Set())
     } catch (exc) {
       setError(`模型列表获取失败：${String((exc as Error)?.message || exc)}，可手动输入模型名。`)
     } finally {
@@ -82,11 +92,50 @@ export function SettingsDialog({ open, onClose, onSaved }: { open: boolean; onCl
     }
   }
 
+  /* dsh ModelListEditor 语义：custom_models 是用户显式维护的行；
+   * 采纳候选 = 追加勾选项（已存在的 id 不重复），一次 PATCH 落盘。 */
+  const saveCustomModels = async (next: string[]) => {
+    const deduped: string[] = []
+    for (const name of next) {
+      const value = name.trim()
+      if (value && !deduped.includes(value)) deduped.push(value)
+    }
+    setConfig((c) => ({ ...c, custom_models: deduped }))
+    await patch({ custom_models: deduped })
+  }
+
+  const adoptPicked = async () => {
+    if (!candidates) return
+    const existing = (config.custom_models || []) as string[]
+    const next = [...existing]
+    for (const candidate of candidates) {
+      if (picked.has(candidate.id) && !next.includes(candidate.id)) next.push(candidate.id)
+    }
+    setCandidates(null)
+    setPicked(new Set())
+    await saveCustomModels(next)
+  }
+
+  const commitAdd = async () => {
+    const value = addValue.trim()
+    if (!value) { setAdding(false); return }
+    setAdding(false)
+    setAddValue("")
+    const existing = (config.custom_models || []) as string[]
+    if (existing.includes(value)) return
+    await saveCustomModels([...existing, value])
+  }
+
   if (!open) return null
 
   const presets = (config.provider_presets || []) as PresetItem[]
   const currentPreset = presets.find((p) => p.id === (config.provider_preset || "bigmodel"))
   const protocol = currentPreset?.protocol || "openai"
+  const customModels = (config.custom_models || []) as string[]
+  const modelOptions: string[] = []
+  for (const name of [String(config.model || ""), ...customModels]) {
+    if (name && !modelOptions.includes(name)) modelOptions.push(name)
+  }
 
   /* 即时生效（dsh 语义：改动即落盘，没有保存按钮）。 */
   const patch = async (update: Record<string, unknown>) => {
@@ -178,45 +227,80 @@ export function SettingsDialog({ open, onClose, onSaved }: { open: boolean; onCl
             </div>
             <div className="settings-row">
               <div className="settings-row-text">
-                <span className="settings-row-title">模型</span>
-                <span className="settings-row-desc">
-                  {models.length > 0 ? `已获取 ${models.length} 个模型，可下拉选择` : "模型名，可点击右侧按钮自动获取"}
-                </span>
+                <span className="settings-row-title">当前模型</span>
+                <span className="settings-row-desc">对话使用的模型</span>
               </div>
-              <div className="settings-model-cell">
+              <select
+                id="settings-model"
+                className="settings-control settings-control-mono"
+                value={String(config.model || "")}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setConfig((c) => ({ ...c, model: value }))
+                  void patch({ provider_model: value })
+                }}
+              >
+                {modelOptions.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="settings-models-block">
+              <div className="settings-models-head">
+                <span className="settings-row-title">模型列表</span>
+                <div className="settings-models-actions">
+                  <button
+                    id="settings-model-fetch"
+                    className="settings-link-button"
+                    type="button"
+                    disabled={modelsLoading}
+                    onClick={() => void fetchModels()}
+                  >
+                    {modelsLoading ? "获取中…" : "获取可用模型"}
+                  </button>
+                  <button
+                    className="settings-add-model"
+                    type="button"
+                    onClick={() => { setAdding(true); setAddValue("") }}
+                  >
+                    ＋ 添加模型
+                  </button>
+                </div>
+              </div>
+              {adding ? (
                 <input
-                  id="settings-model"
-                  className="settings-control settings-control-mono"
+                  id="settings-model-add"
+                  className="settings-control settings-control-mono settings-model-add-input"
                   type="text"
-                  list="settings-model-options"
-                  title={String(config.model || "")}
-                  defaultValue={String(config.model || "")}
-                  key={`model-${config.provider_preset}-${models.length}`}
-                  placeholder="glm-4.7"
-                  onBlur={(e) => {
-                    const value = e.target.value.trim()
-                    if (value && value !== String(config.model || "")) {
-                      setConfig((c) => ({ ...c, model: value }))
-                      void patch({ provider_model: value })
-                    }
+                  autoFocus
+                  placeholder="输入模型名，如 glm-4.6"
+                  value={addValue}
+                  onChange={(e) => setAddValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); void commitAdd() }
+                    if (e.key === "Escape") { e.preventDefault(); setAdding(false); setAddValue("") }
                   }}
+                  onBlur={() => void commitAdd()}
                 />
-                <datalist id="settings-model-options">
-                  {models.map((m) => (
-                    <option key={m.id} value={m.id}>{m.display_name || m.owned_by || ""}</option>
+              ) : null}
+              {customModels.length === 0 && !adding ? (
+                <div className="settings-models-empty">暂无自定义模型，可点击"＋ 添加模型"或从提供方获取</div>
+              ) : (
+                <div className="settings-models-list">
+                  {customModels.map((name) => (
+                    <span key={name} className="settings-model-chip">
+                      <span className="settings-model-chip-name">{name}</span>
+                      {name === config.model ? <span className="settings-model-chip-tag">当前</span> : null}
+                      <button
+                        type="button"
+                        className="settings-model-chip-remove"
+                        aria-label={`删除 ${name}`}
+                        onClick={() => void saveCustomModels(customModels.filter((m) => m !== name))}
+                      >×</button>
+                    </span>
                   ))}
-                </datalist>
-                <button
-                  id="settings-model-fetch"
-                  className="settings-model-fetch"
-                  type="button"
-                  title="从提供方获取可用模型列表"
-                  disabled={modelsLoading}
-                  onClick={() => void fetchModels()}
-                >
-                  {modelsLoading ? "…" : "↻"}
-                </button>
-              </div>
+                </div>
+              )}
             </div>
             <div className="settings-row">
               <div className="settings-row-text">
@@ -243,6 +327,57 @@ export function SettingsDialog({ open, onClose, onSaved }: { open: boolean; onCl
           </section>
           {error ? <div className="settings-error" role="alert">{error}</div> : null}
         </div>
+        {candidates ? (
+          <div className="settings-candidates" role="dialog" aria-label="选择要添加的模型">
+            <div className="settings-candidates-head">
+              <span>获取到 {candidates.length} 个模型，勾选要添加的</span>
+              <button
+                type="button"
+                className="settings-link-button"
+                onClick={() => {
+                  setPicked(picked.size === candidates.length ? new Set() : new Set(candidates.map((c) => c.id)))
+                }}
+              >
+                {picked.size === candidates.length ? "取消全选" : "全选"}
+              </button>
+            </div>
+            <ul className="settings-candidates-list">
+              {candidates.map((c) => {
+                const already = customModels.includes(c.id)
+                return (
+                  <li key={c.id}>
+                    <label className={already ? "settings-candidate settings-candidate-dim" : "settings-candidate"}>
+                      <input
+                        type="checkbox"
+                        disabled={already}
+                        checked={picked.has(c.id)}
+                        onChange={() => {
+                          const next = new Set(picked)
+                          if (next.has(c.id)) next.delete(c.id)
+                          else next.add(c.id)
+                          setPicked(next)
+                        }}
+                      />
+                      <span className="settings-candidate-id">{c.id}</span>
+                      {already ? <span className="settings-model-chip-tag">已有</span> : null}
+                    </label>
+                  </li>
+                )
+              })}
+            </ul>
+            <div className="settings-candidates-foot">
+              <button type="button" className="settings-ghost-button" onClick={() => { setCandidates(null); setPicked(new Set()) }}>取消</button>
+              <button
+                type="button"
+                className="settings-primary-button"
+                disabled={picked.size === 0}
+                onClick={() => void adoptPicked()}
+              >
+                添加所选{picked.size > 0 ? `（${picked.size}）` : ""}
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   )

@@ -2433,3 +2433,12 @@ api 就不能再拆了吗？拆。
 [x] M3 datalist + ↻ 按钮（描述行反馈"已获取 N 个模型，可下拉选择"）
 [x] M4 279 测试绿；真拉 10 个 GLM 模型（含 glm-5）；浏览器全流程：获取→下拉→切换即时生效→还原
 ------ todo-list end at 2026/09/14 17:37:30 -----
+
+------ todo-list begin at 2026/09/14 17:45:34 -----
+用户请求原文：要可以新增啊，你看看dsh怎么搞的啊
+
+[x] D1 研读 dsh ModelListEditor/CustomProviderCard：addModelButton 胶囊加空行 + fetch 候选→勾选→adoptPicked 采纳
+[x] D2 custom_models 持久化（全局 config）+ payload 暴露 models（当前∪custom）+ PATCH 列表清洗去重
+[x] D3 设置面板模型列表管理：chip 增删 + ＋添加模型行 + 获取候选→勾选→添加所选；composer 下拉读 models union
+[x] D4 279 测试绿；e2e 手动添加→获取10候选→勾选采纳→删除联动→composer 下拉同步
+------ todo-list end at 2026/09/14 17:55:36 -----

@@ -387,8 +387,22 @@ def _runtime_config_payload() -> dict:
     restart_required = any(
         pending.get(key) != value for key, value in effective.items() if key in pending
     )
+    # 模型下拉全集 = 当前模型 ∪ 用户自定义清单（composer model-select 与
+    # 设置面板共用；dsh 语义：行是用户主动加的，当前模型始终在列）。
+    custom_models_raw = pending.get("custom_models")
+    custom_models: list[str] = []
+    if isinstance(custom_models_raw, list):
+        for item in custom_models_raw:
+            if isinstance(item, str) and item.strip() and item.strip() not in custom_models:
+                custom_models.append(item.strip())
+    model_options: list[str] = [provider.model] if provider.model else []
+    for name in custom_models:
+        if name not in model_options:
+            model_options.append(name)
     return {
         "model": provider.model,
+        "models": model_options,
+        "custom_models": custom_models,
         "base_url": provider.base_url,
         "provider_preset": getattr(settings, "provider_preset", "bigmodel"),
         "provider_api_key_env": provider.api_key_env,

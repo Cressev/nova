@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 
 def utc_now() -> datetime:
@@ -55,6 +55,12 @@ class RuntimeConfigUpdate(BaseModel):
     provider_preset: str | None = Field(default=None, min_length=1, max_length=40)
     provider_model: str | None = Field(default=None, min_length=1, max_length=80)
     provider_base_url: str | None = Field(default=None, min_length=1, max_length=300)
+    # 用户手动维护的模型清单（dsh ModelListEditor 语义：行可增删；
+    # 获取候选→勾选→"添加所选"也写到这里）。当前模型 = provider_model，
+    # 下拉的完整选项 = 当前模型 ∪ custom_models。
+    custom_models: list[Annotated[str, StringConstraints(min_length=1, max_length=80)]] | None = Field(
+        default=None, max_length=60
+    )
     context_window_tokens: int | None = Field(default=None, ge=8192, le=1000000)
     permission_mode: str | None = Field(default=None, pattern="^(read_only|ask|workspace_write|default|plan|accept_edits|dont_ask|bypass_permissions)$")
     sandbox_mode: str | None = Field(default=None, pattern="^(read_only|workspace_write|danger_full_access)$")

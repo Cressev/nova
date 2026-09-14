@@ -45,6 +45,14 @@ async def update_runtime_config(payload: ctx.RuntimeConfigUpdate) -> dict:
     for key, value in update.items():
         if isinstance(value, str):
             pending[key] = value.strip()
+        elif isinstance(value, list):
+            # 列表（custom_models）：条目去空白、去空、去重，保序
+            cleaned: list = []
+            for item in value:
+                text = item.strip() if isinstance(item, str) else item
+                if text and text not in cleaned:
+                    cleaned.append(text)
+            pending[key] = cleaned
         else:
             pending[key] = value
     # 全局单源：设置写入 ~/.nova/config/runtime-config.json（不随工作区分裂）

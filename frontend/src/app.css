@@ -5237,36 +5237,175 @@ body.inspector-collapsed .inspector-toggle {
   font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   font-size: 12px;
 }
-.settings-model-cell {
-  flex: none;
+
+
+/* ---- 模型列表管理（dsh ModelListEditor/addModelButton 语义） ---- */
+.settings-models-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0 14px;
+}
+.settings-models-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.settings-models-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.settings-link-button {
+  border: none;
+  background: transparent;
+  color: var(--blue, #415eef);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+.settings-link-button:hover { text-decoration: underline; }
+.settings-link-button:disabled { opacity: 0.5; cursor: default; text-decoration: none; }
+.settings-add-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.settings-add-model:hover { background: var(--surface-soft); }
+.settings-model-add-input {
+  width: 100%;
+  flex: 1;
+  height: 30px;
+}
+.settings-models-empty {
+  font-size: 12px;
+  color: var(--faint);
+  padding: 2px 0;
+}
+.settings-models-list {
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
-.settings-model-cell .settings-control {
-  width: 186px;
+.settings-model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  font-size: 12px;
 }
-.settings-model-fetch {
-  flex: none;
+.settings-model-chip-name {
+  font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  color: var(--text);
+}
+.settings-model-chip-tag {
+  font-size: 10px;
+  color: var(--blue, #415eef);
+  background: var(--dsw-static-deepseek-50, rgba(65, 118, 230, 0.08));
+  border-radius: 8px;
+  padding: 1px 6px;
+}
+.settings-model-chip-remove {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--surface);
-  color: var(--muted);
-  font-size: 14px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--faint);
+  font-size: 13px;
   line-height: 1;
   cursor: pointer;
-  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
 }
-.settings-model-fetch:hover {
+.settings-model-chip-remove:hover {
+  background: var(--dsw-static-red-50, #fef2f2);
+  color: var(--red);
+}
+/* ---- 候选勾选（dsh fetchDialog） ---- */
+.settings-candidates {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+  background: var(--dsw-alias-bg-layer-1, var(--surface));
+  padding: 12px 24px 14px;
+  gap: 8px;
+}
+.settings-candidates-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.settings-candidates-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-candidate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.settings-candidate:hover { background: var(--surface-soft); }
+.settings-candidate-dim { opacity: 0.55; cursor: default; }
+.settings-candidate-id {
+  font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+.settings-candidates-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.settings-ghost-button {
+  height: 28px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
   color: var(--text);
-  border-color: var(--line-strong);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
 }
-.settings-model-fetch:disabled {
-  opacity: 0.5;
-  cursor: default;
+.settings-ghost-button:hover { background: var(--surface-soft); }
+.settings-primary-button {
+  height: 28px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--dsw-alias-brand-primary, #415eef);
+  color: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
 }
+.settings-primary-button:disabled { opacity: 0.45; cursor: default; }
