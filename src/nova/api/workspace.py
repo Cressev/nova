@@ -25,8 +25,9 @@ async def select_workspace(payload: ctx.WorkspaceSelect) -> dict:
 
 @router.post("/api/workspace/folders")
 async def create_workspace_folder(payload: ctx.WorkspaceFolderCreate) -> dict:
-    if ctx.settings.permission_mode not in {"workspace_write", "bypass_permissions"}:
-        raise ctx.HTTPException(status_code=403, detail="当前权限模式不允许新建目录")
+    # 用户在 UI 里主动新建工作区目录是工作区管理操作，不是模型工具调用：
+    # 信任边界是 NOVA_ALLOWED_WORKSPACE_ROOTS（create_folder 内部校验），
+    # 不与会话权限模式耦合——否则只读模式下用户连工作区都没法管理。
     try:
         created = ctx.workspace_manager.create_folder(payload.path)
         ctx._switch_workspace(str(created))

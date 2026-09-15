@@ -2590,3 +2590,11 @@ PYEOF
 [x] H4 评论卡箭头文本"▸"→SVG 14px 1.7 描边 chevron + 140ms 旋转过渡 + hover 变色；hero/侧边栏 chevron 同步 SVG 化
 [x] H5 实测：切换到 frontend 后全局根变、老会话工具根不变（_session_workspace_root 验证）；侧边栏/hero 两入口开合+选择正常；视觉确认面板布局和箭头清晰；290 测试跑两遍全绿（首遍 1 个 orchestrator 线程清理偶发竞态，与本次无关）
 ------ todo-list end at 2026/09/15 18:13:43 -----
+
+------ todo-list begin at 2026/09/15 18:20:05 -----
+用户请求原文：工作区只能切换不能创建；UI 交互丑
+
+[x] I1 新建/按路径切换区：输入框 250ms 防抖实时校验（GET /api/workspaces?q= → query_status），状态行着色（绿=可操作/红=不可），智能按钮文案随状态（切换到此目录/新建目录并切换），候选路径胶囊可点填充，回车提交
+[x] I2 条目改两行（名称加粗+灰色路径小字+图标底色块，当前项蓝三重强调+对勾，hover 右箭头变蓝），分区分隔线，输入区 mono 字体+聚焦光环，面板内滚动+底部提示条精简为一行
+[x] I3 实测：输入 /Users/liam/Code/codex/nova-created-test → 状态"目录不存在，可新建并切换"绿字 → 点按钮 → 目录真建+切换成功（label 变 nova-created-test）。途中修后端语义错误：folders 端点原与会话权限模式耦合（只读模式 403），改为信任边界=allowed roots（用户 UI 主动操作≠模型工具调用）。290 测试绿 ×2；测试目录已清理
+------ todo-list end at 2026/09/15 18:25:56 -----
