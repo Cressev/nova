@@ -5799,11 +5799,12 @@ body.inspector-collapsed .inspector-toggle {
 .inline-comment-panel-head button:hover { background: rgba(0, 0, 0, 0.06); }
 .inline-comment-panel-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 .inline-comment-empty {
   color: var(--muted);
@@ -5816,17 +5817,71 @@ body.inspector-collapsed .inspector-toggle {
 .inline-comment-thread {
   display: flex;
   flex-direction: column;
+  /* 关键：flex 子项默认可压缩，多卡片时互相挤压；none 保持自然高度，
+   * 让面板整体滚动而不是卡片变形。 */
+  flex: none;
   border: 1px solid var(--line, rgba(0, 0, 0, 0.06));
   border-radius: 10px;
   background: #fff;
   overflow: hidden;
 }
+.inline-comment-thread:hover { border-color: rgba(0, 0, 0, 0.14); }
+.inline-comment-thread.expanded { border-color: var(--blue, #415eef); }
 .inline-comment-thread-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 6px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--line, rgba(0, 0, 0, 0.05));
+  cursor: pointer;
+  user-select: none;
+}
+.inline-comment-chevron {
+  flex: none;
+  width: 14px;
+  color: var(--muted, #8a8f98);
+  font-size: 11px;
+  transition: transform 120ms ease;
+}
+.inline-comment-chevron.open { transform: rotate(90deg); color: var(--blue, #415eef); }
+.inline-comment-count {
+  flex: none;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--muted, #6b7280);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  font-weight: 600;
+}
+.inline-comment-thread.expanded .inline-comment-count {
+  background: rgba(65, 94, 239, 0.12);
+  color: var(--blue, #415eef);
+}
+/* 折叠态预览：最后一条消息两行截断 */
+.inline-comment-preview {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px 8px;
+  font-size: 12px;
+  line-height: 18px;
+  align-items: baseline;
+}
+.inline-comment-preview-role {
+  flex: none;
+  color: var(--muted, #8a8f98);
+  font-size: 11px;
+}
+.inline-comment-preview-text {
+  color: #55585f;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
 }
 .inline-comment-quote {
   flex: 1;
@@ -5859,7 +5914,7 @@ body.inspector-collapsed .inspector-toggle {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 300px;
+  max-height: min(320px, 44vh);
   overflow-y: auto;
 }
 .inline-comment-bubble .inline-comment-role {

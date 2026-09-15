@@ -208,10 +208,12 @@ export function readToolbarDraft(): string {
 
 /* ---- 右侧评论栏（飞书文档评论形态） ---- */
 
-function ThreadView({ thread, streamingState, busy, onAsk, onDelete, onFocusAnchor }: {
+function ThreadView({ thread, streamingState, busy, expanded, onToggleExpand, onAsk, onDelete, onFocusAnchor }: {
   thread: CommentThread
   streamingState: { text: string; reasoning: string } | undefined
   busy: boolean
+  expanded: boolean
+  onToggleExpand: () => void
   onAsk: (anchorId: string, question: string) => void
   onDelete: (anchorId: string) => void
   onFocusAnchor: (anchorId: string) => void
@@ -219,16 +221,41 @@ function ThreadView({ thread, streamingState, busy, onAsk, onDelete, onFocusAnch
   const [draft, setDraft] = useState("")
   const bodyRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
-    bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight })
-  }, [thread.entries.length, streamingState?.text, streamingState?.reasoning])
+    if (expanded) bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight })
+  }, [thread.entries.length, streamingState?.text, streamingState?.reasoning, expanded])
+  const lastEntry = thread.entries[thread.entries.length - 1]
   return (
-    <section className="inline-comment-thread" data-anchor-id={thread.anchor.id}>
-      <header className="inline-comment-thread-head">
-        <button type="button" className="inline-comment-quote" onClick={() => onFocusAnchor(thread.anchor.id)} title="定位到原文">
+    <section
+      className={`inline-comment-thread${expanded ? " expanded" : ""}`}
+      data-anchor-id={thread.anchor.id}
+    >
+      <header className="inline-comment-thread-head" onClick={onToggleExpand}>
+        <span className={`inline-comment-chevron${expanded ? " open" : ""}`} aria-hidden="true">▸</span>
+        <button
+          type="button"
+          className="inline-comment-quote"
+          onClick={(e) => { e.stopPropagation(); onFocusAnchor(thread.anchor.id); onToggleExpand() }}
+          title="定位到原文并展开"
+        >
           「{thread.anchor.quote.slice(0, 80)}{thread.anchor.quote.length > 80 ? "…" : ""}」
         </button>
-        <button type="button" className="inline-comment-thread-delete" aria-label="删除线程" title="删除线程" onClick={() => onDelete(thread.anchor.id)}>×</button>
+        <span className="inline-comment-count">{thread.entries.length}</span>
+        <button
+          type="button"
+          className="inline-comment-thread-delete"
+          aria-label="删除线程"
+          title="删除线程"
+          onClick={(e) => { e.stopPropagation(); onDelete(thread.anchor.id) }}
+        >×</button>
       </header>
+      {!expanded && lastEntry ? (
+        <div className="inline-comment-preview">
+          <span className="inline-comment-preview-role">{lastEntry.role === "user" ? "我" : "Nova"}</span>
+          <span className="inline-comment-preview-text">{lastEntry.content}</span>
+        </div>
+      ) : null}
+      {expanded ? (
+      <>
       <div className="inline-comment-thread-body" ref={bodyRef}>
         {thread.entries.map((entry) => (
           <div key={entry.id} className={`inline-comment-bubble ${entry.role}`}>
@@ -278,11 +305,13 @@ function ThreadView({ thread, streamingState, busy, onAsk, onDelete, onFocusAnch
           }}
         ><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.5V3.5M3.8 7.7L8 3.5l4.2 4.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
       </div>
+      </>
+      ) : null}
     </section>
   )
 }
 
-export function CommentPanel({ open, threads, activeAnchorId, streamingMap, busyAnchors, onClose, onAsk, onDelete, onFocusAnchor }: {
+export function CommentPanel({ open, threads, activeAnchorId, streamingMap, busyAnchors, onClose, onAsk, onDelete, onFocusAnchor, onToggleExpand }: {
   open: boolean
   threads: CommentThread[]
   activeAnchorId: string | null
@@ -292,6 +321,7 @@ export function CommentPanel({ open, threads, activeAnchorId, streamingMap, busy
   onAsk: (anchorId: string, question: string) => void
   onDelete: (anchorId: string) => void
   onFocusAnchor: (anchorId: string) => void
+  onToggleExpand: (anchorId: string) => void
 }) {
   if (!open) return null
   return (
@@ -305,17 +335,25 @@ export function CommentPanel({ open, threads, activeAnchorId, streamingMap, busy
           <div className="inline-comment-empty">选中回复中的文字，点“解释”或“提问”开始旁路问答</div>
         ) : (
           threads
-            .map((thread) => (
-              <ThreadView
-                key={thread.anchor.id}
-                thread={thread}
-                streamingState={streamingMap.get(thread.anchor.id)}
-                busy={busyAnchors.has(thread.anchor.id)}
-                onAsk={onAsk}
-                onDelete={onDelete}
-                onFocusAnchor={onFocusAnchor}
-            />
-            ))
+            .map((thread) => {
+              // 活动中（流式/思考）或被选中（activeAnchorId）的线程展开，其余折叠为紧凑卡片
+              const expanded = activeAnchorId === thread.anchor.id
+                || streamingMap.has(thread.anchor.id)
+                || busyAnchors.has(thread.anchor.id)
+              return (
+                <ThreadView
+                  key={thread.anchor.id}
+                  thread={thread}
+                  streamingState={streamingMap.get(thread.anchor.id)}
+                  busy={busyAnchors.has(thread.anchor.id)}
+                  expanded={expanded}
+                  onToggleExpand={() => onToggleExpand(thread.anchor.id)}
+                  onAsk={onAsk}
+                  onDelete={onDelete}
+                  onFocusAnchor={onFocusAnchor}
+                />
+              )
+            })
         )}
       </div>
     </aside>
