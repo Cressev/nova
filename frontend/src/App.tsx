@@ -990,9 +990,6 @@ export default function App() {
         onAsk={inline.followUp}
         onDelete={(aid) => void inline.removeThread(aid)}
         onFocusAnchor={inline.focusAnchor}
-        onToggleExpand={(aid) => {
-          inline.setActiveAnchorId((cur) => (cur === aid ? null : aid))
-        }}
       />
       {inline.toolbar ? (
         <SelectionToolbar

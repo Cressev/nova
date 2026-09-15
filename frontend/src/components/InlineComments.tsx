@@ -208,16 +208,17 @@ export function readToolbarDraft(): string {
 
 /* ---- 右侧评论栏（飞书文档评论形态） ---- */
 
-function ThreadView({ thread, streamingState, busy, expanded, onToggleExpand, onAsk, onDelete, onFocusAnchor }: {
+function ThreadView({ thread, streamingState, busy, onAsk, onDelete, onFocusAnchor }: {
   thread: CommentThread
   streamingState: { text: string; reasoning: string } | undefined
   busy: boolean
-  expanded: boolean
-  onToggleExpand: () => void
   onAsk: (anchorId: string, question: string) => void
   onDelete: (anchorId: string) => void
   onFocusAnchor: (anchorId: string) => void
 }) {
+  // 各卡片独立折叠：默认全展开，点头部切换；不影响其它卡片
+  const [expanded, setExpanded] = useState(true)
+  const onToggleExpand = () => setExpanded((v) => !v)
   const [draft, setDraft] = useState("")
   const bodyRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
@@ -311,7 +312,7 @@ function ThreadView({ thread, streamingState, busy, expanded, onToggleExpand, on
   )
 }
 
-export function CommentPanel({ open, threads, activeAnchorId, streamingMap, busyAnchors, onClose, onAsk, onDelete, onFocusAnchor, onToggleExpand }: {
+export function CommentPanel({ open, threads, activeAnchorId, streamingMap, busyAnchors, onClose, onAsk, onDelete, onFocusAnchor }: {
   open: boolean
   threads: CommentThread[]
   activeAnchorId: string | null
@@ -321,7 +322,6 @@ export function CommentPanel({ open, threads, activeAnchorId, streamingMap, busy
   onAsk: (anchorId: string, question: string) => void
   onDelete: (anchorId: string) => void
   onFocusAnchor: (anchorId: string) => void
-  onToggleExpand: (anchorId: string) => void
 }) {
   if (!open) return null
   return (
@@ -335,25 +335,17 @@ export function CommentPanel({ open, threads, activeAnchorId, streamingMap, busy
           <div className="inline-comment-empty">选中回复中的文字，点“解释”或“提问”开始旁路问答</div>
         ) : (
           threads
-            .map((thread) => {
-              // 活动中（流式/思考）或被选中（activeAnchorId）的线程展开，其余折叠为紧凑卡片
-              const expanded = activeAnchorId === thread.anchor.id
-                || streamingMap.has(thread.anchor.id)
-                || busyAnchors.has(thread.anchor.id)
-              return (
-                <ThreadView
-                  key={thread.anchor.id}
-                  thread={thread}
-                  streamingState={streamingMap.get(thread.anchor.id)}
-                  busy={busyAnchors.has(thread.anchor.id)}
-                  expanded={expanded}
-                  onToggleExpand={() => onToggleExpand(thread.anchor.id)}
-                  onAsk={onAsk}
-                  onDelete={onDelete}
-                  onFocusAnchor={onFocusAnchor}
-                />
-              )
-            })
+            .map((thread) => (
+              <ThreadView
+                key={thread.anchor.id}
+                thread={thread}
+                streamingState={streamingMap.get(thread.anchor.id)}
+                busy={busyAnchors.has(thread.anchor.id)}
+                onAsk={onAsk}
+                onDelete={onDelete}
+                onFocusAnchor={onFocusAnchor}
+              />
+            ))
         )}
       </div>
     </aside>
