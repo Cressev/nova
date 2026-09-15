@@ -128,12 +128,35 @@ _session_tools_cache: dict[str, WorkspaceTools] = {}
 _session_tools_lock = threading.Lock()
 
 
+def _session_workspace_root(session_id: str) -> Path:
+    """会话级工作区根（dsh SessionHeader.cwd 语义）：优先用会话创建时
+    快照的 workspace 目录；目录已失效或不在允许范围时退回全局 current_root。
+
+    全局 current_root 只决定"新会话"的默认工作区；切换工作区不会改动
+    已有会话的工具沙箱根——会话说自己在哪个目录，工具就跑在哪个目录。
+    """
+    try:
+        session = store.get_chat_session(session_id)
+    except Exception:
+        return workspace_manager.current_root
+    recorded = getattr(session, "workspace", None)
+    if not recorded:
+        return workspace_manager.current_root
+    try:
+        resolved = workspace_manager._validate(Path(recorded).expanduser())
+    except (WorkspaceError, OSError):
+        return workspace_manager.current_root
+    return resolved
+
+
 def _workspace_tools(session_id: str | None = None) -> WorkspaceTools:
     """会话级工具实例缓存（dsh goal/schedule/todo 会话内存活语义）。
 
     同一 session 复用同一 WorkspaceTools：goal 状态机、todo 列表、提醒列表
     跨请求存活（dsh 的 goal/schedule 本就是 session-log 的一部分）。
     无 session_id 的调用（工具目录页等）退回无状态实例。
+    工具的工作区根用会话快照的 workspace（见 _session_workspace_root），
+    与 dsh 会话级 cwd 一致。
     """
     if session_id is None:
         return WorkspaceTools(
@@ -147,7 +170,7 @@ def _workspace_tools(session_id: str | None = None) -> WorkspaceTools:
         tools = _session_tools_cache.get(session_id)
         if tools is None:
             tools = WorkspaceTools(
-                workspace_manager.current_root,
+                _session_workspace_root(session_id),
                 permission_mode=settings.permission_mode,
                 sandbox_mode=settings.sandbox_mode,
                 network_access=settings.network_access,

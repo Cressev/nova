@@ -3,6 +3,7 @@ import type { ChatMessage, ChatSession, PendingApprovalItem, RuntimeConfig, Tool
 import { api, cx, formatTime, projectName, relativeTime, shortText, workspaceGroupKey } from "./lib/api"
 import { Markdown, CopyButton } from "./components/Markdown"
 import { useInlineComments, SelectionToolbar, CommentPanel } from "./components/InlineComments"
+import { WorkspacePicker } from "./components/WorkspacePicker"
 import { ToolEventRow, deriveToolSummary, type ToolEventView } from "./components/ToolEvent"
 import { PermissionCard, QuestionCard } from "./components/Takeover"
 import { SettingsDialog } from "./components/SettingsDialog"
@@ -216,7 +217,7 @@ function CheckpointView({ message }: { message: ChatMessage }) {
 }
 
 /* ---- 侧栏 ---- */
-function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, onDelete, onNewChat, onOpenSettings }: {
+function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, onDelete, onNewChat, onOpenSettings, onWorkspaceSwitched }: {
   sessions: ChatSession[]
   selectedId: string | null
   currentWorkspace: string
@@ -225,9 +226,11 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, on
   onDelete: (id: string) => void
   onOpenSettings: () => void
   onNewChat: () => void
+  onWorkspaceSwitched: (root: string) => void
 }) {
   const [query, setQuery] = useState("")
   const [searchOpen, setSearchOpen] = useState(false)
+  const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false)
   const groups = useMemo(() => {
     const map = new Map<string, ChatSession[]>()
     for (const session of sessions) {
@@ -261,13 +264,27 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, on
       </button>
       <div className="sidebar-group sidebar-sessions">
         <div className="group-label">
-          <span>工作区</span>
+          <button
+            className={cx("group-label-workspace", workspacePanelOpen ? "active" : "")}
+            type="button"
+            title="切换 / 新建工作区"
+            onClick={() => setWorkspacePanelOpen((v) => !v)}
+          >
+            <span>工作区</span>
+            <span className="group-label-ws-name">{projectName(currentWorkspace) || "未选择"}</span>
+            <svg className="chevron-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.5 8 10.5 12 6.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </button>
           <div className="group-actions">
             <button className="icon-ghost" type="button" aria-label="搜索会话" title="搜索会话" onClick={() => setSearchOpen((v) => !v)}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="6.4" cy="6.4" r="4.4" stroke="currentColor" strokeWidth="1.4"/><path d="m9.8 9.8 2.9 2.9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
             </button>
           </div>
         </div>
+        {workspacePanelOpen ? (
+          <div className="sidebar-workspace-panel">
+            <WorkspacePicker current={currentWorkspace} onSwitched={(root) => { onWorkspaceSwitched(root); setWorkspacePanelOpen(false) }} />
+          </div>
+        ) : null}
         {searchOpen ? (
           <input
             className="session-search"
@@ -472,6 +489,7 @@ export default function App() {
   const [takeovers, setTakeovers] = useState<PendingApprovalItem[]>([])
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>({})
   const [workspace, setWorkspace] = useState("")
+  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false)
   const [version, setVersion] = useState("")
   const [streamState, setStreamState] = useState("")
   const [streamingText, setStreamingText] = useState<string | null>(null)
@@ -819,6 +837,7 @@ export default function App() {
         onDelete={deleteSession}
         onNewChat={newChat}
         onOpenSettings={() => setSettingsOpen(true)}
+        onWorkspaceSwitched={setWorkspace}
       />
       <main className="main-col">
         {hasContent || streamingText !== null ? (
@@ -852,10 +871,10 @@ export default function App() {
               <span className="hero-preview-badge">预览版</span>
             </div>
             <div className="hero-selector-row">
-              <button className="hero-chip" type="button" title="切换工作区">
+              <button className={cx("hero-chip", workspacePickerOpen ? "active" : "")} type="button" title="切换工作区" onClick={() => setWorkspacePickerOpen((v) => !v)}>
                 <svg className="hero-selector-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 4.2A1.7 1.7 0 0 1 3.5 2.5h2.6l1.4 1.7h5A1.7 1.7 0 0 1 14.2 6v5.8a1.7 1.7 0 0 1-1.7 1.7H3.5a1.7 1.7 0 0 1-1.7-1.7V4.2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>
                 <span>{projectName(workspace) || "选择工作区"}</span>
-                <span className="hero-selector-chevron" aria-hidden="true">▾</span>
+                <svg className="hero-selector-chevron" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.5 8 10.5 12 6.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </button>
               <button className="hero-chip" type="button" title="切换模式">
                 <svg className="hero-selector-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5 13.5 3.5V7.5C13.5 11 11.2 13.6 8 14.5C4.8 13.6 2.5 11 2.5 7.5V3.5L8 1.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>
@@ -863,6 +882,11 @@ export default function App() {
                 <span className="hero-selector-chevron" aria-hidden="true">▾</span>
               </button>
             </div>
+            {workspacePickerOpen ? (
+              <div className="hero-workspace-pop">
+                <WorkspacePicker current={workspace} onSwitched={(root) => { setWorkspace(root); setWorkspacePickerOpen(false) }} />
+              </div>
+            ) : null}
           </div>
         ) : (
           <ConversationView

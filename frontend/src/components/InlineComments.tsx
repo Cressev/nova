@@ -231,7 +231,7 @@ function ThreadView({ thread, streamingState, busy, onAsk, onDelete, onFocusAnch
       data-anchor-id={thread.anchor.id}
     >
       <header className="inline-comment-thread-head" onClick={onToggleExpand}>
-        <span className={`inline-comment-chevron${expanded ? " open" : ""}`} aria-hidden="true">▸</span>
+        <svg className={`inline-comment-chevron${expanded ? " open" : ""}`} width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
         <button
           type="button"
           className="inline-comment-quote"

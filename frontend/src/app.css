@@ -5836,14 +5836,7 @@ body.inspector-collapsed .inspector-toggle {
   cursor: pointer;
   user-select: none;
 }
-.inline-comment-chevron {
-  flex: none;
-  width: 14px;
-  color: var(--muted, #8a8f98);
-  font-size: 11px;
-  transition: transform 120ms ease;
-}
-.inline-comment-chevron.open { transform: rotate(90deg); color: var(--blue, #415eef); }
+/* chevron 样式移至文件末尾通用定义 */
 .inline-comment-count {
   flex: none;
   min-width: 16px;
@@ -6029,3 +6022,104 @@ body.inspector-collapsed .inspector-toggle {
   max-height: 88px;
   overflow-y: auto;
 }
+
+/* ---- 工作区切换（dsh 会话级 cwd 语义：切换只影响新会话） ---- */
+.hero-chip.active {
+  border-color: var(--blue, #415eef);
+  color: var(--blue, #415eef);
+  background: rgba(65, 94, 239, 0.06);
+}
+.hero-selector-chevron {
+  flex: none;
+  color: var(--muted, #8a8f98);
+  transition: transform 140ms ease;
+}
+.hero-chip.active .hero-selector-chevron {
+  transform: rotate(180deg);
+  color: var(--blue, #415eef);
+}
+.hero-workspace-pop {
+  margin-top: 10px;
+  max-width: 560px;
+}
+.hero-workspace-pop .workspace-picker {
+  max-height: min(360px, 56vh);
+  overflow-y: auto;
+}
+.workspace-picker {
+  border: 1px solid var(--line-strong, rgba(0, 0, 0, 0.1));
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1), 0 2px 6px rgba(15, 23, 42, 0.06);
+  padding: 6px;
+}
+.workspace-picker-section + .workspace-picker-section { border-top: 1px solid var(--line, rgba(0, 0, 0, 0.06)); margin-top: 4px; padding-top: 4px; }
+.workspace-picker-label {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  color: var(--muted, #8a8f98);
+  letter-spacing: 0.02em;
+}
+.workspace-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: #33363c;
+  cursor: pointer;
+  text-align: left;
+}
+.workspace-item:hover:not(:disabled):not(.current) { background: rgba(65, 94, 239, 0.07); }
+.workspace-item.current { cursor: default; color: var(--blue, #415eef); }
+.workspace-item.current svg { color: var(--blue, #415eef); }
+.workspace-item > svg { flex: none; color: var(--muted, #8a8f98); }
+.workspace-item-name { flex: none; font-weight: 500; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-item-path { flex: 1; min-width: 0; font-size: 11px; color: var(--muted, #8a8f98); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-item-check { flex: none; color: var(--blue, #415eef); }
+.workspace-picker-empty { padding: 12px 10px; font-size: 12px; color: var(--muted, #8a8f98); }
+.workspace-picker-error { padding: 8px 10px; font-size: 12px; color: #c0392b; }
+.workspace-picker-hint { padding: 8px 10px 6px; font-size: 11px; color: var(--muted, #8a8f98); border-top: 1px solid var(--line, rgba(0, 0, 0, 0.06)); margin-top: 4px; }
+
+/* 侧边栏工作区入口（group-label 可点） */
+.group-label-workspace {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: inherit;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+  min-width: 0;
+}
+.group-label-workspace:hover { color: #33363c; }
+.group-label-workspace.active { color: var(--blue, #415eef); }
+.group-label-ws-name {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--blue, #415eef);
+  font-weight: 500;
+}
+.group-label-workspace .chevron-icon { transition: transform 140ms ease; color: var(--muted, #8a8f98); }
+.group-label-workspace.active .chevron-icon { transform: rotate(180deg); color: var(--blue, #415eef); }
+.sidebar-workspace-panel { padding: 4px 6px 8px; }
+
+/* 通用 chevron（评论卡箭头等）：SVG 描边，随展开旋转 */
+.chevron-icon { transition: transform 140ms ease; }
+.inline-comment-chevron {
+  flex: none;
+  color: var(--muted, #8a8f98);
+  transition: transform 140ms ease;
+}
+.inline-comment-chevron:hover { color: #40454e; }
+.inline-comment-chevron.open { transform: rotate(90deg); color: var(--blue, #415eef); }

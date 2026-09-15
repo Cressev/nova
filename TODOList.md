@@ -2580,3 +2580,13 @@ PYEOF
 [x] G1 手风琴改独立折叠：ThreadView 内部 useState(true) 默认展开，点头部各自切换；去掉 activeAnchorId 驱动的单展开逻辑和 onToggleExpand 接线（activeAnchorId 只用于高亮定位）
 [x] G2 实测：默认 3 卡全展开+面板滚动（941/584）；收起第2张后 [1,0,1] 互不影响；290 测试绿
 ------ todo-list end at 2026/09/15 17:02:02 -----
+
+------ todo-list begin at 2026/09/15 17:58:51 -----
+用户请求原文：还不能增加工作目录；参考 dsh 的工作目录做法，检查 Nova 工作目录语义和角色是否一致；展开/折叠箭头 UI 太小太丑要改
+
+[x] H1 DSH 语义确认：cwd 是会话级属性（SessionHeader.cwd，创建时快照持久化），系统提示注入 cwd，host 有原生目录选择器；切换只影响新会话
+[x] H2 Nova 现状：后端 WorkspaceManager/API 完整（允许根+切换+补全+最近）但前端零接线（hero-chip 死按钮）；会话有 workspace 快照字段但工具执行用全局 current_root——切换工作区会改所有会话的工具根，语义错位
+[x] H3 ① 后端：_workspace_tools 优先用会话快照 workspace（校验 allowed），全局 current_root 只决定新会话默认——对齐 dsh 会话级 cwd；② 前端：WorkspacePicker 组件（当前+最近+允许根候选），hero-chip 和侧边栏工作区 label 两入口，切换语义提示明示
+[x] H4 评论卡箭头文本"▸"→SVG 14px 1.7 描边 chevron + 140ms 旋转过渡 + hover 变色；hero/侧边栏 chevron 同步 SVG 化
+[x] H5 实测：切换到 frontend 后全局根变、老会话工具根不变（_session_workspace_root 验证）；侧边栏/hero 两入口开合+选择正常；视觉确认面板布局和箭头清晰；290 测试跑两遍全绿（首遍 1 个 orchestrator 线程清理偶发竞态，与本次无关）
+------ todo-list end at 2026/09/15 18:13:43 -----
