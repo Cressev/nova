@@ -75,13 +75,15 @@ async def stream_comment_answer(session_id: str, payload: CommentAsk) -> ctx.Res
         try:
             messages = ctx.build_comment_messages(ctx.store, comments, anchor, question)
             async for chunk in ctx.provider.stream(messages):
-                # provider.stream 会混入 {"type": "reasoning_delta"} 等结构块，
-                # 评论旁路只回传正文文本增量。
-                text = chunk if isinstance(chunk, str) else ""
-                if not text:
-                    continue
-                answer_parts.append(text)
-                yield ctx._ndjson({"type": "delta", "text": text})
+                # provider.stream 的结构块是 {"type": "reasoning_delta", "text": ...}
+                # ——思考过程也透传给前端流式显示；字符串块是正文增量。
+                if isinstance(chunk, str):
+                    answer_parts.append(chunk)
+                    yield ctx._ndjson({"type": "delta", "text": chunk})
+                elif isinstance(chunk, dict) and chunk.get("type") == "reasoning_delta":
+                    reasoning = str(chunk.get("text") or "")
+                    if reasoning:
+                        yield ctx._ndjson({"type": "reasoning_delta", "text": reasoning})
         except Exception as exc:  # noqa: BLE001 - 旁路错误直接回传前端
             yield ctx._ndjson({"type": "error", "message": str(exc)})
             return

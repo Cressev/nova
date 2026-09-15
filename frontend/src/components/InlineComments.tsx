@@ -208,9 +208,9 @@ export function readToolbarDraft(): string {
 
 /* ---- 右侧评论栏（飞书文档评论形态） ---- */
 
-function ThreadView({ thread, streamingText, busy, onAsk, onDelete, onFocusAnchor }: {
+function ThreadView({ thread, streamingState, busy, onAsk, onDelete, onFocusAnchor }: {
   thread: CommentThread
-  streamingText: string | null
+  streamingState: { text: string; reasoning: string } | undefined
   busy: boolean
   onAsk: (anchorId: string, question: string) => void
   onDelete: (anchorId: string) => void
@@ -220,7 +220,7 @@ function ThreadView({ thread, streamingText, busy, onAsk, onDelete, onFocusAncho
   const bodyRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight })
-  }, [thread.entries.length, streamingText])
+  }, [thread.entries.length, streamingState?.text, streamingState?.reasoning])
   return (
     <section className="inline-comment-thread" data-anchor-id={thread.anchor.id}>
       <header className="inline-comment-thread-head">
@@ -236,15 +236,20 @@ function ThreadView({ thread, streamingText, busy, onAsk, onDelete, onFocusAncho
             <div className="inline-comment-text">{entry.content}</div>
           </div>
         ))}
-        {streamingText !== null ? (
+        {streamingState !== undefined ? (
           <div className="inline-comment-bubble assistant streaming">
             <div className="inline-comment-role">Nova</div>
             <div className="inline-comment-text">
-              {streamingText === "" ? <span className="inline-comment-loading">思考中…</span> : streamingText}
+              {streamingState.reasoning ? (
+                <div className="inline-comment-reasoning">{streamingState.reasoning}</div>
+              ) : null}
+              {streamingState.text === "" && !streamingState.reasoning ? (
+                <span className="inline-comment-loading">思考中…</span>
+              ) : streamingState.text}
             </div>
           </div>
         ) : null}
-        {busy && streamingText === null ? <div className="inline-comment-loading">思考中…</div> : null}
+        {busy && streamingState === undefined ? <div className="inline-comment-loading">思考中…</div> : null}
       </div>
       <div className="inline-comment-ask">
         <input
@@ -277,12 +282,12 @@ function ThreadView({ thread, streamingText, busy, onAsk, onDelete, onFocusAncho
   )
 }
 
-export function CommentPanel({ open, threads, activeAnchorId, streaming, busy, onClose, onAsk, onDelete, onFocusAnchor }: {
+export function CommentPanel({ open, threads, activeAnchorId, streamingMap, busyAnchors, onClose, onAsk, onDelete, onFocusAnchor }: {
   open: boolean
   threads: CommentThread[]
   activeAnchorId: string | null
-  streaming: { anchorId: string; text: string } | null
-  busy: boolean
+  streamingMap: Map<string, { text: string; reasoning: string }>
+  busyAnchors: Set<string>
   onClose: () => void
   onAsk: (anchorId: string, question: string) => void
   onDelete: (anchorId: string) => void
@@ -304,8 +309,8 @@ export function CommentPanel({ open, threads, activeAnchorId, streaming, busy, o
               <ThreadView
                 key={thread.anchor.id}
                 thread={thread}
-                streamingText={streaming && streaming.anchorId === thread.anchor.id ? streaming.text : null}
-                busy={busy}
+                streamingState={streamingMap.get(thread.anchor.id)}
+                busy={busyAnchors.has(thread.anchor.id)}
                 onAsk={onAsk}
                 onDelete={onDelete}
                 onFocusAnchor={onFocusAnchor}
@@ -325,8 +330,8 @@ export function useInlineComments(sessionId: string | null, version: number) {
   const [activeAnchorId, setActiveAnchorId] = useState<string | null>(null)
   const [toolbar, setToolbar] = useState<SelectionToolbarState | null>(null)
   const [asking, setAsking] = useState(false)
-  const [streaming, setStreaming] = useState<{ anchorId: string; text: string } | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [streamingMap, setStreamingMap] = useState<Map<string, { text: string; reasoning: string }>>(new Map())
+  const [busyAnchors, setBusyAnchors] = useState<Set<string>>(new Set())
   const cleanupFns = useRef<Array<() => void>>([])
   const lastVersion = useRef(version)
 
@@ -412,11 +417,33 @@ export function useInlineComments(sessionId: string | null, version: number) {
   }, [])
 
   const askStream = useCallback(async (sid: string, body: Record<string, unknown>) => {
-    setBusy(true)
-    setStreaming(null)
     let anchorId: string = typeof body.anchor_id === "string" ? body.anchor_id : ""
     const question = typeof body.question === "string" ? body.question : ""
     const parts: string[] = []
+    const reasoningParts: string[] = []
+    const markBusy = (aid: string, on: boolean) => {
+      setBusyAnchors((cur) => {
+        const next = new Set(cur)
+        if (on) next.add(aid); else next.delete(aid)
+        return next
+      })
+    }
+    const setStream = (aid: string, patch: Partial<{ text: string; reasoning: string }>) => {
+      setStreamingMap((cur) => {
+        const next = new Map(cur)
+        const prev = next.get(aid) || { text: "", reasoning: "" }
+        next.set(aid, { ...prev, ...patch })
+        return next
+      })
+    }
+    const clearStream = (aid: string) => {
+      setStreamingMap((cur) => {
+        const next = new Map(cur)
+        next.delete(aid)
+        return next
+      })
+    }
+    markBusy(anchorId, true)
     // 乐观插入：发送瞬间本地可见用户问题（不等 refreshThreads）
     if (question) {
       setThreads((ts) => {
@@ -461,24 +488,27 @@ export function useInlineComments(sessionId: string | null, version: number) {
                 }
                 return [...ts, thread]
               })
-              setStreaming({ anchorId: String(anchorId), text: "" })
+              setStream(String(anchorId), { text: "", reasoning: "" })
+            } else if (evt.type === "reasoning_delta") {
+              reasoningParts.push(evt.text || "")
+              if (anchorId) setStream(anchorId, { reasoning: reasoningParts.join("") })
             } else if (evt.type === "delta") {
               parts.push(evt.text || "")
-              if (anchorId) setStreaming({ anchorId, text: parts.join("") })
+              if (anchorId) setStream(anchorId, { text: parts.join("") })
             } else if (evt.type === "done") {
-              if (anchorId) setStreaming({ anchorId, text: evt.entry?.content || parts.join("") })
+              if (anchorId) setStream(anchorId, { text: evt.entry?.content || parts.join("") })
             } else if (evt.type === "error") {
-              if (anchorId) setStreaming({ anchorId, text: `出错了：${evt.message}` })
+              if (anchorId) setStream(anchorId, { text: `出错了：${evt.message}` })
             }
           } catch { /* 忽略坏行 */ }
         }
       }
     } catch (exc) {
-      if (anchorId) setStreaming({ anchorId, text: `请求失败：${String(exc)}` })
+      if (anchorId) setStream(anchorId, { text: `请求失败：${String(exc)}` })
     } finally {
-      setBusy(false)
+      markBusy(anchorId, false)
       if (sid) void refreshThreads(sid)
-      window.setTimeout(() => setStreaming(null), 150)
+      if (anchorId) window.setTimeout(() => clearStream(anchorId), 150)
     }
   }, [refreshThreads])
 
@@ -544,7 +574,7 @@ export function useInlineComments(sessionId: string | null, version: number) {
 
   return {
     threads, panelOpen, setPanelOpen, activeAnchorId, setActiveAnchorId,
-    toolbar, asking, setAsking, setToolbarClosed: closeToolbar, streaming, busy,
+    toolbar, asking, setAsking, setToolbarClosed: closeToolbar, streamingMap, busyAnchors,
     explain, ask, followUp, removeThread, focusAnchor,
   }
 }

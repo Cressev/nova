@@ -984,8 +984,8 @@ export default function App() {
         open={inline.panelOpen && !!selectedId}
         threads={inline.threads}
         activeAnchorId={inline.activeAnchorId}
-        streaming={inline.streaming}
-        busy={inline.busy}
+        streamingMap={inline.streamingMap}
+        busyAnchors={inline.busyAnchors}
         onClose={() => { inline.setPanelOpen(false); inline.setActiveAnchorId(null) }}
         onAsk={inline.followUp}
         onDelete={(aid) => void inline.removeThread(aid)}

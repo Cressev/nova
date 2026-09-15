@@ -2555,3 +2555,12 @@ PYEOF
 [x] E2 ChatHeader 右侧加常驻评论按钮（气泡图标+线程数角标，面板开时 active 蓝色态；无线程且面板关时隐藏）
 [x] E3 实测：按钮出现角标2（用户自建2线程）→点开面板2线程→active高亮→再点收起→按钮仍在；290测试绿
 ------ todo-list end at 2026/09/15 15:52:01 -----
+
+------ todo-list begin at 2026/09/15 15:52:13 -----
+用户请求原文：评论思考过程不流式；同时追问多个问题时显示错乱（后面的显示、前面的不显示）
+
+[x] F1 根因：① 后端 isinstance(chunk,str) 把 reasoning_delta 全丢弃；② 前端 streaming 是单对象+busy 单布尔，两个并发流互相覆盖（后发的把先发的显示清掉）
+[x] F2 评论流透传 reasoning_delta 事件（API 实测 227 个 reasoning 块 2.0s 起流式，正文 40.8s 到）
+[x] F3 streaming 单对象→Map<anchorId,{text,reasoning}>，busy 布尔→Set<anchorId>；思考过程渲染为灰色竖线小字行（max-height 88px 可滚动）
+[x] F4 实测两线程并发追问：各自 reasoning 独立增长（43/28→612/703）、第一问先完成归零第二问继续、互不覆盖；290 测试绿
+------ todo-list end at 2026/09/15 15:57:39 -----

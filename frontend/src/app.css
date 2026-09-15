@@ -5960,3 +5960,17 @@ body.inspector-collapsed .inspector-toggle {
   text-align: center;
   font-weight: 600;
 }
+
+/* 评论流式：思考过程行（灰色小字，正文之上） */
+.inline-comment-reasoning {
+  color: var(--muted, #8a8f98);
+  font-size: 12px;
+  line-height: 1.5;
+  border-left: 2px solid rgba(0, 0, 0, 0.1);
+  padding-left: 8px;
+  margin-bottom: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 88px;
+  overflow-y: auto;
+}
