@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import type { ChatMessage, ChatSession, PendingApprovalItem, RuntimeConfig, ToolCallData, TraceEvent } from "./types"
 import { api, cx, formatTime, projectName, relativeTime, shortText, workspaceGroupKey } from "./lib/api"
 import { Markdown, CopyButton } from "./components/Markdown"
+import { useInlineComments, SelectionToolbar, CommentPanel } from "./components/InlineComments"
 import { ToolEventRow, deriveToolSummary, type ToolEventView } from "./components/ToolEvent"
 import { PermissionCard, QuestionCard } from "./components/Takeover"
 import { SettingsDialog } from "./components/SettingsDialog"
@@ -450,6 +451,7 @@ export default function App() {
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [entries, setEntries] = useState<TimelineEntry[]>([])
+  const inline = useInlineComments(selectedId, entries.length)
   const [takeovers, setTakeovers] = useState<PendingApprovalItem[]>([])
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>({})
   const [workspace, setWorkspace] = useState("")
@@ -950,6 +952,26 @@ export default function App() {
         </form>
         <StatsLine sessionId={selectedId} />
       </main>
+      <CommentPanel
+        open={inline.panelOpen && !!selectedId}
+        threads={inline.threads}
+        activeAnchorId={inline.activeAnchorId}
+        streaming={inline.streaming}
+        busy={inline.busy}
+        onClose={() => { inline.setPanelOpen(false); inline.setActiveAnchorId(null) }}
+        onAsk={inline.followUp}
+        onDelete={(aid) => void inline.removeThread(aid)}
+        onFocusAnchor={inline.focusAnchor}
+      />
+      {inline.toolbar ? (
+        <SelectionToolbar
+          state={inline.toolbar}
+          asking={inline.asking}
+          onExplain={inline.explain}
+          onAsk={inline.ask}
+          onClose={() => { inline.setToolbarClosed?.(); }}
+        />
+      ) : null}
     </div>
   )
 }

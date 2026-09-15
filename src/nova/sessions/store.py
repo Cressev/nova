@@ -142,6 +142,15 @@ class SessionStore:
         with self._lock:
             return list(self._chat_messages.get(session_id, []))
 
+    def get_chat_message(self, message_id: str) -> ChatMessage | None:
+        """按消息 id 跨会话查找（划词评论引用定位用）。"""
+        with self._lock:
+            for messages in self._chat_messages.values():
+                for message in messages:
+                    if message.id == message_id:
+                        return message
+        return None
+
     def upsert_chat_event(self, event: ChatEvent) -> ChatEvent:
         with self._lock:
             if event.session_id not in self._chat_sessions:

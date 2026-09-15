@@ -2527,3 +2527,13 @@ PYEOF
 [x] R4 分层拼接（系统+主对话背景+被引用消息全文+quote+线程历史+当前问题），背景按预算裁剪丢最老不做摘要；评论不写主会话
 [x] R5 四项拍板：挤压式布局/一键解释/预算裁剪复用主agent机制不做auto-compact/持久化保存；方案落 findings/2026-09-15-inline-comment-qa-design.md
 ------ todo-list end at 2026/09/15 11:46:46 -----
+
+------ todo-list begin at 2026/09/15 11:51:41 -----
+用户请求原文：开工实施划词评论问答，做好验证测试，git 管理好
+
+[x] C1 完成：models.py 两模型 + sessions/comments.py CommentStore（重启恢复验证）+ sessions/comment_qa.py 分层构建器（背景从最老丢不做摘要）+ chat.py 三端点（GET/POST stream SSE/DELETE）；修 provider.stream 混入 reasoning dict 的过滤
+[x] C2 完成：InlineComments.tsx 划词 mouseup 检测（限定 assistant 消息）+ 浮条 fixed 定位锚选区上方 + locateQuote（TextQuoteSelector 语义含模糊兜底）+ mark 高亮可点击
+[x] C3 完成：CommentPanel 右侧 340px 挤压式（主区 1001→661px）+ ThreadView 引用块/角色气泡/流式打字/追问输入框 + NDJSON SSE 解析
+[x] C4 完成：进会话 GET comments 恢复线程+高亮；点高亮唤面板定位线程；点引用块滚回原文
+[x] C5 完成：4 条评论单测（存储roundtrip/分层/背景裁剪/主线零污染）+ 290 全量绿；API e2e（thread_started/delta/done 流事件+threads 列表+主线未污染）；浏览器 e2e（划词→浮条→解释→面板右开→流式回答→高亮点击唤起）；持久化 2 锚点 3 评论跨重启
+------ todo-list end at 2026/09/15 12:01:55 -----

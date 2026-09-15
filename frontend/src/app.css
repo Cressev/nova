@@ -5681,3 +5681,198 @@ body.inspector-collapsed .inspector-toggle {
   outline: none;
   border-color: var(--blue, #415eef);
 }
+
+/* ---- 划词评论问答（旁路线程） ---- */
+
+/* 浮条：锚定选区上方居中（fixed 定位跟视口） */
+.inline-comment-toolbar {
+  position: fixed;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  transform: translate(-50%, calc(-100% - 8px));
+  padding: 3px;
+  border: 1px solid var(--line-strong, rgba(0, 0, 0, 0.08));
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16), 0 2px 6px rgba(15, 23, 42, 0.1);
+}
+.inline-comment-toolbar button {
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #33363c;
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.inline-comment-toolbar button:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--blue, #415eef);
+}
+.inline-comment-toolbar.asking {
+  gap: 6px;
+  padding: 6px 8px;
+}
+.inline-comment-toolbar.asking input {
+  width: 240px;
+  border: none;
+  outline: none;
+  font: inherit;
+  font-size: 13px;
+  background: transparent;
+}
+.inline-comment-toolbar.asking .send {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--blue, #415eef);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+/* 高亮：常驻浅黄 */
+.inline-comment-highlight {
+  background: rgba(250, 204, 21, 0.35);
+  color: inherit;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+/* 右侧挤压式评论栏：flex 布局下与 main-col 并排 */
+.app-shell {
+  display: flex;
+}
+.inline-comment-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 340px;
+  width: 340px;
+  border-left: 1px solid var(--line, rgba(0, 0, 0, 0.06));
+  background: var(--bg, #fafafa);
+  height: 100vh;
+}
+.inline-comment-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line, rgba(0, 0, 0, 0.06));
+  font-size: 14px;
+  font-weight: 600;
+}
+.inline-comment-panel-head button {
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+}
+.inline-comment-panel-head button:hover { background: rgba(0, 0, 0, 0.06); }
+.inline-comment-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.inline-comment-empty {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 32px 12px;
+}
+
+/* 线程 */
+.inline-comment-thread {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line, rgba(0, 0, 0, 0.06));
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+.inline-comment-thread-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line, rgba(0, 0, 0, 0.05));
+}
+.inline-comment-quote {
+  flex: 1;
+  border: none;
+  background: rgba(250, 204, 21, 0.15);
+  border-radius: 6px;
+  padding: 4px 8px;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  color: #6b5b00;
+  cursor: pointer;
+}
+.inline-comment-quote:hover { background: rgba(250, 204, 21, 0.28); }
+.inline-comment-thread-delete {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  border-radius: 4px;
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+.inline-comment-thread-delete:hover { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+.inline-comment-thread-body {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.inline-comment-bubble .inline-comment-role {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.inline-comment-bubble.user .inline-comment-text {
+  background: rgba(65, 94, 239, 0.08);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.inline-comment-bubble.assistant .inline-comment-text {
+  font-size: 13px;
+  line-height: 1.55;
+}
+.inline-comment-loading {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 0;
+}
+.inline-comment-ask {
+  border-top: 1px solid var(--line, rgba(0, 0, 0, 0.05));
+  padding: 8px 10px;
+}
+.inline-comment-ask input {
+  width: 100%;
+  border: 1px solid var(--line-strong, rgba(0, 0, 0, 0.1));
+  border-radius: 8px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.inline-comment-ask input:focus { border-color: var(--blue, #415eef); }

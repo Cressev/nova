@@ -91,6 +91,34 @@ class ProviderProfile(BaseModel):
     models: list[ModelEntry] = Field(default_factory=list, max_length=200)
 
 
+class CommentAnchor(BaseModel):
+    """划词评论的锚点（W3C TextQuoteSelector 语义）。
+
+    quote=选中原文；prefix/suffix=前后各约 32 字的上下文快照；
+    occurrence=quote 在消息全文中第几次出现（0 基），用于消息内有
+    重复文本时消歧。渲染端凭这四样在重排后的 markdown 里重新定位。
+    """
+
+    id: str = Field(min_length=1, max_length=64)
+    session_id: str = Field(min_length=1, max_length=64)
+    message_id: str = Field(min_length=1, max_length=64)
+    quote: str = Field(min_length=1, max_length=2000)
+    prefix: str = Field(default="", max_length=200)
+    suffix: str = Field(default="", max_length=200)
+    occurrence: int = Field(default=0, ge=0)
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class CommentEntry(BaseModel):
+    """评论线程里的一条消息（用户提问或助手回答）。"""
+
+    id: str = Field(min_length=1, max_length=64)
+    anchor_id: str = Field(min_length=1, max_length=64)
+    role: str = Field(pattern="^(user|assistant)$")
+    content: str = Field(default="", max_length=20000)
+    created_at: datetime = Field(default_factory=utc_now)
+
+
 class RuntimeConfigUpdate(BaseModel):
     provider_preset: str | None = Field(default=None, min_length=1, max_length=40)
     provider_model: str | None = Field(default=None, min_length=1, max_length=80)

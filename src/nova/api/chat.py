@@ -1,10 +1,102 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
+from pydantic import BaseModel
 
 from . import routes as ctx
 
 router = APIRouter()
+
+
+# ---- 划词评论问答（旁路线程；不写主会话 messages/events） ----
+
+_comment_store: ctx.CommentStore | None = None
+
+
+def _comments() -> ctx.CommentStore:
+    """评论存储单例（与 chats.json 同目录的 comments.json）。"""
+    global _comment_store
+    if _comment_store is None:
+        _comment_store = ctx.CommentStore(ctx.store.state_dir)
+    return _comment_store
+
+
+class CommentAsk(BaseModel):
+    """评论提问载荷：新提问带锚点字段；追问只带 anchor_id。"""
+
+    anchor_id: str | None = None
+    message_id: str | None = None
+    quote: str | None = None
+    prefix: str | None = None
+    suffix: str | None = None
+    occurrence: int = 0
+    question: str
+
+
+@router.get("/api/chat/sessions/{session_id}/comments")
+async def list_comment_threads(session_id: str) -> dict:
+    if ctx.store.get_chat_session(session_id) is None:
+        raise ctx.HTTPException(status_code=404, detail="Chat session not found")
+    return {"threads": _comments().list_threads(session_id)}
+
+
+@router.post("/api/chat/sessions/{session_id}/comments/stream")
+async def stream_comment_answer(session_id: str, payload: CommentAsk) -> ctx.Response:
+    if ctx.store.get_chat_session(session_id) is None:
+        raise ctx.HTTPException(status_code=404, detail="Chat session not found")
+    question = (payload.question or "").strip()
+    if not question:
+        raise ctx.HTTPException(status_code=400, detail="问题不能为空")
+
+    comments = _comments()
+    # 解析锚点：追问用已有锚点；新提问现建锚点
+    if payload.anchor_id:
+        anchor = comments.get_anchor(payload.anchor_id)
+        if anchor is None:
+            raise ctx.HTTPException(status_code=404, detail="评论线程不存在")
+    else:
+        if not payload.message_id or not payload.quote:
+            raise ctx.HTTPException(status_code=400, detail="缺少锚点信息（message_id/quote）")
+        if ctx.store.get_chat_message(payload.message_id) is None:
+            raise ctx.HTTPException(status_code=404, detail="被引用的消息不存在")
+        anchor = comments.create_anchor(
+            session_id=session_id,
+            message_id=payload.message_id,
+            quote=payload.quote.strip()[:2000],
+            prefix=payload.prefix or "",
+            suffix=payload.suffix or "",
+            occurrence=payload.occurrence,
+        )
+    comments.add_entry(anchor.id, "user", question)
+
+    async def emit():
+        yield ctx._ndjson({"type": "thread_started", "anchor": anchor.model_dump(mode="json")})
+        answer_parts: list[str] = []
+        try:
+            messages = ctx.build_comment_messages(ctx.store, comments, anchor, question)
+            async for chunk in ctx.provider.stream(messages):
+                # provider.stream 会混入 {"type": "reasoning_delta"} 等结构块，
+                # 评论旁路只回传正文文本增量。
+                text = chunk if isinstance(chunk, str) else ""
+                if not text:
+                    continue
+                answer_parts.append(text)
+                yield ctx._ndjson({"type": "delta", "text": text})
+        except Exception as exc:  # noqa: BLE001 - 旁路错误直接回传前端
+            yield ctx._ndjson({"type": "error", "message": str(exc)})
+            return
+        answer = "".join(answer_parts)
+        entry = comments.add_entry(anchor.id, "assistant", answer)
+        yield ctx._ndjson({"type": "done", "entry": entry.model_dump(mode="json")})
+
+    return ctx.StreamingResponse(emit(), media_type="application/x-ndjson")
+
+
+@router.delete("/api/chat/sessions/{session_id}/anchors/{anchor_id}", status_code=204)
+async def delete_comment_thread(session_id: str, anchor_id: str) -> ctx.Response:
+    if not _comments().delete_anchor(session_id, anchor_id):
+        raise ctx.HTTPException(status_code=404, detail="评论线程不存在")
+    return ctx.Response(status_code=204)
 
 
 @router.post("/api/chat/sessions/{session_id}/fork", status_code=201)
