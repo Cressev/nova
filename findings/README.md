@@ -11,6 +11,7 @@
 - `2026-06-06-reference-architecture-reading.md`：Codex、cc源码、Hermes、OpenClaw、VS Code 源码阅读后对 Nova 架构路线的修正结论。
 - `2026-06-07-opencode-crush-source-reference.md`：OpenCode / Crush 源码下载位置、版本和后续优先参考入口。
 - `2026-09-04-dsh-ui-alignment-audit.md`：DSH UI 交互级对齐审计清单（全部状态×区域×元素×交互+验收方式），前端对齐工作的唯一事实源，随修复进度更新。
+- `2026-09-15-inline-comment-qa-design.md`：划词评论问答（旁路解释线程）设计方案，含用户拍板的四项决策与实施拆分，开工实现时的唯一事实源。
 
 ## 放置规则
 

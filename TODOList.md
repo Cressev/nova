@@ -2517,3 +2517,13 @@ PYEOF
 [x] U4 下拉：向上弹+max-height+overflow滚动、✓勾选标记、分组标题 sticky、触发器 28px capsule
 [x] U5 286测试绿；下拉7项全可见无裁切+✓；设置模型卡片化+蓝边框选中+高级配置3字段
 ------ todo-list end at 2026/09/15 01:47:23 -----
+
+------ todo-list begin at 2026/09/15 11:41:57 -----
+用户请求原文：选中模型回答文字→鼠标旁弹框（解释/提问）→右侧评论栏（飞书文档式）→模型引用+上下文回答→评论线程可继续追问。先调研设计方案，不改代码。
+
+[x] R1 dsh 无划词评论能力（HoverCard 的 getSelection 只是拖选抑制逻辑）；飞书/Notion/ChatGPT Canvas 交互已核实，Canvas prompt 分层结构有逆向分析可参照
+[x] R2 浮条锚定选区上方（解释/提问/复制）+ 右侧挤压式评论栏 + 常驻浅黄高亮 + 双向定位互滚
+[x] R3 CommentAnchor/CommentEntry + 独立存储 + GET/POST stream(SSE)/DELETE 三端点
+[x] R4 分层拼接（系统+主对话背景+被引用消息全文+quote+线程历史+当前问题），背景按预算裁剪丢最老不做摘要；评论不写主会话
+[x] R5 四项拍板：挤压式布局/一键解释/预算裁剪复用主agent机制不做auto-compact/持久化保存；方案落 findings/2026-09-15-inline-comment-qa-design.md
+------ todo-list end at 2026/09/15 11:46:46 -----
