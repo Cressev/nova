@@ -465,7 +465,9 @@ def _runtime_config_payload() -> dict:
         }]
     model_groups = [{"id": p["id"], "label": p["label"], "models": p["models"]} for p in profiles]
     return {
+        # 前端和运行时更新接口统一使用 provider_model；保留 model 兼容旧客户端。
         "model": provider.model,
+        "provider_model": provider.model,
         "models": model_options,
         "custom_models": custom_models,
         "provider_profiles": profiles,
@@ -536,6 +538,11 @@ def _apply_runtime_config(update: dict) -> None:
         target_id = str(active_id) if active_id else getattr(settings, "provider_preset", profiles[0]["id"])
         target = next((p for p in profiles if p["id"] == target_id), profiles[0])
         _rebuild_provider_from_profile(target)
+        # 组切换会先按 profile 默认模型重建，但用户本次点击的模型更具体，
+        # 必须在重建后恢复 provider_model；否则 UI 点击有请求，模型却静默回默认值。
+        requested_model = update.get("provider_model")
+        if isinstance(requested_model, str) and requested_model.strip():
+            provider.model = requested_model.strip()
         object.__setattr__(settings, "provider_preset", target["id"])
         object.__setattr__(settings, "provider_base_url", provider.base_url)
         object.__setattr__(settings, "provider_model", provider.model)

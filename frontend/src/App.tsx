@@ -818,7 +818,10 @@ export default function App() {
       ? "trace"
       : "conversation"
   const modeLabel = PERMISSION_MODE_LABELS[String(runtimeConfig.permission_mode || "")] || "标准模式"
-  const model = String(runtimeConfig.model || "glm-4.7")
+  // 后端权威字段是 provider_model；兼容旧 payload 的 model 字段。
+  const model = String(runtimeConfig.provider_model || runtimeConfig.model || "glm-4.7")
+  const activeProviderId = String(runtimeConfig.active_provider_id || "")
+  const modelSelectValue = `${activeProviderId}::${model}`
   const modelOptions = useMemo(() => {
     const list = Array.isArray(runtimeConfig.models) ? runtimeConfig.models.map(String) : []
     return list.includes(model) ? list : [model, ...list]
@@ -969,8 +972,8 @@ export default function App() {
               <MenuSelect
                 id="model-select"
                 title="模型"
-                value={model}
-                options={[{ value: model, label: model }]}
+                value={modelSelectValue}
+                options={[{ value: modelSelectValue, label: model }]}
                 groups={(Array.isArray(runtimeConfig.model_groups) ? runtimeConfig.model_groups : [])
                   .filter((g: any) => Array.isArray(g.models) && g.models.length > 0)
                   .map((g: any) => ({
@@ -978,17 +981,21 @@ export default function App() {
                     label: String(g.label || g.id || ""),
                     // dsh 语义：同模型跨组是不同端点，不去重——都列出
                     options: (g.models as { id: string; name?: string | null }[]).map((m) => ({
-                      value: String(m.id),
+                      value: `${String(g.id || "")}::${String(m.id)}`,
                       label: String(m.name || m.id),
+                       hint: String(m.id),
                     })),
                   }))}
                 onChange={(value) => {
                   // 选中即启用该模型所属的供应商组（dsh groups 语义）
-                  const grp = (Array.isArray(runtimeConfig.model_groups) ? runtimeConfig.model_groups : [])
-                    .find((g: any) => Array.isArray(g.models) && (g.models as { id: string }[]).some((m) => m.id === value)) as any
-                  const patch: Record<string, unknown> = { provider_model: value }
-                  if (grp && String(grp.id) !== String(runtimeConfig.active_provider_id)) {
-                    patch.active_provider_id = String(grp.id)
+                  const separator = value.indexOf("::")
+                   const groupId = separator >= 0 ? value.slice(0, separator) : ""
+                   const selectedModel = separator >= 0 ? value.slice(separator + 2) : value
+                   
+
+                  const patch: Record<string, unknown> = { provider_model: selectedModel }
+                  if (groupId && groupId !== activeProviderId) {
+                    patch.active_provider_id = groupId
                   }
                   void api("/api/runtime/config", { method: "PATCH", body: JSON.stringify(patch) }).then(reloadShell).catch(() => {})
                 }}

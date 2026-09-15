@@ -2617,3 +2617,14 @@ PYEOF
 [x] K4 修复：system message 每次组装真实 workspace-instructions（全局/项目 AGENTS、CLAUDE/local overlay）+ 人格 + 分层记忆索引；加入理解用户意图规则；每个 tool round 重建 system prompt，文件改动下一轮可见；新增真实注入测试
 [x] K5 291 tests 全绿；system-prompt API 实测长度 24251、workspace marker/意图规则/AGENTS 均存在；服务 health OK；待提交推送
 ------ todo-list end at 2026/09/15 18:48:57 -----
+
+------ todo-list begin at 2026/09/15 18:50:18 -----
+用户请求原文：确认 DSH 是否有时间戳注入，并对照 Nova
+
+[] L1 核对 DSH 时间上下文源码和注入时机
+[] L2 核对 Nova 当前时间上下文是否真正进入模型请求
+[] L3 给出结论；如有差异，提出或实施对齐修复
+[x] L1 已核对 DSH time-context：pre-step 动态 user-role snapshot，包含当前时间、浏览器时区、IANA 时区和 elapsed
+[x] L2 已在 Nova 页面复现模型点击：前端请求成功但状态字段错读，后端组切换覆盖模型选择
+[x] L3 已修复：读取 provider_model；模型 value 改为 provider::model；后端保留显式 provider_model；API payload 补 provider_model
+------ todo-list end at 2026/09/15 23:49:18 -----
