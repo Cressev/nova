@@ -329,13 +329,16 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, on
 }
 
 /* ---- 头部 ---- */
-function ChatHeader({ title, modeLabel, bgTasks, activeTab, onTab, onSessionLog }: {
+function ChatHeader({ title, modeLabel, bgTasks, activeTab, onTab, onSessionLog, commentCount, commentPanelOpen, onToggleComments }: {
   title: string
   modeLabel: string
   bgTasks: number
   activeTab: "chat" | "trace"
   onTab: (tab: "chat" | "trace") => void
   onSessionLog: () => void
+  commentCount: number
+  commentPanelOpen: boolean
+  onToggleComments: () => void
 }) {
   return (
     <header className="chat-header" id="chat-header">
@@ -346,6 +349,20 @@ function ChatHeader({ title, modeLabel, bgTasks, activeTab, onTab, onSessionLog 
           {bgTasks > 0 ? <button className="header-bg-tasks" type="button">{bgTasks} 个后台任务 <span aria-hidden="true">▾</span></button> : null}
         </div>
         <div className="header-utilities">
+          {commentCount > 0 || commentPanelOpen ? (
+            <button
+              className={cx("header-comment-toggle", commentPanelOpen ? "active" : "")}
+              id="header-comment-toggle"
+              type="button"
+              title={commentPanelOpen ? "收起评论栏" : "展开评论栏"}
+              aria-pressed={commentPanelOpen}
+              onClick={onToggleComments}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M14 7.3c0 3.15-2.68 5.7-6 5.7-.66 0-1.3-.1-1.88-.28L3.2 14l.78-2.6A5.44 5.44 0 0 1 2 7.3C2 4.15 4.68 1.6 8 1.6s6 2.55 6 5.7Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/></svg>
+              <span>评论</span>
+              {commentCount > 0 ? <span className="header-comment-badge">{commentCount > 99 ? "99+" : commentCount}</span> : null}
+            </button>
+          ) : null}
           <button className="session-log-button" id="session-log-open" type="button" onClick={onSessionLog}>Session log ⤓</button>
         </div>
       </div>
@@ -812,6 +829,17 @@ export default function App() {
             activeTab={activeTab}
             onTab={setActiveTab}
             onSessionLog={() => void downloadSessionLog()}
+            commentCount={inline.threads.length}
+            commentPanelOpen={inline.panelOpen}
+            onToggleComments={() => {
+              if (inline.panelOpen) {
+                inline.setPanelOpen(false)
+                inline.setActiveAnchorId(null)
+              } else {
+                inline.setActiveAnchorId(null)
+                inline.setPanelOpen(true)
+              }
+            }}
           />
         ) : null}
         {activeTab === "trace" && selectedId ? (
