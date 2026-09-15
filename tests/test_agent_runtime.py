@@ -208,6 +208,25 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertNotIn("开发状态不应注入", context)
         self.assertNotIn("进度不应注入", context)
 
+    def test_system_prompt_really_injects_instructions_persona_and_memory(self) -> None:
+        Path(self.tmpdir.name, "AGENTS.md").write_text("本项目必须先读取需求再实现", encoding="utf-8")
+        Path(self.tmpdir.name, "CLAUDE.md").write_text("补充：最终交付要给出验证地址", encoding="utf-8")
+        persona = Path(self.tmpdir.name, ".nova", "persona")
+        persona.mkdir(parents=True)
+        (persona / "soul.md").write_text("人格：直接、谨慎、先理解用户意图", encoding="utf-8")
+        memory = Path(self.tmpdir.name, ".nova-memory")
+        (memory / "items").mkdir(parents=True)
+        (memory / "index.md").write_text("# Memory index — project\n\n- ui-rule :: 用户偏好\n", encoding="utf-8")
+
+        prompt = self.runtime._system_prompt()
+
+        self.assertIn("本项目必须先读取需求再实现", prompt)
+        self.assertIn("补充：最终交付要给出验证地址", prompt)
+        self.assertIn("人格：直接、谨慎、先理解用户意图", prompt)
+        self.assertIn("ui-rule :: 用户偏好", prompt)
+        self.assertIn("<workspace-instructions>", prompt)
+        self.assertNotIn("CURRENT.md", prompt)
+
     def test_answer_from_tool_results_uses_latest_successful_output(self) -> None:
         text = self.runtime._answer_from_tool_results(
             [

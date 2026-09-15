@@ -2607,3 +2607,13 @@ PYEOF
 [x] J3 工作区面板改绝对定位浮层（侧栏/hero 两处均不参与页面流布局）；路径输入收进“高级：输入路径”，默认不显示；侧栏主按钮加宽并修复窄列换行
 [x] J4 浏览器验证：主入口为原生选择按钮、路径输入默认折叠、侧栏面板 position=absolute；py_compile 通过；290 测试绿；页面浮层不挤会话列表
 ------ todo-list end at 2026/09/15 18:34:40 -----
+
+------ todo-list begin at 2026/09/15 18:43:56 -----
+用户请求原文：系统提示词、AGENTS.md、人格文件提示词、注入提示词、注入时机、上下文编排对齐 DSH，修复模型不理解用户意图
+
+[x] K1 已读取 AGENTS/CURRENT/PROGRESS、日志、任务入口；确认 Nova _system_prompt 与 ProjectMemory.context 的实际链路
+[x] K2 调研 DSH agent-instructions：基线首请求前进入上下文；AGENTS/CLAUDE + local overlay；明确来源/优先级/预算；tools/result 后入 inbox，pre-step 注入下一步；cwd/provider/model 由 systemPrompt variable 注入
+[x] K3 根因：Nova ProjectMemory 虽读取 AGENTS/人格/记忆，但主 _system_prompt 未调用 memory.context()，真实 provider 请求收不到；system.prompt 轨迹事件不等于模型上下文；工具轮次也未重投影
+[x] K4 修复：system message 每次组装真实 workspace-instructions（全局/项目 AGENTS、CLAUDE/local overlay）+ 人格 + 分层记忆索引；加入理解用户意图规则；每个 tool round 重建 system prompt，文件改动下一轮可见；新增真实注入测试
+[x] K5 291 tests 全绿；system-prompt API 实测长度 24251、workspace marker/意图规则/AGENTS 均存在；服务 health OK；待提交推送
+------ todo-list end at 2026/09/15 18:48:57 -----

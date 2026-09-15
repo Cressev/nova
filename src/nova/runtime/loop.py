@@ -64,6 +64,12 @@ class AgentLoop:
         all_tool_results: list[str] = []
 
         for round_index in range(runtime.max_tool_rounds):
+            # dsh pre-step 语义：每个工具轮次开始前重新投影 instruction/persona/
+            # memory 上下文，保证本轮工具刚修改 AGENTS.md 后下一轮即可生效。
+            working_messages = [
+                ChatMessage(session_id="agent", role=ChatRole.SYSTEM, content=runtime._system_prompt()),
+                *[message for message in working_messages if message.role != ChatRole.SYSTEM],
+            ]
             yield {"type": "agent_status", "status": f"模型决策中，第 {round_index + 1} 轮"}
             # dsh 逐字输出：决策阶段直接流式，纯文本回答即时下发，
             # 工具调用轮的文本由门控拦截（不展示原始 XML）。

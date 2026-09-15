@@ -18,6 +18,9 @@ class ProjectMemory:
         self.project_root = project_root.resolve()
         self.global_agent_file = global_agent_file
         self.max_chars = max_chars
+        # dsh 默认候选：同一工作区的 AGENTS.md/CLAUDE.md，以及本地覆盖文件。
+        # 顺序决定同一文件名冲突时的优先级；上下文渲染会保留来源标题。
+        self.instruction_files = ["AGENTS.md", "CLAUDE.md", "AGENTS.local.md", "CLAUDE.local.md"]
         self.project_agent_file = self.project_root / "AGENTS.md"
         self.development_state_files = ["CURRENT.md", "PROGRESS.md", "TODOList.md", "log.md"]
         self.memory_dir = self.project_root / ".nova" / "memory"
@@ -259,7 +262,12 @@ class ProjectMemory:
         sources: list[tuple[str, Path]] = []
         if self.global_agent_file is not None:
             sources.append(("全局 Agent 指令", self.global_agent_file))
-        sources.append(("项目 Agent 指令", self.project_agent_file))
+        # dsh 同目录候选：基础文件先进入，local 文件作为更具体的覆盖层后进入。
+        for filename in self.instruction_files:
+            path = self.project_root / filename
+            if path == self.project_agent_file and any(existing == path for _, existing in sources):
+                continue
+            sources.append((f"工作区指令（{filename}）", path))
         return sources
 
     def _source_status(self, scope: str, path: Path | None, *, injected: bool, kind: str = "instruction") -> dict:

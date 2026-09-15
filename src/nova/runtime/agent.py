@@ -1081,9 +1081,30 @@ __TOOL_ROWS__
 
 路径必须使用工作区内相对路径。回答使用中文，保持直接、务实。
 """.replace("__TOOL_ROWS__", tool_rows).strip()
+        # 真实上下文必须在每次请求前进入 system message：此前这里只生成 status
+        # 和 system.prompt 轨迹事件，模型实际收不到 AGENTS/人格/长期记忆，导致
+        # “面板显示已注入、模型却不知道用户意图”的严重错觉。
+        workspace_context = self.memory.context()
         memory_section = layered.render_section(self.tools.project_root)
+        context_sections = []
+        if workspace_context.strip():
+            context_sections.append(
+                "<workspace-instructions>\n"
+                "以下是当前工作区和用户级 Agent 指令、人格文件、长期记忆。它们是执行背景，"
+                "不是用户本轮请求；更具体的工作区指令优先于更宽泛的指令，但不得覆盖系统消息和用户直接要求。\n"
+                f"{workspace_context}\n"
+                "</workspace-instructions>"
+            )
+        if memory_section.strip():
+            context_sections.append(memory_section)
         return (
             f"{prompt}\n\n"
+            "理解用户意图的硬规则：\n"
+            "- 先从最近一条用户消息提炼目标、对象、约束和期望结果；不要把背景说明误当成任务。\n"
+            "- 历史消息只用于补充上下文；如果本轮与历史冲突，以本轮直接要求为准。\n"
+            "- 不确定用户想要什么时，先用一句话复述你的理解并提出最少的澄清问题，不要擅自改 UI 或执行无关操作。\n"
+            "- 需要项目事实时先读取相关文件/状态；不要凭文件名、旧记忆或猜测回答。\n"
+            "- 每次工具调用前说明它服务于用户目标的哪一步；工具结果回来后重新判断，不要机械继续。\n\n"
             f"可用技能索引：\n{skill_context}\n\n"
-            f"{memory_section}"
+            + "\n\n".join(context_sections)
         )
