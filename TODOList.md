@@ -2537,3 +2537,13 @@ PYEOF
 [x] C4 完成：进会话 GET comments 恢复线程+高亮；点高亮唤面板定位线程；点引用块滚回原文
 [x] C5 完成：4 条评论单测（存储roundtrip/分层/背景裁剪/主线零污染）+ 290 全量绿；API e2e（thread_started/delta/done 流事件+threads 列表+主线未污染）；浏览器 e2e（划词→浮条→解释→面板右开→流式回答→高亮点击唤起）；持久化 2 锚点 3 评论跨重启
 ------ todo-list end at 2026/09/15 12:01:55 -----
+
+------ todo-list begin at 2026/09/15 12:23:27 -----
+用户请求原文：修划词浮条位置（避开系统选区菜单）+ UI 打磨；评论追问加发送键；修用户消息即时显示；修真流式输出
+
+[x] B1 浮条移到选区下方居中（避开 macOS 系统选中菜单；实测 belowSelection/centeredOnSel 均 true）；修定位 bug（原来传 rect.left 却配 translate(-50%) 导致左偏 110px）；按钮 12px + 12px 横向 padding + 分隔线 + hover 底色
+[x] B2 追问框加圆形蓝色发送按钮（disabled 态同步 busy/空稿）
+[x] B3 乐观插入：追问和新提问发送瞬间本地加 user bubble（实测 userShown 0.9s 即 true）
+[x] B4 根因诊断：后端流式链路本通（16s 是 GLM 思考期，正文 2-3 大块 delta）；修前端感知——思考期显示脉动"思考中…"动画（原来 thread_started 立即设空 text 导致 loading 永不显示）；实测长回答 streamLen 4→62→116 逐字增长
+[x] B5 290 测试绿；浏览器实测浮条定位/发送按钮/乐观插入/逐字流式全通过；测试线程已清理
+------ todo-list end at 2026/09/15 12:31:43 -----

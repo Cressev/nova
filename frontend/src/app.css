@@ -5684,45 +5684,61 @@ body.inspector-collapsed .inspector-toggle {
 
 /* ---- 划词评论问答（旁路线程） ---- */
 
-/* 浮条：锚定选区上方居中（fixed 定位跟视口） */
+/* 浮条：选区下方居中（fixed 定位；left 已是选区中心点，translate(-50%) 居中，
+ * top 是选区底边，+6px 间距；避开 macOS/输入法在选区上方的系统菜单） */
 .inline-comment-toolbar {
   position: fixed;
   z-index: 300;
   display: flex;
   align-items: center;
-  gap: 2px;
-  transform: translate(-50%, calc(-100% - 8px));
   padding: 3px;
+  transform: translate(-50%, 6px);
   border: 1px solid var(--line-strong, rgba(0, 0, 0, 0.08));
   border-radius: 10px;
   background: #fff;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16), 0 2px 6px rgba(15, 23, 42, 0.1);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.08);
 }
 .inline-comment-toolbar button {
   border: none;
   border-radius: 7px;
   background: transparent;
-  color: #33363c;
+  color: #40454e;
   font: inherit;
-  font-size: 13px;
-  line-height: 18px;
-  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 20px;
+  padding: 3px 12px;
   cursor: pointer;
+  white-space: nowrap;
 }
 .inline-comment-toolbar button:hover {
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(65, 94, 239, 0.08);
   color: var(--blue, #415eef);
 }
+/* 按钮间细分隔线 */
+.inline-comment-toolbar button.sep {
+  position: relative;
+  margin-left: 3px;
+}
+.inline-comment-toolbar button.sep::before {
+  content: "";
+  position: absolute;
+  left: -3px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 14px;
+  background: rgba(0, 0, 0, 0.08);
+}
 .inline-comment-toolbar.asking {
-  gap: 6px;
-  padding: 6px 8px;
+  gap: 4px;
+  padding: 4px 4px 4px 12px;
 }
 .inline-comment-toolbar.asking input {
-  width: 240px;
+  width: 220px;
   border: none;
   outline: none;
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   background: transparent;
 }
 .inline-comment-toolbar.asking .send {
@@ -5734,6 +5750,10 @@ body.inspector-collapsed .inspector-toggle {
   display: grid;
   place-items: center;
   padding: 0;
+}
+.inline-comment-toolbar.asking .send:hover {
+  background: var(--blue, #415eef);
+  filter: brightness(1.08);
 }
 
 /* 高亮：常驻浅黄 */
@@ -5876,3 +5896,29 @@ body.inspector-collapsed .inspector-toggle {
   outline: none;
 }
 .inline-comment-ask input:focus { border-color: var(--blue, #415eef); }
+.inline-comment-ask {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.inline-comment-ask-send {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: var(--blue, #415eef);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.inline-comment-ask-send:hover:not(:disabled) { filter: brightness(1.08); }
+.inline-comment-ask-send:disabled { opacity: 0.4; cursor: default; }
+.inline-comment-loading {
+  animation: inline-comment-pulse 1.2s ease-in-out infinite;
+}
+@keyframes inline-comment-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}

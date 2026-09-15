@@ -148,7 +148,7 @@ function highlightRange(container: HTMLElement, range: Range, color: string, onC
 /* ---- 划词浮条 ---- */
 
 interface SelectionToolbarState {
-  rect: { top: number; left: number; width: number }
+  rect: { top: number; left: number }
   quote: string
   prefix: string
   suffix: string
@@ -175,10 +175,10 @@ export function SelectionToolbar({
   useEffect(() => { if (asking) inputRef.current?.focus() }, [asking])
   if (!asking) {
     return (
-      <div className="inline-comment-toolbar" style={{ top: state.rect.top, left: state.rect.left, width: state.rect.width }} onMouseDown={(e) => e.preventDefault()}>
+      <div className="inline-comment-toolbar" style={{ top: state.rect.top, left: state.rect.left }} onMouseDown={(e) => e.preventDefault()}>
         <button type="button" onClick={onExplain}>解释</button>
-        <button type="button" onClick={onAsk}>提问</button>
-        <button type="button" onClick={() => { void navigator.clipboard?.writeText(state.quote); onClose() }}>复制</button>
+        <button type="button" className="sep" onClick={onAsk}>提问</button>
+        <button type="button" className="sep" onClick={() => { void navigator.clipboard?.writeText(state.quote); onClose() }}>复制</button>
       </div>
     )
   }
@@ -239,7 +239,9 @@ function ThreadView({ thread, streamingText, busy, onAsk, onDelete, onFocusAncho
         {streamingText !== null ? (
           <div className="inline-comment-bubble assistant streaming">
             <div className="inline-comment-role">Nova</div>
-            <div className="inline-comment-text">{streamingText}</div>
+            <div className="inline-comment-text">
+              {streamingText === "" ? <span className="inline-comment-loading">思考中…</span> : streamingText}
+            </div>
           </div>
         ) : null}
         {busy && streamingText === null ? <div className="inline-comment-loading">思考中…</div> : null}
@@ -257,6 +259,19 @@ function ThreadView({ thread, streamingText, busy, onAsk, onDelete, onFocusAncho
             }
           }}
         />
+        <button
+          type="button"
+          className="inline-comment-ask-send"
+          aria-label="发送"
+          title="发送"
+          disabled={busy || !draft.trim()}
+          onClick={() => {
+            if (draft.trim() && !busy) {
+              onAsk(thread.anchor.id, draft.trim())
+              setDraft("")
+            }
+          }}
+        ><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.5V3.5M3.8 7.7L8 3.5l4.2 4.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
       </div>
     </section>
   )
@@ -285,7 +300,6 @@ export function CommentPanel({ open, threads, activeAnchorId, streaming, busy, o
           <div className="inline-comment-empty">选中回复中的文字，点“解释”或“提问”开始旁路问答</div>
         ) : (
           threads
-            .filter((t) => activeAnchorId === null || t.anchor.id === activeAnchorId)
             .map((thread) => (
               <ThreadView
                 key={thread.anchor.id}
@@ -382,7 +396,8 @@ export function useInlineComments(sessionId: string | null, version: number) {
         const prefix = start > 0 ? fullText.slice(Math.max(0, start - 32), start) : ""
         const suffix = fullText.slice(start + text.length, start + text.length + 32)
         setToolbar({
-          rect: { top: rect.top, left: rect.left, width: rect.width },
+          // 选区下方居中（避开 macOS/输入法的系统选中菜单，它们通常在选区上方）
+          rect: { top: rect.bottom, left: rect.left + rect.width / 2 },
           quote: text,
           prefix,
           suffix,
@@ -400,7 +415,19 @@ export function useInlineComments(sessionId: string | null, version: number) {
     setBusy(true)
     setStreaming(null)
     let anchorId: string = typeof body.anchor_id === "string" ? body.anchor_id : ""
+    const question = typeof body.question === "string" ? body.question : ""
     const parts: string[] = []
+    // 乐观插入：发送瞬间本地可见用户问题（不等 refreshThreads）
+    if (question) {
+      setThreads((ts) => {
+        if (anchorId) {
+          return ts.map((t) => t.anchor.id === anchorId
+            ? { ...t, entries: [...t.entries, { id: `local_${Date.now()}`, anchor_id: anchorId, role: "user" as const, content: question, created_at: new Date().toISOString() }] }
+            : t)
+        }
+        return ts
+      })
+    }
     try {
       const resp = await fetch(`/api/chat/sessions/${encodeURIComponent(sid)}/comments/stream`, {
         method: "POST",
@@ -423,6 +450,17 @@ export function useInlineComments(sessionId: string | null, version: number) {
             const evt = JSON.parse(line)
             if (evt.type === "thread_started") {
               anchorId = String(evt.anchor?.id || "")
+              const newAnchor = evt.anchor
+              setThreads((ts) => {
+                if (ts.some((t) => t.anchor.id === anchorId)) return ts
+                const thread: CommentThread = {
+                  anchor: newAnchor,
+                  entries: question
+                    ? [{ id: `local_${Date.now()}`, anchor_id: anchorId, role: "user" as const, content: question, created_at: new Date().toISOString() }]
+                    : [],
+                }
+                return [...ts, thread]
+              })
               setStreaming({ anchorId: String(anchorId), text: "" })
             } else if (evt.type === "delta") {
               parts.push(evt.text || "")
