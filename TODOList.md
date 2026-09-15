@@ -2598,3 +2598,12 @@ PYEOF
 [x] I2 条目改两行（名称加粗+灰色路径小字+图标底色块，当前项蓝三重强调+对勾，hover 右箭头变蓝），分区分隔线，输入区 mono 字体+聚焦光环，面板内滚动+底部提示条精简为一行
 [x] I3 实测：输入 /Users/liam/Code/codex/nova-created-test → 状态"目录不存在，可新建并切换"绿字 → 点按钮 → 目录真建+切换成功（label 变 nova-created-test）。途中修后端语义错误：folders 端点原与会话权限模式耦合（只读模式 403），改为信任边界=allowed roots（用户 UI 主动操作≠模型工具调用）。290 测试绿 ×2；测试目录已清理
 ------ todo-list end at 2026/09/15 18:25:56 -----
+
+------ todo-list begin at 2026/09/15 18:28:47 -----
+用户请求原文：参考 dsh 弹出系统目录选择器，不要求手动输入路径，工作区 UI 不得把页面内容挤下去
+
+[x] J1 核对 DSH：macOS 使用 osascript choose folder 原生系统目录选择器，系统弹窗内可浏览和新建文件夹；Nova 原先把手输路径当主流程且内联面板挤压页面
+[x] J2 新增 POST /api/workspace/pick：macOS 原生目录选择器；选择后仍由 WorkspaceManager 校验 allowed roots，取消返回 204；主按钮改为“选择文件夹…”，系统弹窗内直接新建目录
+[x] J3 工作区面板改绝对定位浮层（侧栏/hero 两处均不参与页面流布局）；路径输入收进“高级：输入路径”，默认不显示；侧栏主按钮加宽并修复窄列换行
+[x] J4 浏览器验证：主入口为原生选择按钮、路径输入默认折叠、侧栏面板 position=absolute；py_compile 通过；290 测试绿；页面浮层不挤会话列表
+------ todo-list end at 2026/09/15 18:34:40 -----

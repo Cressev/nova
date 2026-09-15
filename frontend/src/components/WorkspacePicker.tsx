@@ -54,6 +54,7 @@ export function WorkspacePicker({ current, onSwitched }: { current: string; onSw
   const [status, setStatus] = useState<WorkspaceStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [draft, setDraft] = useState("")
   const [draftStatus, setDraftStatus] = useState<PathStatus | null>(null)
   const [draftCandidates, setDraftCandidates] = useState<string[]>([])
@@ -84,6 +85,23 @@ export function WorkspacePicker({ current, onSwitched }: { current: string; onSw
     const next = await api<WorkspaceStatus>(q ? `/api/workspaces?q=${encodeURIComponent(q)}` : "/api/workspaces")
     setStatus(next)
     return next
+  }
+
+  const chooseNative = async () => {
+    if (busy) return
+    setBusy(true)
+    setError("")
+    try {
+      const next = await api<WorkspaceStatus | undefined>("/api/workspace/pick", { method: "POST" })
+      if (next?.current_root) {
+        setStatus(next)
+        onSwitched(next.current_root)
+      }
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "无法打开系统目录选择器")
+    } finally {
+      setBusy(false)
+    }
   }
 
   const pick = async (path: string) => {
@@ -153,37 +171,30 @@ export function WorkspacePicker({ current, onSwitched }: { current: string; onSw
           </>
         ) : null}
 
-        <div className="workspace-picker-label">新建或按路径切换</div>
-        <div className="workspace-create">
-          <input
-            className="workspace-create-input"
-            value={draft}
-            placeholder="输入目录路径，如 ~/Code/新项目"
-            spellCheck={false}
-            disabled={busy}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void applyDraft() } }}
-          />
-          <button
-            type="button"
-            className="workspace-create-button"
-            disabled={busy || !actionable}
-            onClick={() => void applyDraft()}
-          >{busy ? "处理中…" : actionLabel}</button>
+        <div className="workspace-picker-action">
+          <button type="button" className="workspace-native-button" disabled={busy} onClick={() => void chooseNative()}>
+            <svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 4.2A1.7 1.7 0 0 1 3.5 2.5h2.6l1.4 1.7h5A1.7 1.7 0 0 1 14.2 6v5.8a1.7 1.7 0 0 1-1.7 1.7H3.5a1.7 1.7 0 0 1-1.7-1.7V4.2Z" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round"/></svg>
+            <span>{busy ? "正在打开…" : "选择文件夹…"}</span>
+            <span className="workspace-native-button-sub">可在系统弹窗中直接新建文件夹</span>
+          </button>
         </div>
-        {draft.trim() && draftStatus ? (
-          <div className={`workspace-create-status ${statusTone}`}>{draftStatus.reason}</div>
-        ) : null}
-        {draftCandidates.length > 0 && draft.trim() ? (
-          <div className="workspace-create-candidates">
-            {draftCandidates.map((p) => (
-              <button key={p} type="button" title={p} onClick={() => setDraft(p)}>{p}</button>
-            ))}
+        <button type="button" className="workspace-advanced-toggle" onClick={() => setAdvancedOpen((v) => !v)}>
+          <svg className={`chevron-icon${advancedOpen ? " open" : ""}`} width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          <span>高级：输入路径</span>
+        </button>
+        {advancedOpen ? (
+          <div className="workspace-advanced">
+            <div className="workspace-create">
+              <input className="workspace-create-input" value={draft} placeholder="输入目录路径" spellCheck={false} disabled={busy} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void applyDraft() } }} />
+              <button type="button" className="workspace-create-button" disabled={busy || !actionable} onClick={() => void applyDraft()}>{busy ? "处理中…" : actionLabel}</button>
+            </div>
+            {draft.trim() && draftStatus ? <div className={`workspace-create-status ${statusTone}`}>{draftStatus.reason}</div> : null}
+            {draftCandidates.length > 0 && draft.trim() ? <div className="workspace-create-candidates">{draftCandidates.map((p) => <button key={p} type="button" title={p} onClick={() => setDraft(p)}>{p}</button>)}</div> : null}
           </div>
         ) : null}
         {error ? <div className="workspace-picker-error">{error}</div> : null}
       </div>
-      <div className="workspace-picker-hint">只影响之后新建的会话；已有会话保持原工作目录</div>
+      <div className="workspace-picker-hint">选择目录后只影响新会话；已有会话保持原工作目录</div>
     </div>
   )
 }

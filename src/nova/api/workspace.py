@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import os
+import subprocess
+import sys
+
 from fastapi import APIRouter
 
 from . import routes as ctx
@@ -12,6 +17,41 @@ async def workspace_list(
     q: str | None = ctx.Query(default=None, max_length=1200)
 ) -> dict:
     return ctx.workspace_manager.status(query=q)
+
+
+@router.post("/api/workspace/pick")
+async def pick_workspace() -> dict:
+    """打开系统目录选择器；macOS 与 DSH 一样使用原生 choose folder。
+
+    选择器是用户主动操作，取消返回 204；选中的目录仍由 WorkspaceManager
+    校验 allowed roots，不能借原生弹窗绕过 Nova 的工作区安全边界。
+    """
+    if os.name == "nt":
+        raise ctx.HTTPException(status_code=501, detail="当前平台暂不支持原生目录选择器")
+    if sys.platform == "darwin":
+        try:
+            proc = await asyncio.to_thread(
+                subprocess.run,
+                ["osascript", "-e", 'set selectedFolder to choose folder with prompt "选择 Nova 工作目录"', "-e", "POSIX path of selectedFolder"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError as exc:
+            raise ctx.HTTPException(status_code=501, detail=f"无法打开系统目录选择器：{exc}") from exc
+        if proc.returncode != 0:
+            # 用户点击取消时 osascript 返回 -128/1；取消不是错误。
+            if "-128" in proc.stderr or "User canceled" in proc.stderr:
+                return ctx.Response(status_code=204)
+            raise ctx.HTTPException(status_code=500, detail=proc.stderr.strip() or "系统目录选择器失败")
+        selected = proc.stdout.strip()
+    else:
+        raise ctx.HTTPException(status_code=501, detail="当前平台暂不支持原生目录选择器")
+    try:
+        ctx._switch_workspace(selected)
+        return ctx.workspace_manager.status()
+    except ctx.WorkspaceError as exc:
+        raise ctx.HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/api/workspace/select")
