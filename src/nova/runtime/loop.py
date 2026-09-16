@@ -74,7 +74,9 @@ class AgentLoop:
             # dsh 逐字输出：决策阶段直接流式，纯文本回答即时下发，
             # 工具调用轮的文本由门控拦截（不展示原始 XML）。
             decision: dict[str, object] = {"content": "", "tool_calls": []}
-            streamed_answer = False
+            # 工具决策轮的 content 只是模型的临时计划/解释，不是最终回答。
+            # 先缓冲，等 decision 收口确认没有 tool_calls 后才展示；否则整段丢弃。
+            pending_decision_deltas: list[str] = []
             async for event in runtime._stream_tool_decision(working_messages):
                 if event.get("type") == "decision":
                     decision = event
@@ -83,8 +85,14 @@ class AgentLoop:
                         yield {"type": "token_usage", "usage": event["usage"]}
                     continue
                 if event.get("type") == "assistant_delta":
-                    streamed_answer = True
+                    pending_decision_deltas.append(str(event.get("delta") or ""))
+                    continue
                 yield event
+            decision_text = str(decision.get("content") or "")
+            tool_calls = decision.get("tool_calls") or runtime._parse_tool_calls(decision_text)
+            if not tool_calls and not decision_text.strip():
+                decision_text = "".join(pending_decision_deltas)
+                decision["content"] = decision_text
             runtime._trace_generation(
                 trace_turn_id,
                 name=f"tool-decision-{round_index + 1}",
@@ -92,16 +100,13 @@ class AgentLoop:
                 content=str(decision["content"] or ""),
                 tool_calls=decision["tool_calls"] if isinstance(decision["tool_calls"], list) else [],
             )
-            decision_text = decision["content"]
-            tool_calls = decision["tool_calls"] or runtime._parse_tool_calls(decision_text)
             if not tool_calls:
-                if str(decision_text).strip():
-                    # 文本已在决策流里逐字下发；此处只补 done 事件收口。
-                    if not streamed_answer:
-                        yield {"type": "agent_status", "status": "生成最终回答"}
-                        for chunk in runtime._chunk_text(str(decision_text), 36):
-                            yield {"type": "assistant_delta", "delta": chunk}
-                    yield {"type": "assistant_done_content", "content": str(decision_text)}
+                if decision_text.strip():
+                    yield {"type": "agent_status", "status": "生成最终回答"}
+                    # 没有工具调用时，之前缓冲的决策文本才是最终正文。
+                    for chunk in runtime._chunk_text(decision_text, 36):
+                        yield {"type": "assistant_delta", "delta": chunk}
+                    yield {"type": "assistant_done_content", "content": decision_text}
                     return
                 yield {"type": "agent_status", "status": "生成最终回答"}
                 async for event in runtime._stream_final(working_messages, decision_text):
@@ -122,7 +127,8 @@ class AgentLoop:
                     ChatMessage(
                         session_id="agent",
                         role=ChatRole.ASSISTANT,
-                        content=decision_text or "已选择工具调用。",
+                        # 工具轮的临时 content 不进入 assistant 历史，避免最终模型复述过程文本。
+                        content="", 
                     ),
                     ChatMessage(
                         session_id="agent",

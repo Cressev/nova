@@ -96,9 +96,9 @@ class SessionStore:
             self._save_chats()
             return session
 
-    def list_chat_sessions(self, *, workspace: str | None = None) -> list[ChatSession]:
+    def list_chat_sessions(self, *, workspace: str | None = None, include_archived: bool = False) -> list[ChatSession]:
         with self._lock:
-            sessions = self._chat_sessions.values()
+            sessions = [session for session in self._chat_sessions.values() if include_archived or not session.archived]
             if workspace is not None:
                 sessions = [
                     session
@@ -124,6 +124,16 @@ class SessionStore:
             self._chat_events.pop(session_id, None)
             self._save_chats()
             return True
+
+    def archive_chat_session(self, session_id: str, archived: bool = True) -> ChatSession | None:
+        with self._lock:
+            session = self._chat_sessions.get(session_id)
+            if session is None:
+                return None
+            updated = session.model_copy(update={"archived": archived, "updated_at": utc_now()})
+            self._chat_sessions[session_id] = updated
+            self._save_chats()
+            return updated
 
     def rename_chat_session(self, session_id: str, title: str) -> ChatSession | None:
         """更新会话标题；菜单操作只允许改标题，不改变会话历史。"""

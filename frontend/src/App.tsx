@@ -457,12 +457,33 @@ function ConversationView({ entries, streamingText, onForkAt }: { entries: Timel
   streamingText: string | null
   onForkAt?: (messageId: string, messageRole: string) => void
 }) {
+  const scrollRef = useRef<HTMLDivElement | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
+  const [following, setFollowing] = useState(true)
+  const [hasNewer, setHasNewer] = useState(false)
+  const isNearBottom = () => {
+    const el = scrollRef.current
+    return !el || el.scrollHeight - el.scrollTop - el.clientHeight < 72
+  }
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end" })
-  }, [entries.length, streamingText])
+    if (following) {
+      bottomRef.current?.scrollIntoView({ block: "end" })
+      setHasNewer(false)
+    } else if (streamingText !== null) {
+      setHasNewer(true)
+    }
+  }, [entries.length, streamingText, following])
   return (
-    <div className="scroll-body" id="messages-scroll">
+    <div
+      className="scroll-body"
+      id="messages-scroll"
+      ref={scrollRef}
+      onScroll={() => {
+        const near = isNearBottom()
+        setFollowing(near)
+        if (near) setHasNewer(false)
+      }}
+    >
       <div className="messages" id="messages">
       {entries.map((entry) => {
         if (entry.kind === "message") return <MessageView key={entry.key} message={entry.message} onForkAt={onForkAt} />
@@ -483,6 +504,7 @@ function ConversationView({ entries, streamingText, onForkAt }: { entries: Timel
         </article>
       ) : null}
       <div ref={bottomRef} />
+       {!following || hasNewer ? <button className="jump-latest" type="button" onClick={() => { bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); setFollowing(true); setHasNewer(false) }} aria-label="跳转到最新消息" title="跳转到最新消息">↓</button> : null}
       </div>
     </div>
   )
@@ -600,10 +622,10 @@ export default function App() {
   }
 
   const archiveSession = async (session: ChatSession) => {
-    // Nova 暂无 DSH archive 投影层；先提供同样的无确认菜单入口，
-    // 用删除 API 作为临时语义，避免菜单项假装已实现。
-    if (!window.confirm(`归档“${session.title}”？当前会话将从列表移除。`)) return
-    await api(`/api/chat/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" })
+    await api<ChatSession>(`/api/chat/sessions/${encodeURIComponent(session.id)}/archive`, {
+      method: "POST",
+      body: JSON.stringify({ archived: true }),
+    })
     if (selectedId === session.id) {
       setSelectedId(null)
       setEntries([])

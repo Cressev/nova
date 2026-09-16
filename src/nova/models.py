@@ -31,6 +31,10 @@ class ChatSessionRename(BaseModel):
     title: str = Field(min_length=1, max_length=120)
 
 
+class ChatSessionArchive(BaseModel):
+    archived: bool = True
+
+
 class ChatSession(BaseModel):
     id: str
     title: str
@@ -41,6 +45,7 @@ class ChatSession(BaseModel):
     # seed_length 标记从父会话继承的事件边界（前 N 条是继承的，之后是子会话自己的）。
     parent_session_id: str | None = None
     seed_length: int | None = None
+    archived: bool = False
 
 
 class ChatMessageCreate(BaseModel):

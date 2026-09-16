@@ -61,6 +61,7 @@ from ..models import (
     ChatSession,
     ChatSessionCreate,
     ChatSessionRename,
+    ChatSessionArchive,
     ChatSessionFork,
     CommentAnchor,
     CommentEntry,

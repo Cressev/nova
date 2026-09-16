@@ -212,6 +212,14 @@ async def rename_chat_session(session_id: str, payload: ctx.ChatSessionRename) -
     return session
 
 
+@router.post("/api/chat/sessions/{session_id}/archive", response_model=ctx.ChatSession)
+async def archive_chat_session(session_id: str, payload: ctx.ChatSessionArchive) -> ctx.ChatSession:
+    session = ctx.store.archive_chat_session(session_id, payload.archived)
+    if session is None:
+        raise ctx.HTTPException(status_code=404, detail="Chat session not found")
+    return session
+
+
 @router.delete("/api/chat/sessions/{session_id}", status_code=204)
 async def delete_chat_session(session_id: str) -> ctx.Response:
     session = ctx.store.get_chat_session(session_id)

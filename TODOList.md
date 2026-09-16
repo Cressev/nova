@@ -2669,3 +2669,18 @@ PYEOF
 [x] O3 官方专用端点实测：personal→team→personal，glm-5.3-flash/glm-5.3/glm-4.7 普通调用均成功，team 工具流式成功
 [x] O4 291 tests OK，服务 health OK，记录完成，待提交推送
 ------ todo-list end at 2026/09/16 12:22:24 -----
+
+------ todo-list begin at 2026/09/16 12:35:48 -----
+用户请求原文：现在有个问题，模型在调用工具过程中也会有思考，或者什么content内容，但是现在都现在显示在了最后的输出中，导致非常混乱。比如我刚刚问的问题，他回答显示了：抱歉刚才没有回应。让我立即实际检查 RAGFlow 项目的相关文件，给你真实的进展汇报。收到工具结果。CURRENT.md 还停在9月4日的状态（说明它没跟上log.md的进度），kb_search目录下没有文件。让我读取RAG相关的finding和PROGRESS.md，并检索log.md里的RAG条目：找到了完整的RAGFlow记录。log.md里的条目已经到9月16日，比我上次汇报的还新。让我确认一下log.md尾部是否还有更多内容：log.md全部读完了（165行，最新记录到9月16日12:29）。现在给你RAGFlow项目的真实、完整进展：这明显不是最后的输出，而是中间的过程思考，但是被放在了最后的输出中显示，非常混乱。你搞清楚怎么搞的。修改bug。另外，现在模型输出过程中我没办法上划页面，看不了之前的内容，非常不友好，你看看dsh这种交互怎么能做这么舒服呢，nova差太多了我只能说。上划之后还有个箭头，点一下可以直接跳转到最新的对话。还有会话归档就是删除，我理解的而且dsh中也就是这样的吧，他并没有删除会话的语义，所以你需要对齐dsh
+
+[] P1 对照 DSH 读取工具决策过程与最终回答的消息/事件分流
+[] P2 修复 Nova 中间 content 污染最终 assistant 输出
+[] P3 实现流式滚动暂停与跳转最新按钮
+[] P4 将归档从物理删除改为隐藏归档，保留恢复/数据语义
+[] P5 测试、浏览器验证、更新 durable 记录并提交推送
+[x] P1 根因确认：tool-decision 的 assistant_delta 在决策尚未确认前直接下发；tool decision_text 还被作为 assistant 历史消息，导致过程 content 污染最终回答
+[x] P2 已修复：工具决策 content/delta 先缓冲，无工具调用才转正文；有工具调用整段丢弃且不写 assistant 历史
+[x] P3 已实现：用户上划后暂停自动跟随；流式期间显示“跳转到最新消息”箭头，点击平滑回到底部
+[x] P4 已修复：ChatSession archived 字段、archive API、存储保留；列表默认隐藏归档，物理 DELETE 仍单独保留
+[x] P5 291 tests OK；frontend tsc/build OK；浏览器/API 验证 archive visible=false、stored=true archived=true；待提交推送
+------ todo-list end at 2026/09/16 12:42:10 -----

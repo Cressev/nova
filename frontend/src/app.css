@@ -633,7 +633,26 @@ body.sidebar-collapsed .sidebar-foot-button {
 
 
 /* 满宽滚动层（dsh .scrollBody）：滚动条贴视口缘，内容列在其中居中 */
+.jump-latest {
+  position: absolute;
+  z-index: 20;
+  right: 24px;
+  bottom: 18px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 14%);
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.jump-latest:hover { background: var(--dsw-specific-sidebar-nav-item-hover); }
+
 .scroll-body {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
