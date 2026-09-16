@@ -277,7 +277,7 @@ class BigModelProvider:
                 stream=False,
             )
         except Exception as exc:
-            raise ProviderError(f"模型工具决策调用失败：{exc}") from exc
+            raise ProviderError(self._friendly_provider_error("模型工具决策调用失败", exc)) from exc
 
         self._record_usage(self._read_attr(response, "usage"))
         try:
@@ -369,6 +369,18 @@ class BigModelProvider:
             return value.get(key)
         return getattr(value, key, None)
 
+    def _friendly_provider_error(self, operation: str, exc: Exception) -> str:
+        """保留供应商原始错误，同时把常见 1113 指向正确的排查方向。"""
+        detail = str(exc)
+        if "1113" in detail or "余额不足或无可用资源包" in detail:
+            return (
+                f"{operation}：供应商返回 429/1113（当前 provider={self.api_key_env}，"
+                f"model={self.model}）。这通常表示当前 API Key 所属账户没有该模型的可用资源包，"
+                "不代表其他 provider 或套餐余额一定不可用。请检查当前选中的供应商组、API Key 归属和资源包；"
+                f"原始错误：{detail}"
+            )
+        return f"{operation}：{detail}"
+
     async def stream_with_tools(
         self,
         messages: list[ChatMessage],
@@ -401,7 +413,7 @@ class BigModelProvider:
                 stream_options={"include_usage": True},
             )
         except Exception as exc:
-            raise ProviderError(f"模型流式工具决策调用失败：{exc}") from exc
+            raise ProviderError(self._friendly_provider_error("模型流式工具决策调用失败", exc)) from exc
 
         parts: list[str] = []
         fragments: dict[int, dict[str, str]] = {}

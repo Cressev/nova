@@ -2643,3 +2643,16 @@ PYEOF
 [x] M4 291 tests OK；前端 tsc/build OK；浏览器实测菜单四项可见；服务 health 正常
 [x] M5 durable 记录完成，待提交推送
 ------ todo-list end at 2026/09/16 11:56:01 -----
+
+------ todo-list begin at 2026/09/16 12:09:18 -----
+用户请求原文：你看看我配置的nova中的几个provider，不可用吗 ? 提示我说模型流式工具决策调用失败：Error code: 429 - {'error': {'code': '1113', 'message': '余额不足或无可用资源包,请充值。'}}，我换了好几个模型都这样，但实际上我看了我的套餐是还有余额的啊，你需要测试一下帮我。
+
+[] N1 读取 Nova provider 配置与运行日志（不回显密钥）
+[] N2 逐组测试 provider 端点和最小模型请求
+[] N3 判断 429/1113 根因并修复 Nova 配置或错误诊断
+[] N4 回归测试并更新 durable 记录
+[x] N1 已读取运行配置和 provider 实现：个人组/团队组均指向 BigModel OpenAI 端点；密钥状态只检查不回显
+[x] N2 实测两组 key：个人 BIGMODEL_API_KEY 的 glm-4.7/glm-5.3/glm-5.3-flash 普通与工具流式均成功；team key 的 glm-4.7/glm-5.2/glm-5.3/glm-5.3-flash 全部 429/1113，/models 仅能列出模型
+[x] N3 判断为 team key 所属账户/资源包问题，不是 Nova 工具 schema/流式实现；切回已验证可用 bigmodel 个人组；1113 增加 provider/model/key-env 诊断
+[x] N4 291 tests OK，服务 health OK，durable 记录完成，待提交推送
+------ todo-list end at 2026/09/16 12:12:54 -----
