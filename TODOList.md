@@ -2656,3 +2656,16 @@ PYEOF
 [x] N3 判断为 team key 所属账户/资源包问题，不是 Nova 工具 schema/流式实现；切回已验证可用 bigmodel 个人组；1113 增加 provider/model/key-env 诊断
 [x] N4 291 tests OK，服务 health OK，durable 记录完成，待提交推送
 ------ todo-list end at 2026/09/16 12:12:54 -----
+
+------ todo-list begin at 2026/09/16 12:15:11 -----
+用户请求原文：那我刚刚从team组切换回person组也不能用，我笑了，所以说我切换模型还是没有热生效，搞啥呢，你测试好了吗
+
+[] O1 通过真实 PATCH 链路复现 team/person 热切换并检查当前 provider 状态
+[] O2 修复热切换密钥归属、模型选择和 runtime 状态同步
+[] O3 连续切换两组并做普通/工具流式实际调用验证
+[] O4 回归测试、更新记录、提交推送
+[x] O1 通过真实 PATCH 复现：team/person 状态字段会更新，但 personal 端点仍为普通 /api/paas/v4，实际请求失败
+[x] O2 修复并确认：Coding Plan Team Key 必须使用 /api/coding/paas/v4；两个 provider 的 key 指纹相同，禁止跨组继承 key，profile 按自身 key_env/槽位解析
+[x] O3 官方专用端点实测：personal→team→personal，glm-5.3-flash/glm-5.3/glm-4.7 普通调用均成功，team 工具流式成功
+[x] O4 291 tests OK，服务 health OK，记录完成，待提交推送
+------ todo-list end at 2026/09/16 12:22:24 -----

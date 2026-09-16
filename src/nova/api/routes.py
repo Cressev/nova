@@ -451,7 +451,7 @@ def _runtime_config_payload() -> dict:
                     "protocol": str(p.get("protocol") or "openai"),
                     "base_url": str(p.get("base_url") or ""),
                     "api_key_env": str(p.get("api_key_env") or "API_KEY"),
-                    "api_key_set": bool(_load_profile_api_key(pid, _workspace_runtime_secret_file()) or os.getenv(str(p.get("api_key_env") or "API_KEY"))),
+                    "api_key_set": bool(_load_profile_api_key(pid, _workspace_runtime_secret_file(), str(p.get("api_key_env") or "API_KEY"))),
                     "models": models,
                 })
     if not profiles:
@@ -623,8 +623,9 @@ def _rebuild_provider_from_profile(profile: dict) -> None:
     models = profile.get("models") or []
     model = str(models[0]) if models else ""
     secret_file = _workspace_runtime_secret_file()
-    runtime_key = _load_profile_api_key(profile["id"], secret_file)
-    previous_key = getattr(provider, "_runtime_api_key", None)
+    # 每个 profile 必须解析自己的 key：个人组通常使用其 api_key_env 的顶层槽位，
+    # 自定义组使用 api_keys[profile_id]。绝不能跨组继承上一组的运行时 key。
+    runtime_key = _load_profile_api_key(profile["id"], secret_file, api_key_env)
     if protocol == "anthropic":
         from ..providers.anthropic import AnthropicProvider
         provider = AnthropicProvider(base_url=base_url or None, model=model or None, api_key_env=api_key_env)
@@ -633,8 +634,6 @@ def _rebuild_provider_from_profile(profile: dict) -> None:
         provider = BigModelProvider(base_url=base_url or None, model=model or None, api_key_env=api_key_env)
     if runtime_key:
         provider.set_runtime_api_key(runtime_key)
-    elif previous_key and provider.api_key_env == api_key_env:
-        provider.set_runtime_api_key(previous_key)
 
 
 def _normalize_model_entry(raw: object) -> dict[str, object] | None:
@@ -664,8 +663,8 @@ def _normalize_model_entry(raw: object) -> dict[str, object] | None:
     return None
 
 
-def _load_profile_api_key(profile_id: str, secret_file: Path) -> str | None:
-    """从运行时密钥文件读取某组的密钥（api_keys[profile_id]，回落旧 api_key）。"""
+def _load_profile_api_key(profile_id: str, secret_file: Path, api_key_env: str | None = None) -> str | None:
+    """按 profile 解析 key：先 profile 槽位，再匹配 api_key_env 的顶层槽位。"""
     try:
         payload = json.loads(secret_file.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError, OSError):
@@ -676,7 +675,15 @@ def _load_profile_api_key(profile_id: str, secret_file: Path) -> str | None:
     if isinstance(keys, dict) and isinstance(keys.get(profile_id), str) and keys[profile_id]:
         return str(keys[profile_id])
     legacy = payload.get("api_key")
-    return str(legacy) if isinstance(legacy, str) and legacy else None
+    if isinstance(legacy, str) and legacy:
+        return legacy
+    # 旧版设置页把单组 key 按环境变量名写在顶层；personal provider
+    # 的 BIGMODEL_API_KEY 就属于这一类。
+    if api_key_env:
+        env_key = payload.get(api_key_env)
+        if isinstance(env_key, str) and env_key:
+            return env_key
+    return None
 
 
 def _enforce_permission_sandbox_consistency() -> None:
