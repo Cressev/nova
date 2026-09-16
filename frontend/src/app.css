@@ -2954,6 +2954,18 @@ body.inspector-collapsed .inspector-toggle {
   box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
 }
 
+.session-inline-rename {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--dsw-static-deepseek-500);
+  border-radius: 5px;
+  padding: 2px 5px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+
 .session-context-menu button {
   display: flex;
   width: 100%;

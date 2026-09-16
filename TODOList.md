@@ -2684,3 +2684,16 @@ PYEOF
 [x] P4 已修复：ChatSession archived 字段、archive API、存储保留；列表默认隐藏归档，物理 DELETE 仍单独保留
 [x] P5 291 tests OK；frontend tsc/build OK；浏览器/API 验证 archive visible=false、stored=true archived=true；待提交推送
 ------ todo-list end at 2026/09/16 12:42:10 -----
+
+------ todo-list begin at 2026/09/16 22:09:19 -----
+用户请求原文：现在归档的语义和dsh一样吗，现在dsh也没有删除会话啊。另外点击会话旁边的三个点之后点别的地方这个弹窗不会消失，非常难受，正常点别出代表用户并不想操作。另外重命名在元会话位置啊，不要在顶部谈个窗口啊。
+
+[] Q1 对照 DSH 确认 archive/删除语义和菜单项
+[] Q2 修复三点菜单点击外部关闭与 Escape 关闭
+[] Q3 将重命名改为会话行内编辑
+[] Q4 验证交互、测试并推送
+[x] Q1 对照 DSH：菜单仅保留重命名、创建分支、归档；删除不是归档语义，已从 Nova 会话菜单移除
+[x] Q2 已修复：document mousedown 点击菜单外关闭，Escape 关闭；菜单内阻止冒泡
+[x] Q3 已修复：重命名改为会话行内 input，Enter/失焦保存，Escape 取消，不再使用顶部 prompt
+[x] Q4 frontend tsc/build OK，服务 http://127.0.0.1:8765 已运行，待提交推送
+------ todo-list end at 2026/09/16 22:13:17 -----

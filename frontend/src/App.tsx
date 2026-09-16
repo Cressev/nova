@@ -217,14 +217,13 @@ function CheckpointView({ message }: { message: ChatMessage }) {
 }
 
 /* ---- 侧栏 ---- */
-function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, onDelete, onRename, onFork, onArchive, onNewChat, onOpenSettings, onWorkspaceSwitched }: {
+function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, onRename, onFork, onArchive, onNewChat, onOpenSettings, onWorkspaceSwitched }: {
   sessions: ChatSession[]
   selectedId: string | null
   currentWorkspace: string
   version: string
   onSelect: (session: ChatSession) => void
-  onDelete: (id: string) => void
-  onRename: (session: ChatSession) => void
+  onRename: (session: ChatSession, title: string) => void
   onFork: (session: ChatSession) => void
   onArchive: (session: ChatSession) => void
   onOpenSettings: () => void
@@ -235,6 +234,17 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, on
   const [searchOpen, setSearchOpen] = useState(false)
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false)
   const [menuSessionId, setMenuSessionId] = useState<string | null>(null)
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState("")
+  useEffect(() => {
+    const close = (event: MouseEvent) => {
+      if (!(event.target as HTMLElement).closest(".session-row-menu")) setMenuSessionId(null)
+    }
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape") setMenuSessionId(null) }
+    document.addEventListener("mousedown", close)
+    document.addEventListener("keydown", key)
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", key) }
+  }, [])
   const groups = useMemo(() => {
     const map = new Map<string, ChatSession[]>()
     for (const session of sessions) {
@@ -316,7 +326,7 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, on
                   >
                     <span className="session-dot" aria-hidden="true" />
                     {session.parent_session_id ? <span className="session-fork-icon" title="分支会话">⑂</span> : null}
-                    <strong>{shortText(session.title || "新会话", 28)}</strong>
+                    {editingSessionId === session.id ? <input className="session-inline-rename" value={editingTitle} autoFocus onChange={(e) => setEditingTitle(e.target.value)} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Enter" && editingTitle.trim()) { e.preventDefault(); onRename(session, editingTitle.trim()); setEditingSessionId(null) } if (e.key === "Escape") { e.preventDefault(); setEditingSessionId(null) } }} onBlur={() => { if (editingTitle.trim() && editingTitle.trim() !== session.title) onRename(session, editingTitle.trim()); setEditingSessionId(null) }} /> : <strong>{shortText(session.title || "新会话", 28)}</strong>}
                     <span className="session-time">{relativeTime(session.updated_at || session.created_at)}</span>
                     <span className={cx("session-row-menu", menuSessionId === session.id ? "open" : "")}>
                       <button
@@ -328,11 +338,11 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, on
                       >•••</button>
                       {menuSessionId === session.id ? (
                         <div className="session-context-menu" role="menu" onClick={(e) => e.stopPropagation()}>
-                          <button type="button" role="menuitem" onClick={() => { setMenuSessionId(null); onRename(session) }}>重命名</button>
+                          <button type="button" role="menuitem" onClick={() => { setMenuSessionId(null); setEditingSessionId(session.id); setEditingTitle(session.title) }}>重命名</button>
                           <button type="button" role="menuitem" onClick={() => { setMenuSessionId(null); onFork(session) }}>创建分支</button>
                           <button type="button" role="menuitem" onClick={() => { setMenuSessionId(null); onArchive(session) }}>归档会话</button>
                           <div className="session-menu-separator" />
-                          <button type="button" role="menuitem" className="danger" onClick={() => { setMenuSessionId(null); onDelete(session.id) }}>删除会话</button>
+                          
                         </div>
                       ) : null}
                     </span>
@@ -602,9 +612,8 @@ export default function App() {
     await reloadSessions()
   }
 
-  const renameSession = async (session: ChatSession) => {
-    const title = window.prompt("重命名会话", session.title)
-    if (title === null || !title.trim() || title.trim() === session.title) return
+  const renameSession = async (session: ChatSession, title: string) => {
+    if (!title.trim() || title.trim() === session.title) return
     await api<ChatSession>(`/api/chat/sessions/${encodeURIComponent(session.id)}`, {
       method: "PATCH",
       body: JSON.stringify({ title: title.trim() }),
@@ -898,7 +907,6 @@ export default function App() {
         currentWorkspace={workspace}
         version={version}
         onSelect={selectSession}
-        onDelete={deleteSession}
         onRename={renameSession}
         onFork={forkSession}
         onArchive={archiveSession}
