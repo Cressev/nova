@@ -27,6 +27,10 @@ class ChatSessionCreate(BaseModel):
     title: str | None = Field(default=None, max_length=120)
 
 
+class ChatSessionRename(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+
+
 class ChatSession(BaseModel):
     id: str
     title: str

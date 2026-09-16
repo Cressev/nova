@@ -125,6 +125,20 @@ class SessionStore:
             self._save_chats()
             return True
 
+    def rename_chat_session(self, session_id: str, title: str) -> ChatSession | None:
+        """更新会话标题；菜单操作只允许改标题，不改变会话历史。"""
+        cleaned = title.strip()[:120]
+        if not cleaned:
+            raise ValueError("会话名称不能为空")
+        with self._lock:
+            session = self._chat_sessions.get(session_id)
+            if session is None:
+                return None
+            updated = session.model_copy(update={"title": cleaned, "updated_at": utc_now()})
+            self._chat_sessions[session_id] = updated
+            self._save_chats()
+            return updated
+
     def add_chat_message(self, message: ChatMessage) -> ChatMessage:
         with self._lock:
             if message.session_id not in self._chat_sessions:

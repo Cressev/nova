@@ -60,6 +60,7 @@ from ..models import (
     ChatRole,
     ChatSession,
     ChatSessionCreate,
+    ChatSessionRename,
     ChatSessionFork,
     CommentAnchor,
     CommentEntry,

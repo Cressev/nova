@@ -217,13 +217,16 @@ function CheckpointView({ message }: { message: ChatMessage }) {
 }
 
 /* ---- 侧栏 ---- */
-function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, onDelete, onNewChat, onOpenSettings, onWorkspaceSwitched }: {
+function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, onDelete, onRename, onFork, onArchive, onNewChat, onOpenSettings, onWorkspaceSwitched }: {
   sessions: ChatSession[]
   selectedId: string | null
   currentWorkspace: string
   version: string
   onSelect: (session: ChatSession) => void
   onDelete: (id: string) => void
+  onRename: (session: ChatSession) => void
+  onFork: (session: ChatSession) => void
+  onArchive: (session: ChatSession) => void
   onOpenSettings: () => void
   onNewChat: () => void
   onWorkspaceSwitched: (root: string) => void
@@ -231,6 +234,7 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, on
   const [query, setQuery] = useState("")
   const [searchOpen, setSearchOpen] = useState(false)
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false)
+  const [menuSessionId, setMenuSessionId] = useState<string | null>(null)
   const groups = useMemo(() => {
     const map = new Map<string, ChatSession[]>()
     for (const session of sessions) {
@@ -302,33 +306,37 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, on
               </button>
               <div className="session-group-items">
                 {group.sessions.map((session) => (
-                  <button
+                  <div
                     key={session.id}
                     className={cx("session-item", session.id === selectedId ? "active" : "")}
-                    type="button"
-                    onClick={() => onSelect(session)}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => { if (menuSessionId !== session.id) onSelect(session) }}
+                    onKeyDown={(e) => { if (e.key === "Enter" && menuSessionId !== session.id) onSelect(session) }}
                   >
                     <span className="session-dot" aria-hidden="true" />
                     {session.parent_session_id ? <span className="session-fork-icon" title="分支会话">⑂</span> : null}
                     <strong>{shortText(session.title || "新会话", 28)}</strong>
                     <span className="session-time">{relativeTime(session.updated_at || session.created_at)}</span>
-                    <span
-                      className="session-delete"
-                      role="button"
-                      tabIndex={-1}
-                      aria-label="删除对话"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onDelete(session.id)
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.stopPropagation()
-                          onDelete(session.id)
-                        }
-                      }}
-                    >×</span>
-                  </button>
+                    <span className={cx("session-row-menu", menuSessionId === session.id ? "open" : "")}>
+                      <button
+                        type="button"
+                        className="session-more"
+                        aria-label={`会话操作：${session.title}`}
+                        aria-expanded={menuSessionId === session.id}
+                        onClick={(e) => { e.stopPropagation(); setMenuSessionId(menuSessionId === session.id ? null : session.id) }}
+                      >•••</button>
+                      {menuSessionId === session.id ? (
+                        <div className="session-context-menu" role="menu" onClick={(e) => e.stopPropagation()}>
+                          <button type="button" role="menuitem" onClick={() => { setMenuSessionId(null); onRename(session) }}>重命名</button>
+                          <button type="button" role="menuitem" onClick={() => { setMenuSessionId(null); onFork(session) }}>创建分支</button>
+                          <button type="button" role="menuitem" onClick={() => { setMenuSessionId(null); onArchive(session) }}>归档会话</button>
+                          <div className="session-menu-separator" />
+                          <button type="button" role="menuitem" className="danger" onClick={() => { setMenuSessionId(null); onDelete(session.id) }}>删除会话</button>
+                        </div>
+                      ) : null}
+                    </span>
+                  </div>
                 ))}
               </div>
             </section>
@@ -569,6 +577,37 @@ export default function App() {
     setSelectedId(session.id)
     setEntries([])
     setTakeovers([])
+    await reloadSessions()
+  }
+
+  const renameSession = async (session: ChatSession) => {
+    const title = window.prompt("重命名会话", session.title)
+    if (title === null || !title.trim() || title.trim() === session.title) return
+    await api<ChatSession>(`/api/chat/sessions/${encodeURIComponent(session.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title: title.trim() }),
+    })
+    await reloadSessions()
+  }
+
+  const forkSession = async (session: ChatSession) => {
+    const child = await api<ChatSession>(`/api/chat/sessions/${encodeURIComponent(session.id)}/fork`, {
+      method: "POST",
+      body: JSON.stringify({ at_seq: null }),
+    })
+    await reloadSessions()
+    await selectSession(child)
+  }
+
+  const archiveSession = async (session: ChatSession) => {
+    // Nova 暂无 DSH archive 投影层；先提供同样的无确认菜单入口，
+    // 用删除 API 作为临时语义，避免菜单项假装已实现。
+    if (!window.confirm(`归档“${session.title}”？当前会话将从列表移除。`)) return
+    await api(`/api/chat/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" })
+    if (selectedId === session.id) {
+      setSelectedId(null)
+      setEntries([])
+    }
     await reloadSessions()
   }
 
@@ -838,6 +877,9 @@ export default function App() {
         version={version}
         onSelect={selectSession}
         onDelete={deleteSession}
+        onRename={renameSession}
+        onFork={forkSession}
+        onArchive={archiveSession}
         onNewChat={newChat}
         onOpenSettings={() => setSettingsOpen(true)}
         onWorkspaceSwitched={setWorkspace}

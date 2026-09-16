@@ -2628,3 +2628,18 @@ PYEOF
 [x] L2 已在 Nova 页面复现模型点击：前端请求成功但状态字段错读，后端组切换覆盖模型选择
 [x] L3 已修复：读取 provider_model；模型 value 改为 provider::model；后端保留显式 provider_model；API payload 补 provider_model
 ------ todo-list end at 2026/09/15 23:49:18 -----
+
+------ todo-list begin at 2026/09/16 11:51:22 -----
+用户请求原文：dsh中每个会话，鼠标聚焦后右侧会显示三个点，点开有一些功能项，你对齐dsh开发一下我的nova
+
+[] M1 读取 DSH 会话行三点菜单的真实实现与功能项
+[] M2 读取 Nova 会话侧栏、会话 API 和现有菜单/弹层设计
+[] M3 设计并实现会话聚焦三点菜单及对应操作
+[] M4 添加测试并完成浏览器交互验证
+[] M5 更新 durable 记录、提交并推送
+[x] M1 已读取 DSH Rows.tsx：会话行 hover 显示 ellipsis，菜单含 Rename/Fork/Archive，portal/离开关闭，选中与菜单状态互斥
+[x] M2 已读取 Nova Sidebar、删除接口、fork 接口和 Store；补充 PATCH rename API
+[x] M3 已实现 Nova 会话行 hover 三点菜单：重命名、创建分支、归档会话、删除会话；同一菜单阻止行点击冒泡并支持 aria menu
+[x] M4 291 tests OK；前端 tsc/build OK；浏览器实测菜单四项可见；服务 health 正常
+[x] M5 durable 记录完成，待提交推送
+------ todo-list end at 2026/09/16 11:56:01 -----
