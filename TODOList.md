@@ -2697,3 +2697,10 @@ PYEOF
 [x] Q3 已修复：重命名改为会话行内 input，Enter/失焦保存，Escape 取消，不再使用顶部 prompt
 [x] Q4 frontend tsc/build OK，服务 http://127.0.0.1:8765 已运行，待提交推送
 ------ todo-list end at 2026/09/16 22:13:17 -----
+
+------ todo-list begin at 2026/09/17 15:27:16 -----
+用户请求：评论中模型的回答还没有md渲染
+[x] R1 评论 assistant 历史回答与流式回答接入主对话 Markdown 组件
+[x] R2 评论用户内容和折叠预览保持纯文本，避免误解析
+[x] R3 frontend tsc/build 通过，重启服务并 health 验证
+------ todo-list end at 2026/09/17 15:27:16 -----

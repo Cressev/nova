@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { api } from "../lib/api"
+import { Markdown } from "./Markdown"
 
 export interface CommentEntryData {
   id: string
@@ -261,7 +262,9 @@ function ThreadView({ thread, streamingState, busy, onAsk, onDelete, onFocusAnch
         {thread.entries.map((entry) => (
           <div key={entry.id} className={`inline-comment-bubble ${entry.role}`}>
             <div className="inline-comment-role">{entry.role === "user" ? "我" : "Nova"}</div>
-            <div className="inline-comment-text">{entry.content}</div>
+            <div className="inline-comment-text">
+              {entry.role === "assistant" ? <Markdown content={entry.content} /> : entry.content}
+            </div>
           </div>
         ))}
         {streamingState !== undefined ? (
@@ -273,7 +276,7 @@ function ThreadView({ thread, streamingState, busy, onAsk, onDelete, onFocusAnch
               ) : null}
               {streamingState.text === "" && !streamingState.reasoning ? (
                 <span className="inline-comment-loading">思考中…</span>
-              ) : streamingState.text}
+              ) : <Markdown content={streamingState.text} />}
             </div>
           </div>
         ) : null}

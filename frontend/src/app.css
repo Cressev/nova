@@ -6019,6 +6019,12 @@ body.inspector-collapsed .inspector-toggle {
   font-size: 13px;
   line-height: 1.55;
 }
+.inline-comment-bubble.assistant .inline-comment-text .message-content > :first-child {
+  margin-top: 0;
+}
+.inline-comment-bubble.assistant .inline-comment-text .message-content > :last-child {
+  margin-bottom: 0;
+}
 .inline-comment-loading {
   color: var(--muted);
   font-size: 12px;
