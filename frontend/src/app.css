@@ -5856,6 +5856,12 @@ body.inspector-collapsed .inspector-toggle {
   color: inherit;
   border-radius: 2px;
   cursor: pointer;
+  scroll-margin: 35vh;
+  transition: background 160ms ease, box-shadow 160ms ease;
+}
+.inline-comment-highlight-focus {
+  background: rgba(250, 204, 21, 0.72) !important;
+  box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.28);
 }
 
 /* 右侧挤压式评论栏：flex 布局下与 main-col 并排 */

@@ -117,7 +117,7 @@ function charRangeToDomRange(container: HTMLElement, start: number, end: number)
 }
 
 /** 用 CSS 高亮（mark 元素包裹）渲染一个锚点；返回清理函数。 */
-function highlightRange(container: HTMLElement, range: Range, color: string, onClick?: () => void): () => void {
+function highlightRange(container: HTMLElement, range: Range, color: string, anchorId: string, onClick?: () => void): () => void {
   const marks: HTMLElement[] = []
   try {
     const fragments = range.extractContents()
@@ -125,6 +125,7 @@ function highlightRange(container: HTMLElement, range: Range, color: string, onC
     fragments.childNodes.forEach((child) => {
       const mark = document.createElement("mark")
       mark.className = "inline-comment-highlight"
+      mark.dataset.anchorId = anchorId
       mark.style.background = color
       if (onClick) mark.addEventListener("click", onClick)
       mark.appendChild(child)
@@ -383,29 +384,38 @@ export function useInlineComments(sessionId: string | null, version: number) {
     void refreshThreads(sessionId)
   }, [sessionId, refreshThreads])
 
-  // threads 变化 → 渲染高亮（等 DOM 稳定后执行）
+  // threads 变化/消息时间线恢复后渲染高亮。刷新时评论和消息是异步到达的，
+  // 因此不能只尝试一次：持续等待原文 DOM 挂载，成功后立即停止重试。
   useEffect(() => {
     if (lastVersion.current !== version) { lastVersion.current = version }
     cleanupFns.current.forEach((fn) => fn())
     cleanupFns.current = []
-    if (!sessionId) return
-    const timer = window.setTimeout(() => {
+    if (!sessionId || threads.length === 0) return
+    let cancelled = false
+    let attempts = 0
+    const render = () => {
+      if (cancelled) return
+      const pending: CommentThread[] = []
       for (const thread of threads) {
-        const messageEl = document.querySelector<HTMLElement>(`[data-message-id="${thread.anchor.message_id}"] .message-content`)
-        if (!messageEl) continue
-        const located = locateQuote(messageEl, thread.anchor.quote, thread.anchor.prefix, thread.anchor.suffix, thread.anchor.occurrence)
-        if (!located) continue
-        const range = charRangeToDomRange(messageEl, located[0], located[1])
-        if (!range) continue
         const anchorId = thread.anchor.id
-        const cleanup = highlightRange(messageEl, range, "rgba(250, 204, 21, 0.35)", () => {
+        if (document.querySelector(`.inline-comment-highlight[data-anchor-id="${CSS.escape(anchorId)}"]`)) continue
+        const messageEl = document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(thread.anchor.message_id)}"] .message-content`)
+        if (!messageEl) { pending.push(thread); continue }
+        const located = locateQuote(messageEl, thread.anchor.quote, thread.anchor.prefix, thread.anchor.suffix, thread.anchor.occurrence)
+        if (!located) { pending.push(thread); continue }
+        const range = charRangeToDomRange(messageEl, located[0], located[1])
+        if (!range) { pending.push(thread); continue }
+        const cleanup = highlightRange(messageEl, range, "rgba(250, 204, 21, 0.35)", anchorId, () => {
           setActiveAnchorId(anchorId)
           setPanelOpen(true)
         })
         cleanupFns.current.push(cleanup)
       }
-    }, 60)
-    return () => window.clearTimeout(timer)
+      attempts += 1
+      if (pending.length > 0 && attempts < 20) window.setTimeout(render, 100)
+    }
+    const timer = window.setTimeout(render, 60)
+    return () => { cancelled = true; window.clearTimeout(timer) }
   }, [threads, sessionId, version])
 
   // 划词检测（mouseup 时检查选区是否落在 assistant 消息内）
@@ -596,8 +606,16 @@ export function useInlineComments(sessionId: string | null, version: number) {
     setPanelOpen(true)
     const thread = threads.find((t) => t.anchor.id === anchorId)
     if (!thread) return
-    const messageEl = document.querySelector<HTMLElement>(`[data-message-id="${thread.anchor.message_id}"]`)
-    messageEl?.scrollIntoView({ block: "center", behavior: "smooth" })
+    const mark = document.querySelector<HTMLElement>(`.inline-comment-highlight[data-anchor-id="${CSS.escape(anchorId)}"]`)
+    const target = mark || document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(thread.anchor.message_id)}"]`)
+    if (!target) return
+    target.scrollIntoView({ block: "center", behavior: "smooth" })
+    if (mark) {
+      mark.classList.remove("inline-comment-highlight-focus")
+      void mark.offsetWidth
+      mark.classList.add("inline-comment-highlight-focus")
+      window.setTimeout(() => mark.classList.remove("inline-comment-highlight-focus"), 1500)
+    }
   }, [threads])
 
   const closeToolbar = useCallback(() => {
