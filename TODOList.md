@@ -2717,3 +2717,16 @@ PYEOF
 [x] H3 agent-browser 打开 http://127.0.0.1:8765 验证页面加载；frontend tsc/build OK；health OK
 [x] H4 更新 durable 记录并提交推送
 ------ todo-list end at 2026/09/21 17:13:37 -----
+
+------ todo-list begin at 2026/09/21 17:22:37 -----
+用户请求原文：笑了高亮原文直接没有了现在，直接丢失不显示了
+
+[] J1 复现并确认高亮原文丢失的具体 DOM/清理竞态
+[] J2 修复高亮恢复，不破坏 Markdown 内容
+[] J3 刷新、切换会话、侧栏定位回归验证
+[] J4 更新 durable 记录并提交推送
+[x] J1 已复现：旧 Range.extractContents 在跨 Markdown 节点时生成空 mark，导致原文文本从 DOM 消失
+[x] J2 已修复：改为仅拆分/包裹文本节点，不搬运 Markdown 元素；高亮失败时清理也保留原文
+[x] J3 已验证：agent-browser 页面加载、现存会话恢复；独立 DOM 测试确认 strong/code Markdown 原文 textContent 保持不变；tsc/build/health OK
+[x] J4 durable 记录已更新，待提交推送
+------ todo-list end at 2026/09/21 17:25:48 -----

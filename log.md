@@ -210,3 +210,4 @@
 - [26/09/16-22:13:17 CST] 对齐 DSH 会话菜单交互：移除物理删除入口，保留重命名/创建分支/归档；新增菜单外点击与 Escape 关闭；重命名改为会话行内编辑，Enter/失焦保存、Escape 取消。验证 frontend tsc/build OK，服务 URL http://127.0.0.1:8765。
 - [26/09/17-15:27:16 CST] 修复评论线程 Markdown 渲染：assistant 评论历史内容和流式内容统一复用 frontend/src/components/Markdown.tsx；用户提问与折叠预览保持纯文本。验证 frontend tsc/build OK，服务 http://127.0.0.1:8765 health OK。
 - [26/09/21-17:13:37 CST] 修复评论高亮刷新恢复与侧栏定位：刷新时评论线程和消息时间线异步到达，原逻辑只尝试一次导致原文未挂载时丢失高亮；现在最多等待重试恢复锚点。每个 mark 保存 anchor_id；点击右侧评论引用块优先定位对应 mark，平滑滚动到视口中心并短暂增强高亮，找不到 mark 时回退到消息。验证：frontend tsc/build OK，agent-browser 页面加载 OK，health OK，URL http://127.0.0.1:8765。
+- [26/09/21-17:25:48 CST] 修复评论高亮导致原文消失的回归：根因是 Range.extractContents 跨 Markdown strong/code/p 节点时搬运 DOM 并产生空 mark；改为基于 Text 节点 intersectsNode 的拆分包裹算法，不移动 Markdown 元素，清理时也只解包 mark。已有持久化消息未受影响，刷新会重新从消息恢复原文。验证：独立 DOM 测试 textContent 保持、frontend tsc/build OK、health OK，URL http://127.0.0.1:8765。

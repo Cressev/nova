@@ -119,21 +119,35 @@ function charRangeToDomRange(container: HTMLElement, start: number, end: number)
 /** 用 CSS 高亮（mark 元素包裹）渲染一个锚点；返回清理函数。 */
 function highlightRange(container: HTMLElement, range: Range, color: string, anchorId: string, onClick?: () => void): () => void {
   const marks: HTMLElement[] = []
+  // 不使用 Range.extractContents：选区跨 Markdown 的 strong/code/p 等元素时，
+  // extractContents 会搬运部分元素并可能生成空 mark，造成原文消失。只拆分并包裹文本节点。
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+  const nodes: Text[] = []
+  let node: Text | null
+  while ((node = walker.nextNode() as Text | null)) nodes.push(node)
   try {
-    const fragments = range.extractContents()
-    const frag = document.createDocumentFragment()
-    fragments.childNodes.forEach((child) => {
+    for (const textNode of nodes) {
+      if (!range.intersectsNode(textNode)) continue
+      const start = textNode === range.startContainer ? range.startOffset : 0
+      const end = textNode === range.endContainer ? range.endOffset : textNode.data.length
+      if (end <= start) continue
+      const selected = textNode.splitText(end)
+      const middle = textNode.splitText(start)
       const mark = document.createElement("mark")
       mark.className = "inline-comment-highlight"
       mark.dataset.anchorId = anchorId
       mark.style.background = color
       if (onClick) mark.addEventListener("click", onClick)
-      mark.appendChild(child)
-      frag.appendChild(mark)
+      middle.parentNode?.replaceChild(mark, middle)
+      mark.appendChild(middle)
       marks.push(mark)
-    })
-    range.insertNode(frag)
+      void selected
+    }
   } catch {
+    for (const mark of marks) {
+      const parent = mark.parentNode
+      if (parent) { while (mark.firstChild) parent.insertBefore(mark.firstChild, mark); parent.removeChild(mark); parent.normalize() }
+    }
     return () => {}
   }
   return () => {
