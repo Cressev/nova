@@ -2730,3 +2730,36 @@ PYEOF
 [x] J3 已验证：agent-browser 页面加载、现存会话恢复；独立 DOM 测试确认 strong/code Markdown 原文 textContent 保持不变；tsc/build/health OK
 [x] J4 durable 记录已更新，待提交推送
 ------ todo-list end at 2026/09/21 17:25:48 -----
+
+------ todo-list begin at 2026/09/21 17:45:25 -----
+用户请求原文：嗯嗯全改了吧（批准方案：/ 与 $ 未命中白名单/技能时放行走模型流程；并排查修复 web_search 参数契约失败）
+
+[] K1 新增 builtin_command_tokens()：含别名的合法指令 token 集合
+[] K2 loop.py / 分支：首 token 命中白名单才拦截，否则放行走模型流程
+[] K3 loop.py $ 分支：技能命中才走 SKILL.md 加载，未命中当普通消息
+[] K4 补测试：绝对路径消息不被劫持、已知指令与别名不受影响、$100 不触发技能
+[] K5 排查 web_search 参数契约失败并修复
+[] K6 全量回归 + 前端构建 + 服务 health 验证
+[] K7 更新 durable 资产并提交推送
+------ todo-list end at 2026/09/21 17:45:25 -----
+
+------ todo-list begin at 2026/09/21 17:55:59 -----
+用户请求原文：我丢了你看看我最近一次问的nova 的会话，你看看轨迹执行的，怎么一直在read啊，我明明让他改代码
+
+[] K1 检查最近会话消息与轨迹工具调用
+[] K2 定位模型持续 read 的运行时/权限/工具选择原因
+[] K3 修复并用真实修改任务回归验证
+[] K4 更新 durable 记录并提交推送
+
+------ todo-list begin at 2026/09/22 11:35:28 -----
+用户请求原文：我感觉不是模型理解的问题，模型很强，不是agent上下文的设计问题就是工具的问题，你研究研究，想办法测试，然后我重启电脑了这个进程应该是没有了
+
+[] L1 启动服务并检查运行时配置
+[] L2 检查 Agent 上下文、工具注册/权限过滤、执行链路
+[] L3 最小真实修改任务验证 read/write 工具可用性
+[] L4 修复根因并回归测试、更新记录、推送
+[x] L1 电脑重启后服务已重新启动，health OK；当前运行配置 bypass_permissions + danger_full_access
+[x] L2 已确认不是工具注册/权限问题：模型收到 read/write/edit/grep/bash，写工具 model_visible=true；隔离真实任务 read→edit 成功
+[x] L3 已增加执行态上下文提示与连续只读轮约束；真实临时文件 BEFORE→AFTER 成功，工具链为 read/edit
+[x] L4 291 tests 全量重跑通过；服务已重启，待提交推送
+------ todo-list end at 2026/09/22 11:43:31 -----

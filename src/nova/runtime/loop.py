@@ -52,22 +52,26 @@ class AgentLoop:
                 yield event
             return
 
+        def system_prompt(read_rounds: int = 0) -> str:
+            try:
+                return runtime._system_prompt(latest_user=latest_user, read_rounds=read_rounds)
+            except TypeError:
+                # 保持旧测试替身/第三方 runtime 的无参 prompt seam 兼容。
+                return runtime._system_prompt()
+
         working_messages = [
-            ChatMessage(
-                session_id="agent",
-                role=ChatRole.SYSTEM,
-                content=runtime._system_prompt(),
-            ),
+            ChatMessage(session_id="agent", role=ChatRole.SYSTEM, content=system_prompt()),
             *messages,
         ]
         used_tools = False
         all_tool_results: list[str] = []
+        consecutive_read_rounds = 0
 
         for round_index in range(runtime.max_tool_rounds):
             # dsh pre-step 语义：每个工具轮次开始前重新投影 instruction/persona/
             # memory 上下文，保证本轮工具刚修改 AGENTS.md 后下一轮即可生效。
             working_messages = [
-                ChatMessage(session_id="agent", role=ChatRole.SYSTEM, content=runtime._system_prompt()),
+                ChatMessage(session_id="agent", role=ChatRole.SYSTEM, content=system_prompt(consecutive_read_rounds)),
                 *[message for message in working_messages if message.role != ChatRole.SYSTEM],
             ]
             yield {"type": "agent_status", "status": f"模型决策中，第 {round_index + 1} 轮"}
@@ -115,6 +119,11 @@ class AgentLoop:
 
             used_tools = True
             tool_results: list[str] = []
+            tool_names = [runtime.tool_orchestrator.normalize_tool_call(call)[0] for call in tool_calls]
+            if tool_names and all(runtime.tools.supports_parallel(name) for name in tool_names):
+                consecutive_read_rounds += 1
+            else:
+                consecutive_read_rounds = 0
             async for event in runtime._run_tool_calls(tool_calls):
                 if event["type"] == "tool_result_json":
                     tool_results.append(event["result_json"])

@@ -1039,7 +1039,7 @@ class CodexLikeAgentRuntime:
             + preview
         )
 
-    def _system_prompt(self) -> str:
+    def _system_prompt(self, latest_user: str = "", *, read_rounds: int = 0) -> str:
         from ..memory import layered
 
         skill_context = SkillManager(self.tools.project_root).skill_index_prompt()
@@ -1097,6 +1097,19 @@ __TOOL_ROWS__
             )
         if memory_section.strip():
             context_sections.append(memory_section)
+        execution_hint = ""
+        intent_text = latest_user.lower()
+        if any(word in intent_text for word in ("修改", "改代码", "修复", "实现", "编写", "添加", "删除", "重构", "快改", "开始改", "执行")):
+            execution_hint = (
+                "\n本轮执行态约束（优先级高于历史计划文本）：用户已经要求实际修改/执行。"
+                "如果需要先读文件，只读是为下一步编辑服务；读到足够上下文后必须调用 edit/write，"
+                "不能重复输出 plan 或无限 read/grep。若写入确实被权限/工具错误阻断，必须立即展示真实阻断原因。\n"
+            )
+        if read_rounds >= 2:
+            execution_hint += (
+                f"\n工具循环约束：本轮已经连续完成 {read_rounds} 轮只读调查；下一轮禁止继续无目的 read/grep，"
+                "应优先调用 edit/write，或明确说明具体缺失信息/阻断原因。\n"
+            )
         return (
             f"{prompt}\n\n"
             "理解用户意图的硬规则：\n"
@@ -1105,6 +1118,7 @@ __TOOL_ROWS__
             "- 不确定用户想要什么时，先用一句话复述你的理解并提出最少的澄清问题，不要擅自改 UI 或执行无关操作。\n"
             "- 需要项目事实时先读取相关文件/状态；不要凭文件名、旧记忆或猜测回答。\n"
             "- 每次工具调用前说明它服务于用户目标的哪一步；工具结果回来后重新判断，不要机械继续。\n\n"
-            f"可用技能索引：\n{skill_context}\n\n"
+            + execution_hint
+            + f"可用技能索引：\n{skill_context}\n\n"
             + "\n\n".join(context_sections)
         )
