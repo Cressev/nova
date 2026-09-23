@@ -3012,3 +3012,13 @@ N2 进展（状态层部分）：完成 frontend/src/lib/workspaceViewStore.ts�
 [x] Nova 对话框实现 / 命令与 $ 技能弹窗：frontend/src/lib/composerTrigger.ts + App.tsx composer 接线 + app.css 菜单样式（锚 composer 上缘、↑↓/Enter/Esc、IME 放行、mousedown 选中不抢焦点、菜单外关闭、路径不弹）
 [x] 回归与实测：新增 tests/frontend_composer_trigger.test.js 7 项通过；前端 tsc/build、workspace 18、smoke、git diff --check、后端 303 tests 全部通过；浏览器实测：/ 弹 19 命令、$ 弹 59 技能、/ski 过滤、/Users 与 $HOME 不弹、↑↓ 高亮、Enter 选中写回 token、Esc 关闭且 query 变化重开、外点关闭、composer 内点击不关、mousedown 选中焦点留在输入框；截图 output/agent-browser/nova-composer-trigger-menu.png
 ------ todo-list end at 2026/09/23/17:05:00 -----
+------ todo-list begin at 2026/09/23/17:35:08 -----
+弹出来的弹窗上面被页眉挡住了
+[] 定位页眉遮挡根因（z-index 层级 / 菜单向上溢出视口）
+[] 修复：菜单高度按 composer 上方可用空间动态收敛，内部滚动，层级高于页眉
+[] 回归 + 浏览器实测（$ 59 项技能场景），更新 durable 记录并提交
+------ todo-list end at 2026/09/23/17:35:08 -----
+[x] 定位页眉遮挡根因：菜单固定 320px 高，composer 上方仅约 232px 空间，溢出视口顶部 91px 被 header 区域盖住
+[x] 修复：按 composer 上方可用空间动态收敛（dsh useAnchoredMaxHeight 同款，12px 边距、下限 160px），新增 .composer-trigger-viewport 内部滚动层，头尾提示行固定，resize/scroll 重测
+[x] 回归 + 实测：前端 7/18/smoke、tsc/build、diff-check 通过；浏览器实测 $ 59 项技能时菜单顶从 -91px 收敛到 9px、完全在视口内、viewport 可滚动、连按 30 次 ↓ 高亮行始终在可视区；截图 output/agent-browser/nova-composer-trigger-clamped.png
+------ todo-list end at 2026/09/23/17:42:00 -----

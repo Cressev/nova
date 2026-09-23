@@ -667,6 +667,22 @@ export default function App() {
     [triggerHit, triggerCommands, triggerSkills],
   )
   const triggerOpen = triggerHit !== null && triggerCandidates.length > 0 && triggerDismissedKey !== triggerHit.tokenKey
+  // 菜单高度按 composer 上方实际可用空间收敛（dsh useAnchoredMaxHeight 同款）：
+  // 设计上限 320px，超出可用空间则钳制，菜单体内部滚动，绝不溢出到页眉底下。
+  const [triggerMenuMaxHeight, setTriggerMenuMaxHeight] = useState(320)
+  useEffect(() => {
+    if (!triggerOpen) return
+    const measure = () => {
+      const card = document.querySelector<HTMLElement>("#chat-form")
+      if (!card) return
+      const spaceAbove = card.getBoundingClientRect().top - 12
+      setTriggerMenuMaxHeight(Math.max(160, Math.min(320, spaceAbove)))
+    }
+    measure()
+    window.addEventListener("resize", measure)
+    window.addEventListener("scroll", measure, true)
+    return () => { window.removeEventListener("resize", measure); window.removeEventListener("scroll", measure, true) }
+  }, [triggerOpen, triggerCandidates.length])
   // 候选集变化时高亮回到第一项；越界时收敛到末尾。
   useEffect(() => { setTriggerHighlight(0) }, [triggerHit?.tokenKey])
   useEffect(() => {
@@ -1170,24 +1186,32 @@ export default function App() {
           }}
         >
           {triggerOpen && triggerHit ? (
-            <div className="composer-trigger-menu" id="composer-trigger-listbox" role="listbox" aria-label="命令与技能候选">
+            <div
+              className="composer-trigger-menu"
+              id="composer-trigger-listbox"
+              role="listbox"
+              aria-label="命令与技能候选"
+              style={{ maxHeight: triggerMenuMaxHeight }}
+            >
               <div className="composer-trigger-head">{triggerHit.kind === "slash" ? "内置指令" : "技能"}</div>
-              {triggerCandidates.map((candidate, index) => (
-                <button
-                  key={`${triggerHit.kind}-${candidate.name}`}
-                  id={`composer-trigger-option-${index}`}
-                  type="button"
-                  role="option"
-                  aria-selected={index === triggerHighlight}
-                  className={cx("composer-trigger-item", index === triggerHighlight && "active")}
-                  // mousedown 而非 click：焦点留在 textarea（dsh combobox 模式）。
-                  onMouseDown={(e) => { e.preventDefault(); pickTrigger(index) }}
-                >
-                  <span className="composer-trigger-name">{triggerHit.kind === "slash" ? candidate.name : `$${candidate.name}`}</span>
-                  {candidate.hint ? <span className="composer-trigger-hint">{candidate.hint}</span> : null}
-                  <span className="composer-trigger-desc">{candidate.description}</span>
-                </button>
-              ))}
+              <div className="composer-trigger-viewport">
+                {triggerCandidates.map((candidate, index) => (
+                  <button
+                    key={`${triggerHit.kind}-${candidate.name}`}
+                    id={`composer-trigger-option-${index}`}
+                    type="button"
+                    role="option"
+                    aria-selected={index === triggerHighlight}
+                    className={cx("composer-trigger-item", index === triggerHighlight && "active")}
+                    // mousedown 而非 click：焦点留在 textarea（dsh combobox 模式）。
+                    onMouseDown={(e) => { e.preventDefault(); pickTrigger(index) }}
+                  >
+                    <span className="composer-trigger-name">{triggerHit.kind === "slash" ? candidate.name : `$${candidate.name}`}</span>
+                    {candidate.hint ? <span className="composer-trigger-hint">{candidate.hint}</span> : null}
+                    <span className="composer-trigger-desc">{candidate.description}</span>
+                  </button>
+                ))}
+              </div>
               <div className="composer-trigger-foot">↑↓ 选择 · Enter 确认 · Esc 关闭</div>
             </div>
           ) : null}

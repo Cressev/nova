@@ -776,10 +776,20 @@ body.sidebar-collapsed .sidebar-foot-button {
 }
 
 .composer-trigger-head {
+  flex: none;
   padding: 6px 10px 2px;
   color: var(--muted);
   font-size: 11px;
   line-height: 16px;
+}
+
+/* 候选滚动视口：菜单总高被钳制在 composer 上方可用空间内（App.tsx 内联
+   max-height），超高时只有这一层滚动，头尾提示行保持固定（dsh viewport）。 */
+.composer-trigger-viewport {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .composer-trigger-menu .composer-trigger-item {
@@ -827,6 +837,7 @@ body.sidebar-collapsed .sidebar-foot-button {
 }
 
 .composer-trigger-foot {
+  flex: none;
   padding: 4px 10px 4px;
   border-top: 1px solid var(--dsw-alias-border-l2);
   color: var(--muted);
