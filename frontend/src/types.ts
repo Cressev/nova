@@ -6,6 +6,7 @@ export interface ChatSession {
   updated_at: string
   parent_session_id?: string | null
   seed_length?: number | null
+  archived?: boolean
 }
 
 export interface ChatMessage {

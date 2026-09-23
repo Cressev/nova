@@ -127,6 +127,40 @@ class WorkspaceManagerTest(unittest.TestCase):
         self.assertEqual(restarted.status()["recent_projects"][0], str(self.project.resolve()))
         self.assertIn(str(work.resolve()), restarted.status()["recent_projects"])
 
+    def test_workspace_registry_rename_reorder_delete_and_restart(self) -> None:
+        recent_file = self.root / ".nova" / "workspace-recents.json"
+        second = self.allowed_root / "second"
+        second.mkdir()
+        manager = WorkspaceManager(initial_root=self.project, allowed_roots=[self.allowed_root], recent_file=recent_file)
+        manager.set_current(str(second))
+        second_key = str(second.resolve())
+        project_key = str(self.project.resolve())
+        renamed = manager.rename_workspace(second_key, "第二项目")
+        self.assertEqual(renamed["title"], "第二项目")
+        manager.insert_workspace_before(second_key, project_key)
+        self.assertEqual([item["path"] for item in manager.list_workspaces()][:2], [second_key, project_key])
+        restarted = WorkspaceManager(initial_root=self.project, allowed_roots=[self.allowed_root], recent_file=recent_file)
+        self.assertEqual(restarted.list_workspaces()[0]["title"], "第二项目")
+        with self.assertRaises(WorkspaceError):
+            restarted.delete_workspace(str(self.project))
+        restarted.set_current(str(self.project))
+        restarted.delete_workspace(str(second))
+        self.assertTrue((self.allowed_root / "second").exists())
+
+    def test_manual_session_order_survives_store_restart(self) -> None:
+        from nova.models import ChatSession
+        from nova.sessions.store import SessionStore
+        from datetime import datetime, timezone
+        state = self.root / ".nova-state"
+        first = ChatSession(id="chat-first", title="第一", workspace=str(self.project), created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc))
+        second = ChatSession(id="chat-second", title="第二", workspace=str(self.project), created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc))
+        store = SessionStore(state)
+        store.create_chat_session(first)
+        store.create_chat_session(second)
+        store.reorder_chat_session("chat-second", workspace=str(self.project), before_session_id="chat-first")
+        restarted = SessionStore(state)
+        self.assertEqual([item.id for item in restarted.list_chat_sessions(workspace=str(self.project))], ["chat-second", "chat-first"])
+
     def test_completion_extends_to_common_prefix_for_multiple_matches(self) -> None:
         parent = self.root / "work"
         (parent / "alpha-api").mkdir(parents=True)

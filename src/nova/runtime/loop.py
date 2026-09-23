@@ -5,6 +5,8 @@ from typing import Any
 
 from ..compaction.pruner import prune_tool_results
 from ..models import ChatMessage, ChatRole
+from ..skills import SkillManager
+from .triggers import detect_input_trigger
 
 
 class AgentLoop:
@@ -26,14 +28,18 @@ class AgentLoop:
         trace_turn_id: str,
     ) -> AsyncIterator[dict]:
         runtime = self.runtime
-        if latest_user.startswith("$"):
+        skill_manager = getattr(runtime, "skills", None)
+        if skill_manager is None:
+            skill_manager = SkillManager(runtime.tools.project_root)
+        trigger = detect_input_trigger(latest_user, skill_manager)
+        if trigger and trigger.kind == "skill":
             yield {"type": "agent_status", "status": "读取技能 SKILL.md"}
             text = runtime._skill_response_from_dollar(latest_user)
             for chunk in runtime._chunk_text(text, 36):
                 yield {"type": "assistant_delta", "delta": chunk}
             yield {"type": "assistant_done_content", "content": text}
             return
-        if latest_user.startswith("/"):
+        if trigger and trigger.kind == "slash":
             yield {"type": "agent_status", "status": "处理内置指令"}
             async for event in runtime._handle_builtin_command(latest_user, messages):
                 yield event

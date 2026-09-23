@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { ChatMessage, ChatSession, PendingApprovalItem, RuntimeConfig, ToolCallData, TraceEvent } from "./types"
 import { api, cx, formatTime, projectName, relativeTime, shortText, workspaceGroupKey } from "./lib/api"
+import { deriveSessionGroups } from "./lib/sessionTree"
+import { subscribeWorkspaceView, workspaceViewSnapshot, setWorkspaceGroupBy, setWorkspaceOrderBy, toggleWorkspaceGroup, setWorkspaceAccountOrder, workspaceOrderSnapshot, setWorkspaceOrder, workspaceAccountOrder } from "./lib/workspaceViewStore"
 import { Markdown, CopyButton } from "./components/Markdown"
 import { useInlineComments, SelectionToolbar, CommentPanel } from "./components/InlineComments"
 import { WorkspacePicker } from "./components/WorkspacePicker"
@@ -217,11 +219,12 @@ function CheckpointView({ message }: { message: ChatMessage }) {
 }
 
 /* ---- 侧栏 ---- */
-function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, onRename, onFork, onArchive, onNewChat, onOpenSettings, onWorkspaceSwitched }: {
+function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySession, onSelect, onRename, onFork, onArchive, onNewChat, onOpenSettings, onWorkspaceSwitched }: {
   sessions: ChatSession[]
   selectedId: string | null
   currentWorkspace: string
   version: string
+  runtimeBySession: Record<string, { active?: boolean; pending?: boolean; descendantRunning?: boolean; completedUnviewed?: boolean }>
   onSelect: (session: ChatSession) => void
   onRename: (session: ChatSession, title: string) => void
   onFork: (session: ChatSession) => void
@@ -231,48 +234,115 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, on
   onWorkspaceSwitched: (root: string) => void
 }) {
   const [query, setQuery] = useState("")
+  const [remoteMatches, setRemoteMatches] = useState<Record<string, string>>({})
+  const [searchError, setSearchError] = useState("")
+  const [workspaceActionError, setWorkspaceActionError] = useState("")
   const [searchOpen, setSearchOpen] = useState(false)
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false)
+  const [recentWorkspacePaths, setRecentWorkspacePaths] = useState<string[]>([])
+  const [workspaceRegistry, setWorkspaceRegistry] = useState<Array<{ path: string; title: string }>>([])
+  const [workspaceMenuPath, setWorkspaceMenuPath] = useState<string | null>(null)
+  const [workspaceRenamePath, setWorkspaceRenamePath] = useState<string | null>(null)
+  const [workspaceRenameTitle, setWorkspaceRenameTitle] = useState("")
   const [menuSessionId, setMenuSessionId] = useState<string | null>(null)
+  const [menuFocusIndex, setMenuFocusIndex] = useState(0)
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState("")
+  const view = useSyncExternalStore(subscribeWorkspaceView, workspaceViewSnapshot, workspaceViewSnapshot)
+  const [expandedSessionGroups, setExpandedSessionGroups] = useState<Record<string, boolean>>({})
+  const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null)
+  const [dragOverSessionId, setDragOverSessionId] = useState<string | null>(null)
+  const [dragOverAfter, setDragOverAfter] = useState(false)
+  const [draggingGroupKey, setDraggingGroupKey] = useState<string | null>(null)
+  const [dragOverGroupKey, setDragOverGroupKey] = useState<string | null>(null)
+  const [dragOverGroupAfter, setDragOverGroupAfter] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => { try { return localStorage.getItem("nova.sidebar.collapsed") === "1" } catch { return false } })
   useEffect(() => {
-    const close = (event: MouseEvent) => {
-      if (!(event.target as HTMLElement).closest(".session-row-menu")) setMenuSessionId(null)
+    document.body.classList.toggle("sidebar-collapsed", sidebarCollapsed)
+    try { localStorage.setItem("nova.sidebar.collapsed", sidebarCollapsed ? "1" : "0") } catch { /* 隐私模式下只保留当前页状态 */ }
+    return () => { document.body.classList.remove("sidebar-collapsed") }
+  }, [sidebarCollapsed])
+  useEffect(() => {
+    void api<{ recent_projects?: string[]; workspaces?: Array<{ path: string; title: string }> }>("/api/workspaces").then((payload) => { setRecentWorkspacePaths(payload.recent_projects || []); setWorkspaceRegistry(payload.workspaces || []) }).catch(() => setRecentWorkspacePaths([]))
+  }, [])
+  useEffect(() => {
+    setRemoteMatches({}); setSearchError("")
+    if (!query.trim()) { return }
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      void api<{ items?: Array<{ session_id: string; snippet?: string }> }>(`/api/chat/sessions/search?q=${encodeURIComponent(query.slice(0, 500))}`, { signal: controller.signal })
+        .then((payload) => {
+          const next: Record<string, string> = {}
+          for (const item of payload.items || []) next[item.session_id] = item.snippet || ""
+          setRemoteMatches(next); setSearchError("")
+        })
+        .catch((error: unknown) => { if ((error as Error)?.name !== "AbortError") setSearchError("搜索暂不可用") })
+    }, 250)
+    return () => { window.clearTimeout(timer); controller.abort() }
+  }, [query])
+  useEffect(() => {
+    const acceptDrop = (event: DragEvent) => { if (draggingSessionId && dragOverSessionId) { event.preventDefault() } }
+    const commitDrop = () => { if (draggingSessionId && dragOverSessionId) { setDraggingSessionId(null); setDragOverSessionId(null); setDragOverAfter(false) } }
+    document.addEventListener("dragover", acceptDrop)
+    document.addEventListener("drop", commitDrop)
+    return () => { document.removeEventListener("dragover", acceptDrop); document.removeEventListener("drop", commitDrop) }
+  }, [draggingSessionId, dragOverSessionId])
+  useEffect(() => {
+    if (!menuSessionId) return
+    const menu = document.querySelector<HTMLElement>(`[data-session-menu="${menuSessionId}"]`)
+    menu?.querySelector<HTMLElement>(`button:nth-child(${menuFocusIndex + 1})`)?.focus()
+  }, [menuSessionId, menuFocusIndex])
+  useEffect(() => {
+    const close = (event: PointerEvent) => {
+      const target = event.target as HTMLElement
+      if (!target.closest(".session-row-menu, .workspace-row-menu, .workspace-rename-popover")) {
+        setMenuSessionId(null)
+        setWorkspaceMenuPath(null)
+        setWorkspaceRenamePath(null)
+      }
     }
-    const key = (event: KeyboardEvent) => { if (event.key === "Escape") setMenuSessionId(null) }
-    document.addEventListener("mousedown", close)
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuSessionId(null)
+        setWorkspaceMenuPath(null)
+        setWorkspaceRenamePath(null)
+      }
+    }
+    document.addEventListener("pointerdown", close)
     document.addEventListener("keydown", key)
-    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", key) }
+    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", key) }
   }, [])
   const groups = useMemo(() => {
-    const map = new Map<string, ChatSession[]>()
-    for (const session of sessions) {
-      if (query && !String(session.title || "").toLowerCase().includes(query.toLowerCase())) continue
-      const key = workspaceGroupKey(session.workspace)
-      if (!map.has(key)) map.set(key, [])
-      map.get(key)!.push(session)
-    }
-    return [...map.entries()].map(([key, list]) => ({
-      key,
-      name: key === "__ungrouped__" ? "未分组" : projectName(list[0]?.workspace || key),
-      sessions: list,
-    }))
-  }, [sessions, query])
+    const searchSessions = query.trim() ? sessions.filter((session) => String(session.title || "").toLowerCase().includes(query.trim().toLowerCase()) || remoteMatches[session.id]) : sessions
+    const derived = deriveSessionGroups(searchSessions, selectedId, query.trim() && Object.keys(remoteMatches).length === 0 ? query : "", view.groupBy, view.orderBy, view.sessionOrderByAccount)
+    const known = new Set(derived.map((group) => group.key))
+    const emptyWorkspaceGroups = !query.trim() && view.groupBy === "workspace" ? (workspaceRegistry.length ? workspaceRegistry.filter((item) => !known.has(workspaceGroupKey(item.path))).map((item) => ({ key: workspaceGroupKey(item.path), name: item.title, workspace: item.path, sessions: [], ungrouped: false })) : recentWorkspacePaths.filter((path) => !known.has(workspaceGroupKey(path))).map((path) => ({ key: workspaceGroupKey(path), name: projectName(path), workspace: path, sessions: [], ungrouped: false }))) : []
+    const allGroups = [...derived, ...emptyWorkspaceGroups]
+    const order = workspaceOrderSnapshot()
+    const byKey = new Map(allGroups.map((group) => [group.key, group]))
+    const orderedGroups = [...order.map((key) => byKey.get(key)).filter((group): group is typeof allGroups[number] => Boolean(group)), ...allGroups.filter((group) => !order.includes(group.key))]
+    return orderedGroups.map((group) => ({ ...group, expanded: group.ungrouped || view.groupExpansion[group.key] !== false || (view.groupExpansion[group.key] === undefined && group.sessions.some((session) => session.id === selectedId)) }))
+  }, [sessions, selectedId, query, remoteMatches, view.groupBy, view.orderBy, view.sessionOrderByAccount, view.groupExpansion])
+  useEffect(() => {
+    if (query.trim() || view.groupBy !== "workspace" || groups.length === 0) return
+    const currentOrder = workspaceOrderSnapshot()
+    const nextOrder = groups.map((group) => group.key)
+    if (nextOrder.some((key, index) => currentOrder[index] !== key) || currentOrder.length !== nextOrder.length) setWorkspaceOrder(nextOrder)
+  }, [groups, query, view.groupBy])
 
   return (
-    <aside className="sidebar">
+    <aside className={cx("sidebar", sidebarCollapsed && "is-collapsed")}>
       <div className="brand-row">
         <span className="brand-mark" aria-hidden="true">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2.5 14.6 9 21.5 11.5 14.6 14 12 20.5 9.4 14 2.5 11.5 9.4 9 12 2.5Z" fill="currentColor"/></svg>
         </span>
         <strong className="brand-name">Nova</strong>
         <span className="version-badge" id="nova-version">{version}</span>
-        <button className="sidebar-collapse" type="button" aria-label="折叠侧栏" title="折叠侧栏">
+        <button className="sidebar-collapse" type="button" aria-label={sidebarCollapsed ? "展开侧栏" : "折叠侧栏"} title={sidebarCollapsed ? "展开侧栏" : "折叠侧栏"} aria-pressed={sidebarCollapsed} onClick={() => setSidebarCollapsed((value) => !value)}>
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M11.2 4.4 6.6 9l4.6 4.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
         </button>
       </div>
-      <button className="new-session" type="button" onClick={onNewChat}>
+      <button className="new-session rail-add-control" type="button" aria-label="新会话" title="新会话" onClick={onNewChat}>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
         <span>新会话</span>
       </button>
@@ -288,8 +358,8 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, on
             <span className="group-label-ws-name">{projectName(currentWorkspace) || "未选择"}</span>
             <svg className="chevron-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.5 8 10.5 12 6.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </button>
-          <div className="group-actions">
-            <button className="icon-ghost" type="button" aria-label="搜索会话" title="搜索会话" onClick={() => setSearchOpen((v) => !v)}>
+          <div className="group-actions"><button className="icon-ghost rail-search-toggle" type="button" aria-label="搜索会话" title="搜索会话" onClick={() => { setSidebarCollapsed(false); setSearchOpen(true) }}><span aria-hidden="true">⌕</span></button><button className="icon-ghost rail-view-control" type="button" aria-label="切换会话视图" title="切换会话视图" onClick={() => setWorkspaceGroupBy(view.groupBy === "workspace" ? "flat" : "workspace")}><span className="view-mode-label">{view.groupBy === "workspace" ? "树" : "平铺"}</span></button><button className="icon-ghost rail-sort-control" type="button" aria-label="切换会话排序" title="切换会话排序" onClick={() => setWorkspaceOrderBy(view.orderBy === "updated" ? "manual" : "updated")}><span className="view-mode-label">{view.orderBy === "updated" ? "最近" : "手动"}</span></button>
+            <button className="icon-ghost rail-wide-search-control" type="button" aria-label="搜索会话" title="搜索会话" onClick={() => setSearchOpen((v) => !v)}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="6.4" cy="6.4" r="4.4" stroke="currentColor" strokeWidth="1.4"/><path d="m9.8 9.8 2.9 2.9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
             </button>
           </div>
@@ -305,54 +375,83 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, onSelect, on
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜索会话…"
+             maxLength={500}
+             aria-busy={Boolean(query.trim() && !searchError && Object.keys(remoteMatches).length === 0)}
           />
         ) : null}
-        <nav id="session-list" className="session-list">
+        {searchError ? <div className="session-search-warning" role="status">{searchError}</div> : null}
+        {workspaceActionError ? <div className="session-search-warning" role="alert">{workspaceActionError}</div> : null}
+        <nav id="session-list" className="session-list" role="tree" aria-label="会话工作区树">
           {groups.map((group) => (
-            <section className="session-group" key={group.key}>
-              <button className={cx("session-group-head", group.sessions.some((s) => s.id === selectedId) ? "active" : "")} type="button" aria-expanded>
+            <section className={cx("session-group", dragOverGroupKey === group.key ? (dragOverGroupAfter ? "drop-after" : "drop-before") : "")} key={group.key} role="group" aria-label={group.name} draggable={!query.trim() && view.groupBy === "workspace" && !group.ungrouped} onDragStart={(event) => { if (!query.trim() && view.groupBy === "workspace" && !group.ungrouped) { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", `workspace:${group.key}`); setDraggingGroupKey(group.key) } }} onDragEnd={() => { setDraggingGroupKey(null); setDragOverGroupKey(null); setDragOverGroupAfter(false) }} onDragOver={(event) => { if (draggingGroupKey && draggingGroupKey !== group.key) { event.preventDefault(); setDragOverGroupKey(group.key); setDragOverGroupAfter(event.nativeEvent.offsetY > event.currentTarget.clientHeight / 2) } }} onDrop={(event) => { event.preventDefault(); if (draggingGroupKey && dragOverGroupKey && draggingGroupKey !== dragOverGroupKey) { const keys = groups.filter((item) => !item.ungrouped).map((item) => item.key); const from = keys.indexOf(draggingGroupKey); const to = keys.indexOf(group.key); if (from >= 0 && to >= 0) { const previous = workspaceOrderSnapshot(); keys.splice(from, 1); keys.splice(Math.max(0, to + (dragOverGroupAfter ? 1 : 0)), 0, draggingGroupKey); setWorkspaceOrder(keys); const anchorKey = keys[keys.indexOf(draggingGroupKey) + (dragOverGroupAfter ? 1 : -1)] || null; const movingGroup = groups.find((item) => item.key === draggingGroupKey); void api<{ workspaces?: Array<{ path: string; title: string }> }>("/api/workspaces/reorder", { method: "POST", body: JSON.stringify({ path: movingGroup?.workspace, anchor: anchorKey ? groups.find((item) => item.key === anchorKey)?.workspace : null }) }).then((payload) => { if (payload.workspaces) setWorkspaceRegistry(payload.workspaces) }).catch(() => { setWorkspaceOrder(previous); setWorkspaceActionError("工作区顺序保存失败，已恢复原顺序") }) } } setDraggingGroupKey(null); setDragOverGroupKey(null); setDragOverGroupAfter(false) }}>
+              <div className={cx("session-group-head", group.sessions.some((s) => s.id === selectedId) ? "active" : "")} role="button" tabIndex={0} aria-expanded={group.expanded} onClick={() => toggleWorkspaceGroup(group.key)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggleWorkspaceGroup(group.key) } }}>
                 <svg className="folder-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 4.2A1.7 1.7 0 0 1 3.5 2.5h2.6l1.4 1.7h5A1.7 1.7 0 0 1 14.2 6v5.8a1.7 1.7 0 0 1-1.7 1.7H3.5a1.7 1.7 0 0 1-1.7-1.7V4.2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>
-                <strong>{group.name}</strong>
-              </button>
-              <div className="session-group-items">
-                {group.sessions.map((session) => (
+                <strong>{group.name}</strong>{group.workspace ? <span className="workspace-group-hover" role="tooltip">{group.workspace}</span> : null}{group.workspace && !group.ungrouped ? <span className="workspace-row-menu"><button type="button" aria-label={`工作区操作：${group.name}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setWorkspaceMenuPath(workspaceMenuPath === group.workspace ? null : group.workspace) }}>•••</button>{workspaceMenuPath === group.workspace ? <span className="workspace-context-menu" role="menu" onPointerDown={(event) => event.stopPropagation()}><button type="button" role="menuitem" onClick={() => { setWorkspaceRenamePath(group.workspace); setWorkspaceRenameTitle(group.name); setWorkspaceMenuPath(null) }}>重命名</button><button type="button" role="menuitem" disabled={group.workspace === currentWorkspace} onClick={async () => { if (!window.confirm("只从 Nova 注册表移除，不删除本地目录。继续吗？")) return; try { await api("/api/workspaces/delete", { method: "POST", body: JSON.stringify({ path: group.workspace }) }); setWorkspaceRegistry((items) => items.filter((item) => item.path !== group.workspace)); setWorkspaceMenuPath(null); setWorkspaceActionError("") } catch { setWorkspaceActionError("工作区删除失败，请重试") } }}>删除</button></span> : null}</span> : null}
+              </div>
+              <div className="session-group-items" hidden={!group.expanded}>
+                {group.sessions.slice(0, expandedSessionGroups[group.key] ? group.sessions.length : 5).map((session) => (
                   <div
                     key={session.id}
-                    className={cx("session-item", session.id === selectedId ? "active" : "")}
-                    role="button"
+                    className={cx("session-item", session.id === selectedId ? "active" : "", dragOverSessionId === session.id ? (dragOverAfter ? "drop-after" : "drop-before") : "")}
+                    role="treeitem"
+                     aria-selected={session.id === selectedId}
+                     draggable={!query.trim()}
+                     onDragStart={(event) => { if (!query.trim()) { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", session.id); setDraggingSessionId(session.id) } }}
+                     onDragEnd={() => { setDraggingSessionId(null); setDragOverSessionId(null); setDragOverAfter(false) }}
+                     onDragOver={(event) => { if (draggingSessionId && draggingSessionId !== session.id) { event.preventDefault(); setDragOverSessionId(session.id); setDragOverAfter(event.nativeEvent.offsetY > event.currentTarget.clientHeight / 2) } }}
+                     onDrop={(event) => {
+                       event.preventDefault()
+                       if (!draggingSessionId || draggingSessionId === session.id) return
+                       const ids = group.sessions.map((item) => item.id)
+                       const from = ids.indexOf(draggingSessionId)
+                       const to = ids.indexOf(session.id)
+                       if (from < 0 || to < 0) return
+                       const after = event.nativeEvent.offsetY > event.currentTarget.clientHeight / 2
+                       ids.splice(from, 1)
+                       const targetIndex = ids.indexOf(session.id)
+                       ids.splice(Math.max(0, targetIndex + (after ? 1 : 0)), 0, draggingSessionId)
+                       const previous = workspaceAccountOrder(group.key)
+                        setWorkspaceAccountOrder(group.key, ids)
+                        const beforeSessionId = ids[ids.indexOf(draggingSessionId) + 1] || null
+                        void api<{ items?: ChatSession[] }>("/api/chat/sessions/reorder", { method: "POST", body: JSON.stringify({ workspace: group.workspace || session.workspace || null, session_id: draggingSessionId, before_session_id: beforeSessionId }) }).catch(() => { setWorkspaceAccountOrder(group.key, previous); setWorkspaceActionError("会话顺序保存失败，已恢复原顺序") })
+                       setDraggingSessionId(null); setDragOverSessionId(null); setDragOverAfter(false)
+                     }}
                     tabIndex={0}
                     onClick={() => { if (menuSessionId !== session.id) onSelect(session) }}
-                    onKeyDown={(e) => { if (e.key === "Enter" && menuSessionId !== session.id) onSelect(session) }}
+                    onKeyDown={(e) => { if (e.key === "Enter" && menuSessionId !== session.id) onSelect(session); if (e.key === "ArrowDown") { e.preventDefault(); const next = groups.flatMap((item) => item.sessions); const index = next.findIndex((item) => item.id === session.id); if (next[index + 1]) onSelect(next[index + 1]) } if (e.key === "ArrowUp") { e.preventDefault(); const next = groups.flatMap((item) => item.sessions); const index = next.findIndex((item) => item.id === session.id); if (next[index - 1]) onSelect(next[index - 1]) } }}
                   >
-                    <span className="session-dot" aria-hidden="true" />
+                    <span className="session-hover-card" role="tooltip"><strong>{session.title || "新会话"}</strong><span>更新于 {relativeTime(session.updated_at || session.created_at)}</span><span>{session.workspace || "未分组"}</span></span>
+                     <span className={cx("session-dot", runtimeBySession[session.id]?.pending ? "pending" : runtimeBySession[session.id]?.active || runtimeBySession[session.id]?.descendantRunning ? "running" : runtimeBySession[session.id]?.completedUnviewed ? "completed" : "")} aria-hidden="true" /><span className="visually-hidden">会话状态：{runtimeBySession[session.id]?.pending ? "等待操作" : runtimeBySession[session.id]?.active ? "运行中" : runtimeBySession[session.id]?.descendantRunning ? "子会话运行中" : runtimeBySession[session.id]?.completedUnviewed ? "已完成未查看" : "空闲"}</span>
                     {session.parent_session_id ? <span className="session-fork-icon" title="分支会话">⑂</span> : null}
                     {editingSessionId === session.id ? <input className="session-inline-rename" value={editingTitle} autoFocus onChange={(e) => setEditingTitle(e.target.value)} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Enter" && editingTitle.trim()) { e.preventDefault(); onRename(session, editingTitle.trim()); setEditingSessionId(null) } if (e.key === "Escape") { e.preventDefault(); setEditingSessionId(null) } }} onBlur={() => { if (editingTitle.trim() && editingTitle.trim() !== session.title) onRename(session, editingTitle.trim()); setEditingSessionId(null) }} /> : <strong>{shortText(session.title || "新会话", 28)}</strong>}
-                    <span className="session-time">{relativeTime(session.updated_at || session.created_at)}</span>
+                    {query.trim() && remoteMatches[session.id] ? <small className="session-search-snippet">{shortText(remoteMatches[session.id], 72)}</small> : null}
+                     <span className="session-time">{relativeTime(session.updated_at || session.created_at)}</span>
                     <span className={cx("session-row-menu", menuSessionId === session.id ? "open" : "")}>
                       <button
                         type="button"
                         className="session-more"
                         aria-label={`会话操作：${session.title}`}
                         aria-expanded={menuSessionId === session.id}
-                        onClick={(e) => { e.stopPropagation(); setMenuSessionId(menuSessionId === session.id ? null : session.id) }}
+                         onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); setMenuFocusIndex(0); setMenuSessionId(menuSessionId === session.id ? null : session.id) }}
                       >•••</button>
                       {menuSessionId === session.id ? (
-                        <div className="session-context-menu" role="menu" onClick={(e) => e.stopPropagation()}>
+                        <div className="session-context-menu" role="menu" onPointerDown={(event) => event.stopPropagation()} data-session-menu={session.id} onMouseLeave={() => setMenuSessionId(null)} onKeyDown={(event) => { if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setMenuFocusIndex((index) => (index + (event.key === "ArrowDown" ? 1 : 2)) % 3) } if (event.key === "Escape") { event.preventDefault(); setMenuSessionId(null) } }} onClick={(e) => e.stopPropagation()}>
                           <button type="button" role="menuitem" onClick={() => { setMenuSessionId(null); setEditingSessionId(session.id); setEditingTitle(session.title) }}>重命名</button>
                           <button type="button" role="menuitem" onClick={() => { setMenuSessionId(null); onFork(session) }}>创建分支</button>
                           <button type="button" role="menuitem" onClick={() => { setMenuSessionId(null); onArchive(session) }}>归档会话</button>
-                          <div className="session-menu-separator" />
-                          
-                        </div>
+                                                  </div>
                       ) : null}
                     </span>
                   </div>
                 ))}
+                {group.sessions.length > 5 ? <button className="session-overflow-button" type="button" aria-expanded={Boolean(expandedSessionGroups[group.key])} onClick={() => setExpandedSessionGroups((current) => ({ ...current, [group.key]: !current[group.key] }))}>{expandedSessionGroups[group.key] ? "收起" : `展开其余 ${group.sessions.length - 5} 条`}</button> : null}
               </div>
             </section>
           ))}
         </nav>
       </div>
+      {workspaceRenamePath ? <div className="workspace-rename-popover" role="dialog"><input autoFocus value={workspaceRenameTitle} onChange={(event) => setWorkspaceRenameTitle(event.target.value)} onKeyDown={async (event) => { if (event.nativeEvent.isComposing || event.keyCode === 229) return; if (event.key === "Escape") { setWorkspaceRenamePath(null); return } if (event.key !== "Enter" || !workspaceRenameTitle.trim()) return; try { await api("/api/workspaces/rename", { method: "POST", body: JSON.stringify({ path: workspaceRenamePath, title: workspaceRenameTitle.trim() }) }); setWorkspaceRegistry((items) => items.map((item) => item.path === workspaceRenamePath ? { ...item, title: workspaceRenameTitle.trim() } : item)); setWorkspaceRenamePath(null); setWorkspaceActionError("") } catch { setWorkspaceActionError("工作区重命名失败，请重试") } }} /><button type="button" onClick={() => setWorkspaceRenamePath(null)}>取消</button></div> : null}
       <div className="sidebar-foot">
         <button className="sidebar-foot-button" type="button" id="open-settings" onClick={onOpenSettings}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6.8 1.8h2.4l.4 1.7 1.5.9 1.6-.7 1.2 2.1-1.2 1.2v1.7l1.2 1.2-1.2 2.1-1.6-.7-1.5.9-.4 1.7H6.8l-.4-1.7-1.5-.9-1.6.7-1.2-2.1 1.2-1.2V8.2L2.1 7l1.2-2.1 1.6.7 1.5-.9.4-1.7Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><circle cx="8" cy="8" r="2.1" stroke="currentColor" strokeWidth="1.2"/></svg>
@@ -527,6 +626,7 @@ export default function App() {
   const [entries, setEntries] = useState<TimelineEntry[]>([])
   const inline = useInlineComments(selectedId, entries.length)
   const [takeovers, setTakeovers] = useState<PendingApprovalItem[]>([])
+  const [runtimeBySession, setRuntimeBySession] = useState<Record<string, { active?: boolean; pending?: boolean }>>({})
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>({})
   const [workspace, setWorkspace] = useState("")
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false)
@@ -581,6 +681,23 @@ export default function App() {
     void reloadSessions()
     void reloadShell()
   }, [])
+  useEffect(() => {
+    if (sessions.length === 0) return
+    let cancelled = false
+    const refresh = async () => {
+      const next: Record<string, { active?: boolean; pending?: boolean; descendantRunning?: boolean; completedUnviewed?: boolean }> = {}
+      await Promise.all(sessions.map(async (session) => {
+        try {
+          const state = await api<{ active?: boolean; descendant_running?: boolean; pending_approvals?: unknown[]; runtime?: { final_answer?: unknown } }>(`/api/chat/sessions/${encodeURIComponent(session.id)}/runtime-state?passive=true`)
+          next[session.id] = { active: Boolean(state.active), pending: Boolean(state.pending_approvals?.length), descendantRunning: Boolean((state as { descendant_running?: boolean }).descendant_running), completedUnviewed: Boolean(state.runtime?.final_answer && session.id !== selectedId) }
+        } catch { /* 单个会话状态失败不影响列表 */ }
+      }))
+      if (!cancelled) setRuntimeBySession(next)
+    }
+    void refresh()
+    const timer = window.setInterval(refresh, 5000)
+    return () => { cancelled = true; window.clearInterval(timer) }
+  }, [sessions, selectedId])
 
   const handleForkAt = async (messageId: string, _role: string) => {
     if (!selectedId) return
@@ -906,6 +1023,7 @@ export default function App() {
         selectedId={selectedId}
         currentWorkspace={workspace}
         version={version}
+         runtimeBySession={runtimeBySession}
         onSelect={selectSession}
         onRename={renameSession}
         onFork={forkSession}

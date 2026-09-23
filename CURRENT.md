@@ -1,6 +1,18 @@
 # CURRENT.md
 
+## 2026-09-22 Nova 对齐 DSH 当前状态
+
+- 代码级对齐已完成主要 Sidebar/session/Workspace 能力：搜索、三点菜单、树/平铺、折叠、rail/wide、Workspace registry、Workspace/Session reorder Host API、运行态优先级、错误回滚与 IME 守卫。
+- 代码证据：后端全量 300 tests OK；前端 tsc/build、React smoke、Workspace 18/18、git diff check 通过。
+- 正式清单：`reports/2026-09-22-1318_nova-dsh-差异清单与验收指标.md`。
+- 验收命令：`reports/2026-09-22-1318_nova-dsh-验收命令清单.md`。
+- 实时阻断：当前 `http://127.0.0.1:8765` 宿主尚未重启，实时 `/openapi.json` 尚未包含四个新端点；不得把代码级通过宣称为实时部署通过。
+- 尚未执行：用户重启、重启后真实 HTTP/浏览器回归、git commit/push。
+
 ## 当前任务
+
+- 2026-09-23：已实现 `/` 内置指令与 `$` 用户技能的严格触发边界。只有已注册 `/help` 等内置命令、或真实存在且可用户调用的 `$技能名` 才进入专用处理；`/Users/...`、`$HOME/...`、`$技能名/文件`、未知命令和未知技能均按普通消息处理。
+- 新增 `src/nova/runtime/triggers.py` 集中判定逻辑，并补充 `tests/test_triggers.py` 与 AgentLoop 回归覆盖。
 
 Nova 已进入代码实现阶段。当前已修正为对话式 Web Agent 网关，并接入 BigModel GLM-4.7 Provider（通过 `BIGMODEL_API_KEY` 环境变量读取 key）。
 
@@ -287,3 +299,4 @@ Nova 已进入代码实现阶段。当前已修正为对话式 Web Agent 网关�
   - 本地服务：`http://127.0.0.1:8765`。
 
 2026-06-06
+- 2026-09-23 触发器实现已用宿主 Python 环境完成全量验证：303 tests OK；默认 python3 缺 fastapi 仅为解释器差异。实时 8765 仍未刷新到新增 triggers.py 逻辑。

@@ -124,8 +124,10 @@ button:disabled {
 
 .sidebar {
   display: flex;
+  flex: 0 0 279px;
   flex-direction: column;
-  flex-shrink: 0;
+  min-width: 0;
+  box-sizing: border-box;
   width: 279px;
   gap: 10px;
   padding: 16px 14px 0;
@@ -137,20 +139,22 @@ button:disabled {
 
 /* 会话列表独占滚动空间；底部设置行固定实底，列表不得穿透 */
 .sidebar-sessions {
-  flex: 1 1 auto;
+  flex: 1;
+  min-width: 0;
   min-height: 0;
-  overflow-y: auto;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
 }
-
 
 .sidebar-foot {
   flex: none;
   position: sticky;
   bottom: 0;
   margin: 0 -14px;
-  padding: 8px 14px 10px;
+  padding: 10px 14px 14px;
   background: #f9fafb;
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  border-top: 1px solid var(--dsw-alias-border-l1);
 }
 
 
@@ -162,13 +166,29 @@ body.sidebar-collapsed .sidebar {
 
 body.sidebar-collapsed .sidebar-title,
 body.sidebar-collapsed .version-badge,
-body.sidebar-collapsed .new-session-label,
-body.sidebar-collapsed .group-label span,
+body.sidebar-collapsed .new-session span,
+body.sidebar-collapsed .group-label-workspace,
+body.sidebar-collapsed .group-actions .view-mode-label,
+body.sidebar-collapsed .group-actions .rail-wide-search-control,
+body.sidebar-collapsed .rail-view-control,
+body.sidebar-collapsed .rail-sort-control,
+body.sidebar-collapsed .rail-wide-search-control,
 body.sidebar-collapsed .workspace-entry #project-name,
-body.sidebar-collapsed .sidebar-sessions,
+body.sidebar-collapsed .session-list,
+body.sidebar-collapsed .session-search,
+body.sidebar-collapsed .sidebar-workspace-panel,
 body.sidebar-collapsed .foot-label {
   display: none;
 }
+body.sidebar-collapsed .brand-row,
+body.sidebar-collapsed .new-session,
+body.sidebar-collapsed .group-actions,
+body.sidebar-collapsed .sidebar-foot-button {
+  justify-content: center;
+}
+body.sidebar-collapsed .sidebar-sessions { display: block; }
+body.sidebar-collapsed .group-label { justify-content: center; }
+body.sidebar-collapsed .group-actions { display: flex; }
 
 
 /* 折叠态头部纵向堆叠成图标栏：logo / 主题 / 展开按钮从左到右变为从上到下，
@@ -558,18 +578,6 @@ body.sidebar-collapsed .sidebar-foot-button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-
-.sidebar-sessions {
-  flex: 1;
-  min-height: 0;
-}
-
-
-.sidebar-foot {
-  border-top: 1px solid var(--dsw-alias-border-l1);
-  padding-top: 10px;
 }
 
 
@@ -2813,6 +2821,17 @@ body.inspector-collapsed .inspector-toggle {
 }
 
 
+.workspace-group-hover { position: absolute; left: 8px; top: calc(100% + 4px); z-index: 25; display: none; max-width: 300px; overflow: hidden; padding: 6px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; background: var(--surface, #fff); box-shadow: 0 7px 20px rgb(0 0 0 / 13%); color: var(--muted); font-size: 10px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.session-group-head:hover .workspace-group-hover, .session-group-head:focus-visible .workspace-group-hover { display: block; }
+
+.workspace-row-menu { margin-left: auto; position: relative; flex: none; }
+.workspace-row-menu > button { border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.workspace-context-menu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 50; display: grid; min-width: 120px; padding: 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--surface, #fff); box-shadow: 0 8px 24px rgb(0 0 0 / 14%); }
+.workspace-context-menu button { border: 0; padding: 6px 8px; background: transparent; text-align: left; cursor: pointer; }
+.workspace-context-menu button:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.workspace-rename-popover { position: absolute; top: 70px; left: 12px; z-index: 60; display: flex; gap: 4px; padding: 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--surface, #fff); box-shadow: 0 8px 24px rgb(0 0 0 / 14%); }
+.workspace-rename-popover input { width: 180px; }
+
 .session-group-head strong {
   overflow: hidden;
   font-size: 12px;
@@ -2853,6 +2872,35 @@ body.inspector-collapsed .inspector-toggle {
 }
 
 
+.view-mode-label { font-size: 10px; color: var(--muted); }
+.session-search-warning { padding: 4px 8px; color: var(--warning, #a66b00); font-size: 11px; }
+.session-search-snippet { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+
+.session-overflow-button {
+  border: 0;
+  padding: 6px 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.session-overflow-button:hover { color: var(--text); }
+
+.session-item.drop-before, .session-item.drop-after { position: relative; }
+.session-item.drop-before::before, .session-item.drop-after::after { position: absolute; right: 4px; left: 4px; height: 2px; border-radius: 2px; background: var(--accent, #6d7cff); content: ""; pointer-events: none; }
+.session-item.drop-before::before { top: -1px; }
+.session-item.drop-after::after { bottom: -1px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 .session-item:hover {
   background: var(--dsw-specific-sidebar-nav-item-hover);
 }
@@ -2865,6 +2913,8 @@ body.inspector-collapsed .inspector-toggle {
 
 .session-item strong {
   display: block;
+  min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   font-weight: 400;
   font-size: 13px;
@@ -2876,7 +2926,8 @@ body.inspector-collapsed .inspector-toggle {
 
 /* dsh 会话行内相对时间：右对齐灰色小字 */
 .session-item .session-time {
-  flex: none;
+  flex: 0 0 auto;
+  min-width: 0;
   color: var(--dsw-alias-label-quaternary);
   font-size: 11px;
   line-height: 20px;
@@ -2890,6 +2941,16 @@ body.inspector-collapsed .inspector-toggle {
 
 
 /* dsh 会话行点图标 */
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; clip-path: inset(50%); }
+.session-hover-card { position: absolute; left: 10px; bottom: calc(100% + 6px); z-index: 30; display: grid; gap: 3px; min-width: 180px; max-width: 280px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--surface, #fff); box-shadow: 0 8px 22px rgb(0 0 0 / 14%); color: var(--text); font-size: 11px; opacity: 0; pointer-events: none; transform: translateY(3px); transition: opacity 140ms ease, transform 140ms ease; }
+.session-hover-card span { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.session-item:hover .session-hover-card, .session-item:focus-within .session-hover-card { opacity: 1; transform: translateY(0); }
+
+.session-item .session-dot.running { background: #2b9b69; box-shadow: 0 0 0 3px rgb(43 155 105 / 16%); }
+.session-item .session-dot.completed { background: var(--dsw-alias-state-business-tertiary, #7c5cff); }
+
+.session-dot.pending { background: #d98b22; box-shadow: 0 0 0 3px rgb(217 139 34 / 18%); }
+
 .session-item .session-dot {
   flex: none;
   width: 6px;
@@ -2907,7 +2968,8 @@ body.inspector-collapsed .inspector-toggle {
 
 .session-row-menu {
   position: relative;
-  flex: none;
+  flex: 0 0 24px;
+  width: 24px;
   margin-left: 2px;
 }
 
@@ -2944,6 +3006,8 @@ body.inspector-collapsed .inspector-toggle {
 .session-context-menu {
   position: absolute;
   z-index: 40;
+  min-width: 148px;
+  box-shadow: 0 10px 30px rgba(20, 24, 35, .16);
   top: calc(100% + 4px);
   right: 0;
   width: 156px;
@@ -2991,18 +3055,6 @@ body.inspector-collapsed .inspector-toggle {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-}
-
-
-.session-search {
-  width: 100%;
-  margin-bottom: 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  padding: 6px 10px;
-  background: #fff;
-  color: var(--text);
-  font-size: 12px;
 }
 
 
@@ -3653,10 +3705,6 @@ body.inspector-collapsed .inspector-toggle {
 }
 
 /* 侧栏搜索框常驻（React 版简化为输入框过滤） */
-.session-search {
-  width: 100%;
-  margin-top: 6px;
-}
 
 .session-delete {
   cursor: pointer;
@@ -3949,14 +3997,11 @@ body.inspector-collapsed .inspector-toggle {
 
 /* 会话列表滚动底部呼吸 */
 .session-list {
+  min-width: 0;
   padding-bottom: 16px;
 }
 
 /* 侧栏设置行底部留白 */
-.sidebar-foot {
-  padding-bottom: 14px;
-}
-
 
 /* ---- dsh 质感收尾：pill 容器 + 悬浮阴影 + 饱和发送键 ---- */
 

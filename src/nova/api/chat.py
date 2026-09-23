@@ -186,8 +186,21 @@ async def clear_chat_session_queue(session_id: str) -> dict:
 
 
 @router.get("/api/chat/sessions", response_model=list[ctx.ChatSession])
-async def list_chat_sessions() -> list[ctx.ChatSession]:
-    return ctx.store.list_chat_sessions()
+async def list_chat_sessions(
+    workspace: str | None = ctx.Query(default=None),
+    include_archived: bool = ctx.Query(default=False),
+) -> list[ctx.ChatSession]:
+    return ctx.store.list_chat_sessions(workspace=workspace, include_archived=include_archived)
+
+
+@router.get("/api/chat/sessions/search")
+async def search_chat_sessions(
+    q: str = ctx.Query(min_length=1, max_length=500),
+) -> dict:
+    cleaned = q.replace("\x00", "").strip()
+    if not cleaned:
+        raise ctx.HTTPException(status_code=400, detail="搜索词不能为空")
+    return ctx.store.search_chat_sessions(cleaned, limit=50)
 
 
 @router.post("/api/chat/sessions", response_model=ctx.ChatSession, status_code=201)
@@ -199,6 +212,15 @@ async def create_chat_session(payload: ctx.ChatSessionCreate) -> ctx.ChatSession
     )
     ctx.store.create_chat_session(session)
     return session
+
+
+@router.post("/api/chat/sessions/reorder")
+async def reorder_chat_session(payload: ctx.ChatSessionReorder) -> dict:
+    try:
+        sessions = ctx.store.reorder_chat_session(payload.session_id, workspace=payload.workspace, before_session_id=payload.before_session_id)
+    except KeyError as exc:
+        raise ctx.HTTPException(status_code=404, detail="会话不存在或不属于目标 Workspace") from exc
+    return {"items": [session.model_dump(mode="json") for session in sessions]}
 
 
 @router.patch("/api/chat/sessions/{session_id}", response_model=ctx.ChatSession)
@@ -246,10 +268,13 @@ async def list_chat_timeline(session_id: str) -> dict:
 
 
 @router.get("/api/chat/sessions/{session_id}/runtime-state")
-async def chat_runtime_state(session_id: str) -> dict:
+async def chat_runtime_state(
+    session_id: str,
+    passive: bool = ctx.Query(default=False),
+) -> dict:
     unavailable_reason = None
     try:
-        session = ctx._get_current_chat_session(session_id, auto_switch=True)
+        session = ctx.store.get_chat_session(session_id) if passive else ctx._get_current_chat_session(session_id, auto_switch=True)
     except ctx.HTTPException as exc:
         if exc.status_code != 409:
             raise
@@ -259,6 +284,16 @@ async def chat_runtime_state(session_id: str) -> dict:
         raise ctx.HTTPException(status_code=404, detail="Chat session not found")
     runtime = ctx.agent_sessions.runtime_state(session_id)
     processes = ctx._process_jobs_for_session(session_id)
+    descendant_ids: set[str] = set()
+    frontier = [session_id]
+    all_sessions = ctx.store.list_chat_sessions(include_archived=True)
+    while frontier:
+        parent_id = frontier.pop()
+        for candidate in all_sessions:
+            if candidate.parent_session_id == parent_id and candidate.id not in descendant_ids:
+                descendant_ids.add(candidate.id)
+                frontier.append(candidate.id)
+    descendant_running = any(ctx.agent_sessions.is_active(child_id) for child_id in descendant_ids)
     return {
         "session": session.model_dump(mode="json"),
         "timeline": {
@@ -271,6 +306,7 @@ async def chat_runtime_state(session_id: str) -> dict:
         ],
         "processes": processes,
         "active": ctx.agent_sessions.is_active(session_id),
+        "descendant_running": descendant_running,
         "queued_messages": runtime["queued_messages"],
         "unavailable": bool(unavailable_reason),
         "unavailable_reason": unavailable_reason,

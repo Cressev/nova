@@ -14,12 +14,16 @@ class WorkspaceManager:
         self.allowed_roots = [self._resolve_existing_path(path.expanduser()) for path in allowed_roots]
         self.browse_roots = self._derive_browse_roots(self.allowed_roots)
         self.recent_file = recent_file
+        self.registry_file = recent_file.with_name("workspaces.json") if recent_file else None
         self.current_root = self._validate(initial_root)
         self._recent_projects = self._load_recent_projects()
+        self._workspace_registry = self._load_workspace_registry()
+        self._ensure_workspace_registered(self.current_root)
         self._remember_recent(self.current_root)
 
     def set_current(self, path: str) -> Path:
         self.current_root = self._validate(self._resolve_existing_path(Path(path).expanduser()))
+        self._ensure_workspace_registered(self.current_root)
         self._remember_recent(self.current_root)
         return self.current_root
 
@@ -41,14 +45,52 @@ class WorkspaceManager:
         return selected
 
     def status(self, query: str | None = None) -> dict:
+        workspaces = self.list_workspaces()
         return {
             "current_root": str(self.current_root),
             "allowed_roots": [str(path) for path in self.allowed_roots],
             "candidates": [str(path) for path in self._candidate_projects(query)],
             "recent_projects": [str(path) for path in self._recent_projects if path.exists() and path.is_dir()],
+            "workspaces": workspaces,
             "completion": self.path_completion(query),
             "query_status": self.path_status(query),
         }
+
+    def list_workspaces(self) -> list[dict[str, str]]:
+        return [item.copy() for item in self._workspace_registry if Path(item["path"]).is_dir()]
+
+    def rename_workspace(self, path: str, title: str) -> dict[str, str]:
+        key = str(self._validate(Path(path)))
+        cleaned = title.strip()[:120]
+        if not cleaned:
+            raise WorkspaceError("工作区名称不能为空")
+        for item in self._workspace_registry:
+            if item["path"] == key:
+                item["title"] = cleaned
+                self._save_workspace_registry()
+                return item.copy()
+        raise WorkspaceError("工作区不存在")
+
+    def delete_workspace(self, path: str) -> None:
+        key = str(self._validate(Path(path)))
+        if key == str(self.current_root):
+            raise WorkspaceError("不能删除当前工作区")
+        before = len(self._workspace_registry)
+        self._workspace_registry = [item for item in self._workspace_registry if item["path"] != key]
+        if len(self._workspace_registry) == before:
+            raise WorkspaceError("工作区不存在")
+        self._save_workspace_registry()
+
+    def insert_workspace_before(self, path: str, anchor: str | None = None) -> list[dict[str, str]]:
+        key = str(self._validate(Path(path)))
+        anchor_key = str(self._validate(Path(anchor))) if anchor else None
+        items = [item for item in self._workspace_registry if item["path"] != key]
+        item = next((entry for entry in self._workspace_registry if entry["path"] == key), {"path": key, "title": Path(key).name})
+        index = next((i for i, entry in enumerate(items) if entry["path"] == anchor_key), len(items)) if anchor_key else len(items)
+        items.insert(index, item)
+        self._workspace_registry = items
+        self._save_workspace_registry()
+        return self.list_workspaces()
 
     def path_completion(self, query: str | None = None) -> dict:
         query_text = (query or "").strip()
@@ -250,6 +292,27 @@ class WorkspaceManager:
             )
         except OSError:
             return
+
+    def _load_workspace_registry(self) -> list[dict[str, str]]:
+        if not self.registry_file or not self.registry_file.exists():
+            return []
+        try:
+            raw = json.loads(self.registry_file.read_text(encoding="utf-8"))
+            return [item for item in raw if isinstance(item, dict) and isinstance(item.get("path"), str) and isinstance(item.get("title"), str)]
+        except (OSError, ValueError):
+            return []
+
+    def _save_workspace_registry(self) -> None:
+        if not self.registry_file:
+            return
+        self.registry_file.parent.mkdir(parents=True, exist_ok=True)
+        self.registry_file.write_text(json.dumps(self._workspace_registry, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _ensure_workspace_registered(self, path: Path) -> None:
+        key = str(path)
+        if not any(item["path"] == key for item in self._workspace_registry):
+            self._workspace_registry.append({"path": key, "title": path.name or str(path)})
+            self._save_workspace_registry()
 
     def _candidate_projects(self, query: str | None = None) -> list[Path]:
         candidates: list[Path] = []

@@ -444,6 +444,38 @@ class ApiTest(unittest.TestCase):
         self.assertIn(current, queried.json()["candidates"])
         self.assertIn("query_status", queried.json())
 
+    def test_workspace_registry_routes_are_registered_in_application_openapi(self) -> None:
+        paths = self.client.get("/openapi.json").json()["paths"]
+        for path in ("/api/workspaces/rename", "/api/workspaces/delete", "/api/workspaces/reorder", "/api/chat/sessions/reorder"):
+            self.assertIn(path, paths)
+
+    def test_workspace_registry_api_rename_reorder_delete_contract(self) -> None:
+        from nova.api import routes as api_routes
+        from nova.workspace import WorkspaceManager
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            first = root / "first"
+            second = root / "second"
+            first.mkdir()
+            second.mkdir()
+            old_manager = api_routes.workspace_manager
+            manager = WorkspaceManager(initial_root=first, allowed_roots=[root], recent_file=root / ".nova" / "recents.json")
+            manager.set_current(str(second))
+            api_routes.workspace_manager = manager
+            self.addCleanup(lambda: setattr(api_routes, "workspace_manager", old_manager))
+            renamed = self.client.post("/api/workspaces/rename", json={"path": str(second), "title": "第二项目"})
+            self.assertEqual(renamed.status_code, 200)
+            self.assertEqual(next(item for item in renamed.json()["workspaces"] if item["path"] == str(second.resolve()))["title"], "第二项目")
+            reordered = self.client.post("/api/workspaces/reorder", json={"path": str(second), "anchor": str(first)})
+            self.assertEqual(reordered.status_code, 200)
+            self.assertEqual([item["path"] for item in reordered.json()["workspaces"]][:2], [str(second.resolve()), str(first.resolve())])
+            blocked = self.client.post("/api/workspaces/delete", json={"path": str(second)})
+            self.assertEqual(blocked.status_code, 400)
+            manager.set_current(str(first))
+            deleted = self.client.post("/api/workspaces/delete", json={"path": str(second)})
+            self.assertEqual(deleted.status_code, 200)
+            self.assertTrue(second.exists())
+
     def test_task_api_is_removed_for_chat_session_first_runtime(self) -> None:
         self.assertEqual(self.client.get("/api/tasks").status_code, 404)
         self.assertEqual(self.client.post("/api/tasks", json={"prompt": "测试任务"}).status_code, 404)
@@ -527,6 +559,34 @@ class ApiTest(unittest.TestCase):
         missing_messages = self.client.get(f"/api/chat/sessions/{session['id']}/messages")
         self.assertEqual(missing_messages.status_code, 404)
 
+    def test_chat_session_search_matches_title_body_excludes_archived_and_validates_query(self) -> None:
+        title = self.client.post("/api/chat/sessions", json={"title": "正文搜索目标"}).json()
+        body = self.client.post("/api/chat/sessions", json={"title": "普通标题"}).json()
+        archived = self.client.post("/api/chat/sessions", json={"title": "归档命中"}).json()
+        self.client.post(f"/api/chat/sessions/{body['id']}/messages", json={"content": "只有正文里出现的独特搜索词"})
+        self.client.post(f"/api/chat/sessions/{archived['id']}/messages", json={"content": "只有正文里出现的独特搜索词"})
+        self.client.post(f"/api/chat/sessions/{archived['id']}/archive", json={"archived": True})
+        title_results = self.client.get("/api/chat/sessions/search?q=正文搜索目标")
+        self.assertEqual(title_results.status_code, 200)
+        self.assertIn(title["id"], {item["session_id"] for item in title_results.json()["items"]})
+        body_results = self.client.get("/api/chat/sessions/search?q=独特搜索词")
+        self.assertEqual(body_results.status_code, 200)
+        body_item = next(item for item in body_results.json()["items"] if item["session_id"] == body["id"])
+        self.assertIn("独特搜索词", body_item["snippet"])
+        self.assertNotIn(archived["id"], {item["session_id"] for item in body_results.json()["items"]})
+        self.assertEqual(self.client.get("/api/chat/sessions/search?q=").status_code, 422)
+
+    def test_chat_session_reorder_persists_and_is_workspace_scoped(self) -> None:
+        first = self.client.post("/api/chat/sessions", json={"title": "第一"}).json()
+        second = self.client.post("/api/chat/sessions", json={"title": "第二"}).json()
+        response = self.client.post("/api/chat/sessions/reorder", json={"workspace": first["workspace"], "session_id": second["id"], "before_session_id": first["id"]})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.json()["items"]][:2], [second["id"], first["id"]])
+        listed = self.client.get("/api/chat/sessions", params={"workspace": first["workspace"]})
+        self.assertEqual([item["id"] for item in listed.json()][:2], [second["id"], first["id"]])
+        missing = self.client.post("/api/chat/sessions/reorder", json={"workspace": "/wrong", "session_id": second["id"], "before_session_id": first["id"]})
+        self.assertEqual(missing.status_code, 404)
+
     def test_chat_sessions_list_includes_other_workspaces(self) -> None:
         other = app_module.ChatSession(
             id=app_module.new_id("chat"),
@@ -587,6 +647,57 @@ class ApiTest(unittest.TestCase):
                     for item in payload["timeline"]["items"]
                 )
             )
+
+    def test_runtime_state_reports_active_descendant(self) -> None:
+        parent = self.client.post("/api/chat/sessions", json={"title": "父会话"}).json()
+        child = self.client.post("/api/chat/sessions", json={"title": "子会话"}).json()
+        child_model = app_module.store.get_chat_session(child["id"]).model_copy(update={"parent_session_id": parent["id"]})
+        app_module.store._chat_sessions[child["id"]] = child_model
+        app_module.agent_sessions.mark_active(child["id"])
+        self.addCleanup(lambda: app_module.agent_sessions.mark_idle(child["id"]))
+        response = self.client.get(f"/api/chat/sessions/{parent['id']}/runtime-state?passive=true")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["descendant_running"])
+
+    def test_runtime_state_reports_deep_descendant_and_ignores_cycles(self) -> None:
+        root = self.client.post("/api/chat/sessions", json={"title": "根"}).json()
+        middle = self.client.post("/api/chat/sessions", json={"title": "中"}).json()
+        leaf = self.client.post("/api/chat/sessions", json={"title": "叶"}).json()
+        middle_model = app_module.store.get_chat_session(middle["id"]).model_copy(update={"parent_session_id": root["id"]})
+        leaf_model = app_module.store.get_chat_session(leaf["id"]).model_copy(update={"parent_session_id": middle["id"]})
+        app_module.store._chat_sessions[middle["id"]] = middle_model
+        app_module.store._chat_sessions[leaf["id"]] = leaf_model
+        app_module.agent_sessions.mark_active(leaf["id"])
+        self.addCleanup(lambda: app_module.agent_sessions.mark_idle(leaf["id"]))
+        self.assertTrue(self.client.get(f"/api/chat/sessions/{root['id']}/runtime-state?passive=true").json()["descendant_running"])
+        cycle_model = middle_model.model_copy(update={"parent_session_id": leaf["id"]})
+        app_module.store._chat_sessions[middle["id"]] = cycle_model
+        response = self.client.get(f"/api/chat/sessions/{root['id']}/runtime-state?passive=true")
+        self.assertEqual(response.status_code, 200)
+
+    def test_passive_runtime_state_does_not_switch_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            project_a = root / "project-a"
+            project_b = root / "project-b"
+            project_a.mkdir()
+            project_b.mkdir()
+            old_current = app_module.workspace_manager.current_root
+            old_allowed = app_module.workspace_manager.allowed_roots
+            old_browse = app_module.workspace_manager.browse_roots
+            app_module.workspace_manager.allowed_roots = [root.resolve()]
+            app_module.workspace_manager.browse_roots = app_module.workspace_manager._derive_browse_roots([root.resolve()])
+            app_module.workspace_manager.current_root = project_a.resolve()
+            self.addCleanup(lambda: setattr(app_module.workspace_manager, "current_root", old_current))
+            self.addCleanup(lambda: setattr(app_module.workspace_manager, "allowed_roots", old_allowed))
+            self.addCleanup(lambda: setattr(app_module.workspace_manager, "browse_roots", old_browse))
+            session = app_module.ChatSession(id=app_module.new_id("chat"), title="被动状态", workspace=str(project_b.resolve()))
+            app_module.store.create_chat_session(session)
+            self.addCleanup(lambda: app_module.store.delete_chat_session(session.id))
+            response = self.client.get(f"/api/chat/sessions/{session.id}/runtime-state?passive=true")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(app_module.workspace_manager.current_root, project_a.resolve())
+            self.assertEqual(response.json()["session"]["workspace"], str(project_b.resolve()))
 
     def test_runtime_config_is_scoped_to_selected_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

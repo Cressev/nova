@@ -24,6 +24,15 @@ class AgentRuntimeTest(unittest.TestCase):
         self.runtime.process_manager.kill_all()
         self.tmpdir.cleanup()
 
+    def test_trigger_guard_does_not_classify_paths_as_commands(self) -> None:
+        from nova.runtime.triggers import detect_input_trigger
+
+        self.assertIsNone(detect_input_trigger("/Users/liam/project", self.runtime.skills))
+        self.assertIsNone(detect_input_trigger("$HOME/project", self.runtime.skills))
+        self.assertIsNone(detect_input_trigger("$skill/file", self.runtime.skills))
+        self.assertIsNone(detect_input_trigger("/unknown", self.runtime.skills))
+        self.assertEqual(detect_input_trigger("/help", self.runtime.skills).token, "/help")
+
     def test_parse_closed_tool_call(self) -> None:
         payload = self.runtime._parse_tool_call(
             '<tool_call>{"tool":"read","arguments":{"file_path":"README.md"}}</tool_call>'

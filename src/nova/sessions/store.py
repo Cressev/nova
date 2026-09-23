@@ -105,11 +105,54 @@ class SessionStore:
                     for session in sessions
                     if session.workspace == workspace
                 ]
-            return sorted(
-                sessions,
-                key=lambda item: item.updated_at,
-                reverse=True,
-            )
+            has_manual_order = any(item.manual_order is not None for item in sessions)
+            if has_manual_order:
+                return sorted(
+                    sessions,
+                    key=lambda item: (item.manual_order is None, item.manual_order if item.manual_order is not None else 0, -item.updated_at.timestamp()),
+                )
+            return sorted(sessions, key=lambda item: item.updated_at, reverse=True)
+
+    def search_chat_sessions(self, query: str, *, limit: int = 50) -> dict[str, Any]:
+        """搜索标题与正文，仅读取内存索引，不触发落盘。"""
+        needle = query.replace("\x00", "").strip().casefold()
+        if not needle:
+            return {"items": [], "hasMore": False}
+        with self._lock:
+            matches: list[dict[str, str]] = []
+            for session in self._chat_sessions.values():
+                if session.archived:
+                    continue
+                messages = self._chat_messages.get(session.id, [])
+                haystack = "\n".join(message.content for message in messages)
+                title_hit = needle in session.title.casefold()
+                body_hit = needle in haystack.casefold()
+                if not title_hit and not body_hit:
+                    continue
+                snippet = session.title
+                if body_hit:
+                    folded = haystack.casefold()
+                    start = max(0, folded.find(needle) - 60)
+                    end = min(len(haystack), start + 180)
+                    snippet = haystack[start:end].replace("\n", " ")
+                matches.append({"session_id": session.id, "title": session.title, "snippet": snippet})
+            matches.sort(key=lambda item: item["session_id"])
+            return {"items": matches[:limit], "hasMore": len(matches) > limit}
+
+    def reorder_chat_session(self, session_id: str, *, workspace: str | None, before_session_id: str | None) -> list[ChatSession]:
+        with self._lock:
+            moving = self._chat_sessions.get(session_id)
+            if moving is None or moving.archived or moving.workspace != workspace:
+                raise KeyError(session_id)
+            sessions = [item for item in self._chat_sessions.values() if not item.archived and item.workspace == workspace]
+            sessions.sort(key=lambda item: item.updated_at, reverse=True)
+            sessions = [item for item in sessions if item.id != session_id]
+            index = next((i for i, item in enumerate(sessions) if item.id == before_session_id), len(sessions))
+            sessions.insert(index, moving)
+            for position, item in enumerate(sessions):
+                self._chat_sessions[item.id] = item.model_copy(update={"manual_order": position})
+            self._save_chats()
+            return [self._chat_sessions[item.id] for item in sessions]
 
     def get_chat_session(self, session_id: str) -> ChatSession | None:
         with self._lock:

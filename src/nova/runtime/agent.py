@@ -19,6 +19,7 @@ from ..tools.workspace import TOOL_SPECS, WorkspaceTools
 from .commands import builtin_help_text
 from .loop import AgentLoop
 from .tool_orchestrator import ToolOrchestrator
+from .triggers import detect_input_trigger
 
 TOOL_CALL_PATTERN = re.compile(
     r"<tool_call>\s*(?P<payload>\{.*?\})\s*(?:</tool_call>)?",
@@ -136,6 +137,8 @@ class CodexLikeAgentRuntime:
             cancel_requested=lambda: bool(getattr(self, "cancel_requested", False)),
         )
         self.memory = ProjectMemory(project_root, global_agent_file=global_agent_file)
+        # 统一复用同一个 SkillManager：触发判定与技能读取必须看到完全相同的技能清单。
+        self.skills = SkillManager(project_root)
         self.max_tool_rounds = max_tool_rounds
         self.permission_mode = permission_mode
         self.sandbox_mode = sandbox_mode
@@ -872,7 +875,7 @@ class CodexLikeAgentRuntime:
             ]
             return "当前工具清单：\n" + "\n".join(rows)
         if command == "/skills":
-            skills = SkillManager(self.tools.project_root).list_skills()
+            skills = self.skills.list_skills()
             if not skills:
                 return "当前没有发现可用技能。项目级技能放在 `.nova/skills/<name>/SKILL.md`，全局技能放在 `~/.nova/skills/<name>/SKILL.md`。"
             rows = [
@@ -1001,7 +1004,7 @@ class CodexLikeAgentRuntime:
         return self._skill_response(name)
 
     def _skill_response(self, name: str) -> str:
-        skill = SkillManager(self.tools.project_root).find(name)
+        skill = self.skills.find(name)
         if skill is None:
             return f"未找到技能：{name}\n可用 `/skills` 查看当前发现的技能。"
         return (
@@ -1042,7 +1045,7 @@ class CodexLikeAgentRuntime:
     def _system_prompt(self, latest_user: str = "", *, read_rounds: int = 0) -> str:
         from ..memory import layered
 
-        skill_context = SkillManager(self.tools.project_root).skill_index_prompt()
+        skill_context = self.skills.skill_index_prompt()
         tool_rows = "\n".join(
             f"- {item['name']}: {json.dumps(item['schema'], ensure_ascii=False)}"
             for item in self.tools.list_specs()

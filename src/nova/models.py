@@ -35,6 +35,12 @@ class ChatSessionArchive(BaseModel):
     archived: bool = True
 
 
+class ChatSessionReorder(BaseModel):
+    workspace: str | None = Field(default=None, max_length=1200)
+    session_id: str = Field(min_length=1, max_length=200)
+    before_session_id: str | None = Field(default=None, max_length=200)
+
+
 class ChatSession(BaseModel):
     id: str
     title: str
@@ -46,6 +52,7 @@ class ChatSession(BaseModel):
     parent_session_id: str | None = None
     seed_length: int | None = None
     archived: bool = False
+    manual_order: int | None = None
 
 
 class ChatMessageCreate(BaseModel):
@@ -67,6 +74,16 @@ class WorkspaceSelect(BaseModel):
 
 class WorkspaceFolderCreate(BaseModel):
     path: str = Field(min_length=1, max_length=1200)
+
+
+class WorkspaceRename(BaseModel):
+    path: str = Field(min_length=1, max_length=1200)
+    title: str = Field(min_length=1, max_length=120)
+
+
+class WorkspaceReorder(BaseModel):
+    path: str = Field(min_length=1, max_length=1200)
+    anchor: str | None = Field(default=None, max_length=1200)
 
 
 class WorktreeCreate(BaseModel):

@@ -19,6 +19,33 @@ async def workspace_list(
     return ctx.workspace_manager.status(query=q)
 
 
+@router.post("/api/workspaces/rename")
+async def rename_workspace(payload: ctx.WorkspaceRename) -> dict:
+    try:
+        ctx.workspace_manager.rename_workspace(payload.path, payload.title)
+        return ctx.workspace_manager.status()
+    except ctx.WorkspaceError as exc:
+        raise ctx.HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/workspaces/delete")
+async def delete_workspace(payload: ctx.WorkspaceSelect) -> dict:
+    try:
+        ctx.workspace_manager.delete_workspace(payload.path)
+        return ctx.workspace_manager.status()
+    except ctx.WorkspaceError as exc:
+        raise ctx.HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/workspaces/reorder")
+async def reorder_workspace(payload: ctx.WorkspaceReorder) -> dict:
+    try:
+        ctx.workspace_manager.insert_workspace_before(payload.path, payload.anchor)
+        return ctx.workspace_manager.status()
+    except ctx.WorkspaceError as exc:
+        raise ctx.HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/api/workspace/pick")
 async def pick_workspace() -> dict:
     """打开系统目录选择器；macOS 与 DSH 一样使用原生 choose folder。
