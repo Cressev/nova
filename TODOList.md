@@ -3002,3 +3002,13 @@ N2 进展（状态层部分）：完成 frontend/src/lib/workspaceViewStore.ts�
 [x] N13 实时触发验收：/help 进入"处理内置指令"并返回完整指令列表；/Users/... 与 $HOME/... 均走"模型决策中"普通路径，不再误判
 [x] N13 实时 API 烟测：workspaces rename/reorder 200，sessions reorder 200（需带 workspace 参数；null 会 404 属预期语义）；测试会话已清理
 ------ todo-list end at 2026/09/23/16:45:00 -----
+------ todo-list begin at 2026/09/23/16:54:21 -----
+对话框输入/ $ 应该有弹窗吧，交互要像dsh一样
+[] 调研 DSH 输入框 / 与 $ 触发弹窗的交互细节（过滤、键盘、选择、关闭行为）
+[] 在 Nova 对话框实现 / 命令与 $ 技能弹窗，与后端触发边界一致（路径不弹）
+[] 补前端回归测试并构建，浏览器实测后更新 durable 记录并提交
+------ todo-list end at 2026/09/23/16:54:21 -----
+[x] 调研 DSH 输入框触发弹窗交互（packages/client/ui-input-trigger：detect 词首边界、arbitrate 键盘仲裁、MenuView combobox、外点关闭、URL 路径豁免）
+[x] Nova 对话框实现 / 命令与 $ 技能弹窗：frontend/src/lib/composerTrigger.ts + App.tsx composer 接线 + app.css 菜单样式（锚 composer 上缘、↑↓/Enter/Esc、IME 放行、mousedown 选中不抢焦点、菜单外关闭、路径不弹）
+[x] 回归与实测：新增 tests/frontend_composer_trigger.test.js 7 项通过；前端 tsc/build、workspace 18、smoke、git diff --check、后端 303 tests 全部通过；浏览器实测：/ 弹 19 命令、$ 弹 59 技能、/ski 过滤、/Users 与 $HOME 不弹、↑↓ 高亮、Enter 选中写回 token、Esc 关闭且 query 变化重开、外点关闭、composer 内点击不关、mousedown 选中焦点留在输入框；截图 output/agent-browser/nova-composer-trigger-menu.png
+------ todo-list end at 2026/09/23/17:05:00 -----

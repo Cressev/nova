@@ -300,3 +300,4 @@ Nova 已进入代码实现阶段。当前已修正为对话式 Web Agent 网关�
 
 2026-06-06
 - 2026-09-23 触发器实现已用宿主 Python 环境完成全量验证：303 tests OK；默认 python3 缺 fastapi 仅为解释器差异。实时 8765 仍未刷新到新增 triggers.py 逻辑。
+- 2026-09-23：对话框 `/` 与 `$` 触发弹窗已上线（对齐 dsh ui-input-trigger 交互契约）。前端纯逻辑层 `frontend/src/lib/composerTrigger.ts` 与后端 `triggers.py` 边界一致：路径不弹、未知不弹；键盘 ↑↓/Enter/Esc、外点关闭、combobox 焦点语义均已实测。

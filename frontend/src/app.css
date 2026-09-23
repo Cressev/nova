@@ -742,6 +742,7 @@ body.sidebar-collapsed .sidebar-foot-button {
 /* ---------------- Composer 输入卡 ---------------- */
 
 .composer-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   /* dsh 卡高 94 = 10 + 28(textarea) + 10 + 34(toolbar) + 12 */
@@ -752,6 +753,85 @@ body.sidebar-collapsed .sidebar-foot-button {
   border-radius: 22px;
   background: var(--dsw-specific-input-major, #fff);
   box-shadow: rgba(0, 0, 0, 0.02) 0 4px 12px 0, rgba(0, 0, 0, 0.04) 0 2px 8px 0;
+}
+
+
+/* ---- / 与 $ 触发菜单（dsh MenuDropdown 规格：锚在 composer 上缘） ---- */
+.composer-trigger-menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  min-width: min(280px, 100%);
+  max-width: min(537px, 100%);
+  max-height: 320px;
+  overflow: hidden;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+  box-shadow: 0 8px 22px rgb(0 0 0 / 14%);
+}
+
+.composer-trigger-head {
+  padding: 6px 10px 2px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.composer-trigger-menu .composer-trigger-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 22px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer-trigger-menu .composer-trigger-item:hover,
+.composer-trigger-menu .composer-trigger-item.active {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.composer-trigger-name {
+  flex: none;
+  font-family: var(--mono-font, ui-monospace, monospace);
+  font-weight: 500;
+}
+
+.composer-trigger-hint {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.composer-trigger-desc {
+  overflow: hidden;
+  min-width: 0;
+  flex: 1 1 auto;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-trigger-foot {
+  padding: 4px 10px 4px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 16px;
 }
 
 

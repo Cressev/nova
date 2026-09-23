@@ -3,6 +3,7 @@ import type { ChatMessage, ChatSession, PendingApprovalItem, RuntimeConfig, Tool
 import { api, cx, formatTime, projectName, relativeTime, shortText, workspaceGroupKey } from "./lib/api"
 import { deriveSessionGroups } from "./lib/sessionTree"
 import { subscribeWorkspaceView, workspaceViewSnapshot, setWorkspaceGroupBy, setWorkspaceOrderBy, toggleWorkspaceGroup, setWorkspaceAccountOrder, workspaceOrderSnapshot, setWorkspaceOrder, workspaceAccountOrder } from "./lib/workspaceViewStore"
+import { detectComposerTrigger, filterTriggerCandidates, triggerToken, type TriggerCandidate } from "./lib/composerTrigger"
 import { Markdown, CopyButton } from "./components/Markdown"
 import { useInlineComments, SelectionToolbar, CommentPanel } from "./components/InlineComments"
 import { WorkspacePicker } from "./components/WorkspacePicker"
@@ -640,6 +641,70 @@ export default function App() {
   const abortRef = useRef<AbortController | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
+  /* ---- / 与 $ 触发弹窗（dsh ui-input-trigger 交互契约） ---- */
+  const [triggerCommands, setTriggerCommands] = useState<TriggerCandidate[]>([])
+  const [triggerSkills, setTriggerSkills] = useState<TriggerCandidate[]>([])
+  const [triggerCaret, setTriggerCaret] = useState(0)
+  const [triggerHighlight, setTriggerHighlight] = useState(0)
+  // 记录“本 token 已被 Esc/外点关闭”，query 变化后自动重开（dsh 语义）。
+  const [triggerDismissedKey, setTriggerDismissedKey] = useState<string | null>(null)
+  useEffect(() => {
+    // 命令与技能清单是本地只读端点，挂载时拉一次即可。
+    void api<{ items?: Array<{ name: string; description?: string; argument_hint?: string }> }>("/api/commands")
+      .then((payload) => {
+        setTriggerCommands((payload.items || []).map((item) => ({ name: item.name, description: item.description || "", hint: item.argument_hint || undefined })))
+      })
+      .catch(() => {})
+    void api<{ skills?: Array<{ name: string; description?: string; user_invocable?: boolean }> }>("/api/skills/status")
+      .then((payload) => {
+        setTriggerSkills((payload.skills || []).filter((item) => item.user_invocable !== false).map((item) => ({ name: item.name, description: item.description || "" })))
+      })
+      .catch(() => {})
+  }, [])
+  const triggerHit = useMemo(() => detectComposerTrigger(draft, triggerCaret), [draft, triggerCaret])
+  const triggerCandidates = useMemo(
+    () => (triggerHit ? filterTriggerCandidates(triggerHit.kind, triggerHit.query, triggerCommands, triggerSkills) : []),
+    [triggerHit, triggerCommands, triggerSkills],
+  )
+  const triggerOpen = triggerHit !== null && triggerCandidates.length > 0 && triggerDismissedKey !== triggerHit.tokenKey
+  // 候选集变化时高亮回到第一项；越界时收敛到末尾。
+  useEffect(() => { setTriggerHighlight(0) }, [triggerHit?.tokenKey])
+  useEffect(() => {
+    if (triggerHighlight >= triggerCandidates.length) setTriggerHighlight(Math.max(0, triggerCandidates.length - 1))
+  }, [triggerCandidates.length, triggerHighlight])
+  // 高亮行滚动进可视区（dsh MenuView 同款：combobox 焦点不离开 textarea）。
+  useEffect(() => {
+    if (!triggerOpen || triggerHighlight === 0) return
+    document.getElementById(`composer-trigger-option-${triggerHighlight}`)?.scrollIntoView({ block: "nearest" })
+  }, [triggerOpen, triggerHighlight])
+  // 菜单外 pointerdown 关闭（点 composer 卡片内部不关，dsh 同款边界）。
+  useEffect(() => {
+    if (!triggerOpen) return
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null
+      if (!target) return
+      if (target.closest(".composer-trigger-menu") || target.closest(".composer-card")) return
+      setTriggerDismissedKey(triggerHit?.tokenKey ?? null)
+    }
+    document.addEventListener("pointerdown", onPointerDown, true)
+    return () => { document.removeEventListener("pointerdown", onPointerDown, true) }
+  }, [triggerOpen, triggerHit])
+  const pickTrigger = (index: number) => {
+    const hit = triggerHit
+    const candidate = triggerCandidates[index]
+    if (!hit || !candidate) return
+    const token = triggerToken(hit.kind, candidate.name)
+    setDraft(token)
+    setTriggerCaret(token.length)
+    setTriggerDismissedKey(null)
+    requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(token.length, token.length)
+    })
+  }
+
   const reloadSessions = async () => {
     try {
       const list = await api<ChatSession[]>("/api/chat/sessions")
@@ -1098,25 +1163,74 @@ export default function App() {
         <form
           className="composer-card"
           id="chat-form"
+          data-composer-card=""
           onSubmit={(e) => {
             e.preventDefault()
             void submit()
           }}
         >
+          {triggerOpen && triggerHit ? (
+            <div className="composer-trigger-menu" id="composer-trigger-listbox" role="listbox" aria-label="命令与技能候选">
+              <div className="composer-trigger-head">{triggerHit.kind === "slash" ? "内置指令" : "技能"}</div>
+              {triggerCandidates.map((candidate, index) => (
+                <button
+                  key={`${triggerHit.kind}-${candidate.name}`}
+                  id={`composer-trigger-option-${index}`}
+                  type="button"
+                  role="option"
+                  aria-selected={index === triggerHighlight}
+                  className={cx("composer-trigger-item", index === triggerHighlight && "active")}
+                  // mousedown 而非 click：焦点留在 textarea（dsh combobox 模式）。
+                  onMouseDown={(e) => { e.preventDefault(); pickTrigger(index) }}
+                >
+                  <span className="composer-trigger-name">{triggerHit.kind === "slash" ? candidate.name : `$${candidate.name}`}</span>
+                  {candidate.hint ? <span className="composer-trigger-hint">{candidate.hint}</span> : null}
+                  <span className="composer-trigger-desc">{candidate.description}</span>
+                </button>
+              ))}
+              <div className="composer-trigger-foot">↑↓ 选择 · Enter 确认 · Esc 关闭</div>
+            </div>
+          ) : null}
           <textarea
             id="message-input"
             ref={textareaRef}
             rows={1}
-            placeholder="给智能体发消息"
+            placeholder="给智能体发消息（/ 指令 · $ 技能）"
             value={draft}
+            role="combobox"
+            aria-expanded={triggerOpen}
+            aria-controls="composer-trigger-listbox"
+            aria-activedescendant={triggerOpen ? `composer-trigger-option-${triggerHighlight}` : undefined}
             onChange={(e) => {
               setDraft(e.target.value)
+              setTriggerCaret(e.target.selectionStart ?? e.target.value.length)
               const el = e.target
               el.style.height = "auto"
               el.style.height = `${el.scrollHeight}px`
             }}
+            onSelect={(e) => { setTriggerCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0) }}
             onKeyDown={(e) => {
               // isComposing：中文输入法组字中的 Enter 是确认候选词，不是发送（dsh 同样拦截）。
+              if (e.nativeEvent.isComposing) return
+              // 触发菜单键盘仲裁（dsh arbitrate 契约）：↑↓ 移动、Enter 选中、Esc 关闭。
+              if (triggerOpen) {
+                if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                  e.preventDefault()
+                  setTriggerHighlight((index) => (index + (e.key === "ArrowDown" ? 1 : triggerCandidates.length - 1)) % triggerCandidates.length)
+                  return
+                }
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault()
+                  pickTrigger(triggerHighlight)
+                  return
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setTriggerDismissedKey(triggerHit?.tokenKey ?? null)
+                  return
+                }
+              }
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 void submit()
