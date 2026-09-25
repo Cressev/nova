@@ -240,7 +240,9 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
   const [remoteMatches, setRemoteMatches] = useState<Record<string, string>>({})
   const [searchError, setSearchError] = useState("")
   const [workspaceActionError, setWorkspaceActionError] = useState("")
-  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchExpanded, setSearchExpanded] = useState(false)
+  const [viewMenuOpen, setViewMenuOpen] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false)
   const [recentWorkspacePaths, setRecentWorkspacePaths] = useState<string[]>([])
   const [workspaceRegistry, setWorkspaceRegistry] = useState<Array<{ path: string; title: string }>>([])
@@ -260,11 +262,18 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
   const [dragOverGroupKey, setDragOverGroupKey] = useState<string | null>(null)
   const [dragOverGroupAfter, setDragOverGroupAfter] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => { try { return localStorage.getItem("nova.sidebar.collapsed") === "1" } catch { return false } })
+  // dsh 折叠编排（D9）：宽内容先淡出 150ms，settle 后才 display:none 卸载并淡入导轨图标
+  const [collapsedSettled, setCollapsedSettled] = useState(() => { try { return localStorage.getItem("nova.sidebar.collapsed") === "1" } catch { return false } })
   useEffect(() => {
     document.body.classList.toggle("sidebar-collapsed", sidebarCollapsed)
     try { localStorage.setItem("nova.sidebar.collapsed", sidebarCollapsed ? "1" : "0") } catch { /* 隐私模式下只保留当前页状态 */ }
-    return () => { document.body.classList.remove("sidebar-collapsed") }
+    if (!sidebarCollapsed) { setCollapsedSettled(false); return }
+    const timer = window.setTimeout(() => setCollapsedSettled(true), 150)
+    return () => { window.clearTimeout(timer); document.body.classList.remove("sidebar-collapsed") }
   }, [sidebarCollapsed])
+  useEffect(() => {
+    document.body.classList.toggle("sidebar-settled", collapsedSettled && sidebarCollapsed)
+  }, [collapsedSettled, sidebarCollapsed])
   useEffect(() => {
     void api<{ recent_projects?: string[]; workspaces?: Array<{ path: string; title: string }> }>("/api/workspaces").then((payload) => { setRecentWorkspacePaths(payload.recent_projects || []); setWorkspaceRegistry(payload.workspaces || []) }).catch(() => setRecentWorkspacePaths([]))
   }, [])
@@ -298,10 +307,11 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
   useEffect(() => {
     const close = (event: PointerEvent) => {
       const target = event.target as HTMLElement
-      if (!target.closest(".session-row-menu, .workspace-row-menu, .workspace-rename-popover")) {
+      if (!target.closest(".session-row-menu, .workspace-row-menu, .workspace-rename-popover, .view-menu")) {
         setMenuSessionId(null)
         setWorkspaceMenuPath(null)
         setWorkspaceRenamePath(null)
+        setViewMenuOpen(false)
       }
     }
     const key = (event: KeyboardEvent) => {
@@ -309,12 +319,17 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
         setMenuSessionId(null)
         setWorkspaceMenuPath(null)
         setWorkspaceRenamePath(null)
+        setViewMenuOpen(false)
       }
     }
     document.addEventListener("pointerdown", close)
     document.addEventListener("keydown", key)
     return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", key) }
   }, [])
+  // dsh searchOnExpand（D6）：导轨搜索展开侧栏后输入框自动聚焦
+  useEffect(() => {
+    if (searchExpanded && !sidebarCollapsed) searchInputRef.current?.focus()
+  }, [searchExpanded, sidebarCollapsed])
   const groups = useMemo(() => {
     const searchSessions = query.trim() ? sessions.filter((session) => String(session.title || "").toLowerCase().includes(query.trim().toLowerCase()) || remoteMatches[session.id]) : sessions
     const derived = deriveSessionGroups(searchSessions, selectedId, query.trim() && Object.keys(remoteMatches).length === 0 ? query : "", view.groupBy, view.orderBy, view.sessionOrderByAccount)
@@ -332,6 +347,14 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
     const nextOrder = groups.map((group) => group.key)
     if (nextOrder.some((key, index) => currentOrder[index] !== key) || currentOrder.length !== nextOrder.length) setWorkspaceOrder(nextOrder)
   }, [groups, query, view.groupBy])
+  // dsh 搜索结果合并（D4）：本地标题匹配 + 远程内容摘要命中，平铺结果列表，50 条上限
+  const searchRows = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return []
+    return sessions
+      .filter((session) => String(session.title || "").toLowerCase().includes(q) || remoteMatches[session.id])
+      .slice(0, 50)
+  }, [sessions, query, remoteMatches])
 
   return (
     <aside className={cx("sidebar", sidebarCollapsed && "is-collapsed")}>
@@ -351,20 +374,93 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
       </button>
       <div className="sidebar-group sidebar-sessions">
         <div className="group-label">
-          <button
-            className={cx("group-label-workspace", workspacePanelOpen ? "active" : "")}
-            type="button"
-            title="切换 / 新建工作区"
-            onClick={() => setWorkspacePanelOpen((v) => !v)}
-          >
-            <span>工作区</span>
-            <span className="group-label-ws-name">{projectName(currentWorkspace) || "未选择"}</span>
-            <svg className="chevron-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.5 8 10.5 12 6.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          </button>
-          <div className="group-actions"><button className="icon-ghost rail-search-toggle" type="button" aria-label="搜索会话" title="搜索会话" onClick={() => { setSidebarCollapsed(false); setSearchOpen(true) }}><span aria-hidden="true">⌕</span></button><button className="icon-ghost rail-view-control" type="button" aria-label="切换会话视图" title="切换会话视图" onClick={() => setWorkspaceGroupBy(view.groupBy === "workspace" ? "flat" : "workspace")}><span className="view-mode-label">{view.groupBy === "workspace" ? "树" : "平铺"}</span></button><button className="icon-ghost rail-sort-control" type="button" aria-label="切换会话排序" title="切换会话排序" onClick={() => setWorkspaceOrderBy(view.orderBy === "updated" ? "manual" : "updated")}><span className="view-mode-label">{view.orderBy === "updated" ? "最近" : "手动"}</span></button>
-            <button className="icon-ghost rail-wide-search-control" type="button" aria-label="搜索会话" title="搜索会话" onClick={() => setSearchOpen((v) => !v)}>
+          {/* dsh 内联展开式搜索（D4）：收起时是图标，展开后占满头部行，
+              工作区标签隐藏；Esc/清除键 = 清空并收起。 */}
+          <div className={cx("search-slot", searchExpanded && "expanded")}>
+            <button
+              className="icon-ghost rail-search-toggle"
+              type="button"
+              aria-label="搜索会话"
+              aria-expanded={searchExpanded}
+              title="搜索会话"
+              onClick={() => { setSidebarCollapsed(false); setSearchExpanded(true) }}
+            >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="6.4" cy="6.4" r="4.4" stroke="currentColor" strokeWidth="1.4"/><path d="m9.8 9.8 2.9 2.9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
             </button>
+            {searchExpanded ? (
+              <>
+                <input
+                  ref={searchInputRef}
+                  className="session-search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Escape") { setQuery(""); setSearchExpanded(false) } }}
+                  placeholder="搜索会话…"
+                  maxLength={500}
+                  aria-busy={Boolean(query.trim() && !searchError && Object.keys(remoteMatches).length === 0)}
+                />
+                <button
+                  className="icon-ghost search-clear"
+                  type="button"
+                  aria-label="清除搜索"
+                  title="清除搜索"
+                  onClick={(e) => { e.stopPropagation(); setQuery(""); setSearchExpanded(false) }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="m3 3 6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                </button>
+              </>
+            ) : null}
+          </div>
+          {!searchExpanded ? (
+            <button
+              className={cx("group-label-workspace", workspacePanelOpen ? "active" : "")}
+              type="button"
+              title="切换 / 新建工作区"
+              onClick={() => setWorkspacePanelOpen((v) => !v)}
+            >
+              <span>工作区</span>
+              <span className="group-label-ws-name">{projectName(currentWorkspace) || "未选择"}</span>
+              <svg className="chevron-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.5 8 10.5 12 6.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+          ) : null}
+          {/* dsh 折叠导轨补齐（D6）：导轨态显示"添加工作区"入口，点击展开侧栏并打开工作区面板 */}
+          {sidebarCollapsed ? (
+            <button
+              className="icon-ghost rail-ws-add"
+              type="button"
+              aria-label="添加工作区"
+              title="添加工作区"
+              onClick={() => { setSidebarCollapsed(false); setWorkspacePanelOpen(true) }}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 3.5A1.4 1.4 0 0 1 2.9 2.1h2.2l1.2 1.4h4.2a1.4 1.4 0 0 1 1.4 1.4v4.6a1.4 1.4 0 0 1-1.4 1.4H2.9a1.4 1.4 0 0 1-1.4-1.4V3.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M7 5.6v3M5.5 7.1h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+            </button>
+          ) : null}
+          <div className="group-actions">
+            {/* dsh ViewOptionsMenu（D5）：分组/排序单入口勾选菜单，替代逐次切换按钮 */}
+            <div className="view-menu">
+              <button
+                className="icon-ghost view-menu-toggle"
+                type="button"
+                aria-label="视图选项"
+                title="视图选项"
+                aria-expanded={viewMenuOpen}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => { event.stopPropagation(); setViewMenuOpen((v) => !v) }}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 3.5h10M2 7h10M2 10.5h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><circle cx="5" cy="3.5" r="1.6" fill="var(--surface,#fff)" stroke="currentColor" strokeWidth="1.2"/><circle cx="9.5" cy="7" r="1.6" fill="var(--surface,#fff)" stroke="currentColor" strokeWidth="1.2"/><circle cx="4.5" cy="10.5" r="1.6" fill="var(--surface,#fff)" stroke="currentColor" strokeWidth="1.2"/></svg>
+              </button>
+              {viewMenuOpen ? (
+                <div className="view-context-menu" role="menu" aria-label="视图选项" onPointerDown={(event) => event.stopPropagation()}>
+                  <div className="view-menu-label">分组</div>
+                  <button type="button" role="menuitemradio" aria-checked={view.groupBy === "workspace"} onClick={() => { setWorkspaceGroupBy("workspace"); setViewMenuOpen(false) }}>按工作区</button>
+                  <button type="button" role="menuitemradio" aria-checked={view.groupBy === "flat"} onClick={() => { setWorkspaceGroupBy("flat"); setViewMenuOpen(false) }}>单列表</button>
+                  <div className="view-menu-separator" role="separator" />
+                  <div className="view-menu-label">排序</div>
+                  <button type="button" role="menuitemradio" aria-checked={view.orderBy === "manual"} onClick={() => { setWorkspaceOrderBy("manual"); setViewMenuOpen(false) }}>手动</button>
+                  <button type="button" role="menuitemradio" aria-checked={view.orderBy === "updated"} onClick={() => { setWorkspaceOrderBy("updated"); setViewMenuOpen(false) }}>最近</button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
         {workspacePanelOpen ? (
@@ -372,18 +468,32 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
             <WorkspacePicker current={currentWorkspace} onSwitched={(root) => { onWorkspaceSwitched(root); setWorkspacePanelOpen(false) }} />
           </div>
         ) : null}
-        {searchOpen ? (
-          <input
-            className="session-search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索会话…"
-             maxLength={500}
-             aria-busy={Boolean(query.trim() && !searchError && Object.keys(remoteMatches).length === 0)}
-          />
-        ) : null}
         {searchError ? <div className="session-search-warning" role="status">{searchError}</div> : null}
         {workspaceActionError ? <div className="session-search-warning" role="alert">{workspaceActionError}</div> : null}
+        {query.trim() ? (
+          /* dsh 独立搜索结果列表（D4）：状态点 + 标题 + 工作区 + 内容摘要 */
+          <div className="session-search-results" role="tree" aria-label="搜索结果" aria-busy={Boolean(!searchError && Object.keys(remoteMatches).length === 0)}>
+            {searchRows.length === 0 ? <div className="search-empty">无匹配会话</div> : searchRows.map((session) => (
+              <button
+                key={session.id}
+                type="button"
+                className={cx("search-result-row", session.id === selectedId && "selected")}
+                role="treeitem"
+                aria-selected={session.id === selectedId}
+                onClick={() => onSelect(session)}
+              >
+                <span className="search-result-heading">
+                  {runtimeBySession[session.id]?.pending || runtimeBySession[session.id]?.active || runtimeBySession[session.id]?.descendantRunning ? <span className={cx("session-dot", runtimeBySession[session.id]?.pending ? "pending" : "running")} aria-hidden="true" /> : null}
+                  <span className="search-result-title">{shortText(session.title || "新会话", 28)}</span>
+                </span>
+                <span className="search-result-meta">
+                  <span className="search-result-workspace">{projectName(session.workspace || "") || "未分组"}</span>
+                  {remoteMatches[session.id] ? <span className="search-result-snippet">{shortText(remoteMatches[session.id], 72)}</span> : null}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : (
         <nav id="session-list" className="session-list" role="tree" aria-label="会话工作区树">
           {groups.map((group) => (
             <section className={cx("session-group", dragOverGroupKey === group.key ? (dragOverGroupAfter ? "drop-after" : "drop-before") : "")} key={group.key} role="group" aria-label={group.name} draggable={!query.trim() && view.groupBy === "workspace" && !group.ungrouped} onDragStart={(event) => { if (!query.trim() && view.groupBy === "workspace" && !group.ungrouped) { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", `workspace:${group.key}`); setDraggingGroupKey(group.key) } }} onDragEnd={() => { setDraggingGroupKey(null); setDragOverGroupKey(null); setDragOverGroupAfter(false) }} onDragOver={(event) => { if (draggingGroupKey && draggingGroupKey !== group.key) { event.preventDefault(); setDragOverGroupKey(group.key); setDragOverGroupAfter(event.nativeEvent.offsetY > event.currentTarget.clientHeight / 2) } }} onDrop={(event) => { event.preventDefault(); if (draggingGroupKey && dragOverGroupKey && draggingGroupKey !== dragOverGroupKey) { const keys = groups.filter((item) => !item.ungrouped).map((item) => item.key); const from = keys.indexOf(draggingGroupKey); const to = keys.indexOf(group.key); if (from >= 0 && to >= 0) { const previous = workspaceOrderSnapshot(); keys.splice(from, 1); keys.splice(Math.max(0, to + (dragOverGroupAfter ? 1 : 0)), 0, draggingGroupKey); setWorkspaceOrder(keys); const anchorKey = keys[keys.indexOf(draggingGroupKey) + (dragOverGroupAfter ? 1 : -1)] || null; const movingGroup = groups.find((item) => item.key === draggingGroupKey); void api<{ workspaces?: Array<{ path: string; title: string }> }>("/api/workspaces/reorder", { method: "POST", body: JSON.stringify({ path: movingGroup?.workspace, anchor: anchorKey ? groups.find((item) => item.key === anchorKey)?.workspace : null }) }).then((payload) => { if (payload.workspaces) setWorkspaceRegistry(payload.workspaces) }).catch(() => { setWorkspaceOrder(previous); setWorkspaceActionError("工作区顺序保存失败，已恢复原顺序") }) } } setDraggingGroupKey(null); setDragOverGroupKey(null); setDragOverGroupAfter(false) }}>
@@ -439,8 +549,7 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
                      <span className={cx("session-dot", runtimeBySession[session.id]?.pending ? "pending" : runtimeBySession[session.id]?.active || runtimeBySession[session.id]?.descendantRunning ? "running" : runtimeBySession[session.id]?.completedUnviewed ? "completed" : "")} aria-hidden="true" /><span className="visually-hidden">会话状态：{runtimeBySession[session.id]?.pending ? "等待操作" : runtimeBySession[session.id]?.active ? "运行中" : runtimeBySession[session.id]?.descendantRunning ? "子会话运行中" : runtimeBySession[session.id]?.completedUnviewed ? "已完成未查看" : "空闲"}</span>
                     {session.parent_session_id ? <span className="session-fork-icon" title="分支会话">⑂</span> : null}
                     {editingSessionId === session.id ? <input className="session-inline-rename" value={editingTitle} autoFocus onChange={(e) => setEditingTitle(e.target.value)} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Enter" && editingTitle.trim()) { e.preventDefault(); onRename(session, editingTitle.trim()); setEditingSessionId(null) } if (e.key === "Escape") { e.preventDefault(); setEditingSessionId(null) } }} onBlur={() => { if (editingTitle.trim() && editingTitle.trim() !== session.title) onRename(session, editingTitle.trim()); setEditingSessionId(null) }} /> : <strong>{shortText(session.title || "新会话", 28)}</strong>}
-                    {query.trim() && remoteMatches[session.id] ? <small className="session-search-snippet">{shortText(remoteMatches[session.id], 72)}</small> : null}
-                     <span className="session-time">{relativeTime(session.updated_at || session.created_at)}</span>
+                    <span className="session-time">{relativeTime(session.updated_at || session.created_at)}</span>
                     <span className={cx("session-row-menu", menuSessionId === session.id ? "open" : "")}>
                       <button
                         type="button"
@@ -465,6 +574,7 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
             </section>
           ))}
         </nav>
+        )}
       </div>
       {workspaceRenamePath ? <div className="workspace-rename-popover" role="dialog"><input autoFocus value={workspaceRenameTitle} onChange={(event) => setWorkspaceRenameTitle(event.target.value)} onKeyDown={async (event) => { if (event.nativeEvent.isComposing || event.keyCode === 229) return; if (event.key === "Escape") { setWorkspaceRenamePath(null); return } if (event.key !== "Enter" || !workspaceRenameTitle.trim()) return; try { await api("/api/workspaces/rename", { method: "POST", body: JSON.stringify({ path: workspaceRenamePath, title: workspaceRenameTitle.trim() }) }); setWorkspaceRegistry((items) => items.map((item) => item.path === workspaceRenamePath ? { ...item, title: workspaceRenameTitle.trim() } : item)); setWorkspaceRenamePath(null); setWorkspaceActionError("") } catch { setWorkspaceActionError("工作区重命名失败，请重试") } }} /><button type="button" onClick={() => setWorkspaceRenamePath(null)}>取消</button></div> : null}
       <div className="sidebar-foot">

@@ -159,25 +159,32 @@ button:disabled {
 
 
 body.sidebar-collapsed .sidebar {
+  /* flex item 的主轴尺寸由 flex-basis 决定，仅改 width 会被 279px basis 压住 */
+  flex-basis: 56px;
   width: 56px;
   padding: 14px 8px 12px;
 }
 
+/* dsh 折叠动画编排（D9）：宽内容先原位淡出 150ms，settle 后才卸载并淡入导轨图标 */
+.brand-row, .new-session, .sidebar-sessions, .group-label, .sidebar-foot { transition: opacity 150ms ease; }
+body.sidebar-collapsed:not(.sidebar-settled) :is(.brand-row, .new-session, .sidebar-sessions, .group-label, .sidebar-foot) { opacity: 0; pointer-events: none; }
+body.sidebar-collapsed.sidebar-settled .new-session,
+body.sidebar-collapsed.sidebar-settled .sidebar-foot-button { animation: rail-in 150ms ease; }
+@keyframes rail-in { from { opacity: 0; } to { opacity: 1; } }
 
-body.sidebar-collapsed .sidebar-title,
-body.sidebar-collapsed .version-badge,
-body.sidebar-collapsed .new-session span,
-body.sidebar-collapsed .group-label-workspace,
-body.sidebar-collapsed .group-actions .view-mode-label,
-body.sidebar-collapsed .group-actions .rail-wide-search-control,
-body.sidebar-collapsed .rail-view-control,
-body.sidebar-collapsed .rail-sort-control,
-body.sidebar-collapsed .rail-wide-search-control,
-body.sidebar-collapsed .workspace-entry #project-name,
-body.sidebar-collapsed .session-list,
-body.sidebar-collapsed .session-search,
-body.sidebar-collapsed .sidebar-workspace-panel,
-body.sidebar-collapsed .foot-label {
+
+/* 宽内容卸载等 fade settle 之后（D9），display:none 全部 gate 在 sidebar-settled 上 */
+body.sidebar-collapsed.sidebar-settled .sidebar-title,
+body.sidebar-collapsed.sidebar-settled .version-badge,
+body.sidebar-collapsed.sidebar-settled .new-session span,
+body.sidebar-collapsed.sidebar-settled .group-label-workspace,
+body.sidebar-collapsed.sidebar-settled .group-actions .view-mode-label,
+body.sidebar-collapsed.sidebar-settled .view-menu,
+body.sidebar-collapsed.sidebar-settled .workspace-entry #project-name,
+body.sidebar-collapsed.sidebar-settled .session-list,
+body.sidebar-collapsed.sidebar-settled .session-search,
+body.sidebar-collapsed.sidebar-settled .sidebar-workspace-panel,
+body.sidebar-collapsed.sidebar-settled .foot-label {
   display: none;
 }
 body.sidebar-collapsed .brand-row,
@@ -189,6 +196,9 @@ body.sidebar-collapsed .sidebar-foot-button {
 body.sidebar-collapsed .sidebar-sessions { display: block; }
 body.sidebar-collapsed .group-label { justify-content: center; }
 body.sidebar-collapsed .group-actions { display: flex; }
+/* dsh 折叠导轨（D6）：宽态隐藏"添加工作区"，导轨态在 settle 后淡入该入口 */
+body:not(.sidebar-collapsed) .rail-ws-add,
+body.sidebar-collapsed:not(.sidebar-settled) .rail-ws-add { display: none; }
 
 
 /* 折叠态头部纵向堆叠成图标栏：logo / 主题 / 展开按钮从左到右变为从上到下，
@@ -199,7 +209,6 @@ body.sidebar-collapsed .sidebar-head {
 }
 
 
-body.sidebar-collapsed 
 /* ---- Markdown 渲染样式（marked+KaTeX 管线，标准元素标签） ---- */
 .message p,
 .tt-systemPrompt p {
@@ -4035,8 +4044,8 @@ body.inspector-collapsed .inspector-toggle {
 }
 
 .session-search {
-  width: 100%;
-  margin: 4px 0 6px;
+  flex: 1;
+  min-width: 0;
   border: 1px solid #e5e5e5;
   border-radius: 8px;
   padding: 5px 10px;
@@ -4044,6 +4053,79 @@ body.inspector-collapsed .inspector-toggle {
   color: var(--text);
   font-size: 12px;
 }
+
+/* dsh 内联展开式搜索（D4）：图标 → 展开占满头部行 */
+.search-slot {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 28px;
+}
+.search-slot.expanded { flex: 1; }
+.search-clear { flex: none; }
+
+/* dsh 独立搜索结果列表（D4） */
+.session-search-results { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 8px; }
+.search-result-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.search-result-row:hover { background: var(--dsw-specific-sidebar-nav-item-hover); }
+.search-result-row.selected { background: var(--dsw-specific-sidebar-nav-item-active, rgba(0, 0, 0, 0.06)); }
+.search-result-heading { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.search-result-title { overflow: hidden; font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.search-result-meta { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.search-result-workspace { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.search-result-snippet { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.search-empty { padding: 10px 8px; color: var(--muted); font-size: 12px; }
+
+/* dsh ViewOptionsMenu（D5）：分组/排序单入口勾选菜单 */
+.view-menu { position: relative; }
+.view-context-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 60;
+  min-width: 132px;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  box-shadow: 0 10px 26px rgb(0 0 0 / 14%);
+}
+.view-context-menu > button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 30px;
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.view-context-menu > button:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.view-context-menu > button[aria-checked="true"] { font-weight: 600; }
+.view-context-menu > button[aria-checked="true"]::before { content: "✓"; flex: none; width: 16px; margin-right: 4px; color: var(--dsw-static-deepseek-500, #4176e6); }
+.view-menu-label { padding: 6px 10px 2px; color: var(--muted); font-size: 10px; letter-spacing: 0.4px; }
+.view-menu-separator { height: 1px; margin: 4px 6px; background: var(--dsw-alias-border-l2); }
+
+/* dsh 行尾互换（D3）：悬停时时间让位给 ••• 菜单，行尾宽度占用恒定 */
+.session-item:hover .session-time,
+.session-item:focus-within .session-time { display: none; }
 
 /* 工作区文件夹：蓝色 outline SVG */
 .folder-icon-svg {
