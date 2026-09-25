@@ -178,8 +178,12 @@ class SessionStore:
             self._save_chats()
             return updated
 
-    def rename_chat_session(self, session_id: str, title: str) -> ChatSession | None:
-        """更新会话标题；菜单操作只允许改标题，不改变会话历史。"""
+    def rename_chat_session(self, session_id: str, title: str, *, source: str = "user") -> ChatSession | None:
+        """更新会话标题；菜单操作只允许改标题，不改变会话历史。
+
+        source 语义（dsh session-title）：user=用户手动改名，钉住标题，
+        自动命名不再覆盖；其余来源经 auto_title_chat_session 走升级链。
+        """
         cleaned = title.strip()[:120]
         if not cleaned:
             raise ValueError("会话名称不能为空")
@@ -187,7 +191,34 @@ class SessionStore:
             session = self._chat_sessions.get(session_id)
             if session is None:
                 return None
-            updated = session.model_copy(update={"title": cleaned, "updated_at": utc_now()})
+            updated = session.model_copy(update={"title": cleaned, "title_source": source, "updated_at": utc_now()})
+            self._chat_sessions[session_id] = updated
+            self._save_chats()
+            return updated
+
+    def auto_title_chat_session(self, session_id: str, title: str, source: str) -> ChatSession | None:
+        """自动命名升级链（dsh session-title 的 default→fallback→llm）。
+
+        fallback 只接管仍是占位（default）的会话；llm 只把兜底升级成更好的
+        标题；user 来源（手动改名）在此处永不覆盖。会话不存在返回 None。
+        """
+        cleaned = title.strip()[:120]
+        if not cleaned:
+            return None
+        with self._lock:
+            session = self._chat_sessions.get(session_id)
+            if session is None:
+                return None
+            current = session.title_source
+            if source == "fallback":
+                if current != "default":
+                    return None
+            elif source == "llm":
+                if current not in {"default", "fallback"}:
+                    return None
+            else:
+                return None
+            updated = session.model_copy(update={"title": cleaned, "title_source": source, "updated_at": utc_now()})
             self._chat_sessions[session_id] = updated
             self._save_chats()
             return updated

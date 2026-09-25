@@ -53,6 +53,9 @@ class ChatSession(BaseModel):
     seed_length: int | None = None
     archived: bool = False
     manual_order: int | None = None
+    # 标题来源（dsh session-title 语义）：default=占位；fallback=首条消息兜底；
+    # llm=辅助模型升级；user=用户手动改名（钉住，自动命名不再覆盖）。
+    title_source: str = "default"
 
 
 class ChatMessageCreate(BaseModel):

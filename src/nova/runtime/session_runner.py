@@ -16,6 +16,7 @@ from ..context_budget import ContextBudgetPlan
 from ..models import ChatMessage, ChatRole
 from ..providers.bigmodel import ProviderError
 from ..sessions import AgentSessionService, SessionStore
+from ..sessions.titling import fallback_title, is_placeholder_title
 from .agent import CodexLikeAgentRuntime
 from .orchestrator import RunOrchestrator
 
@@ -241,6 +242,19 @@ class SessionRunner:
         }
 
     async def run_message(self, session_id: str, content: str) -> AsyncIterator[dict]:
+        # dsh session-title 兜底：首条用户消息落地前，若会话仍是占位标题，
+        # 用首条消息的前几个词同步命名——侧栏立即可见，无需等 LLM。
+        session = self.deps.store.get_chat_session(session_id)
+        if session is not None and is_placeholder_title(session.title):
+            title = fallback_title(content)
+            if title and title != session.title:
+                updated = self.deps.store.auto_title_chat_session(session_id, title, "fallback")
+                if updated is not None:
+                    yield {
+                        "type": "session_title",
+                        "title": updated.title,
+                        "source": "fallback",
+                    }
         first_message = ChatMessage(
             session_id=session_id,
             role=ChatRole.USER,

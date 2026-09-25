@@ -3022,3 +3022,14 @@ N2 进展（状态层部分）：完成 frontend/src/lib/workspaceViewStore.ts�
 [x] 修复：按 composer 上方可用空间动态收敛（dsh useAnchoredMaxHeight 同款，12px 边距、下限 160px），新增 .composer-trigger-viewport 内部滚动层，头尾提示行固定，resize/scroll 重测
 [x] 回归 + 实测：前端 7/18/smoke、tsc/build、diff-check 通过；浏览器实测 $ 59 项技能时菜单顶从 -91px 收敛到 9px、完全在视口内、viewport 可滚动、连按 30 次 ↓ 高亮行始终在可视区；截图 output/agent-browser/nova-composer-trigger-clamped.png
 ------ todo-list end at 2026/09/23/17:42:00 -----
+------ todo-list begin at 2026/09/25/11:16:44 -----
+对话的名字 dsh是怎么命名的，现在nova都是新对话，我找都不知道怎么找历史会话
+[] 调研 DSH 会话命名机制（新会话默认名、何时自动改名、用什么内容改名）
+[] 调研 Nova 当前会话命名链路，找出为什么全是"新对话"
+[] 实现 DSH 同款自动命名并在侧栏生效，补回归测试，浏览器实测后更新 durable 记录并提交
+------ todo-list end at 2026/09/25/11:16:44 -----
+[x] 调研 DSH 会话命名机制：session-title 包 = 首条消息确定性兜底（清洗控制符、CJK 16 字/英文 8 词、96 字节封顶）+ LLM 异步升级（语言感知一行纯文本）+ 用户改名钉住（source=user 不再覆盖）
+[x] 调研 Nova 命名链路：前端硬编码"新对话/新线程"占位，首条消息后从不改名，历史会话全同名无法查找
+[x] 实现：新增 src/nova/sessions/titling.py；ChatSession.title_source（default→fallback→llm，user 钉住）；store.auto_title_chat_session 升级链；SessionRunner 首条消息同步兜底 + session_title 流事件；stream 端点首轮后 LLM 升级（4s 上限，失败静默保留兜底）；前端 session_title 事件实时更新侧栏
+[x] 回归与实测：新增 tests/test_titling.py 14 项通过；全量后端 317 tests OK；smoke 新增自动命名契约；tsc/build/diff-check 通过；HTTP 流实测 session_title 事件实时触发且 store 持久化（title_source=fallback）
+------ todo-list end at 2026/09/25/19:40:00 -----

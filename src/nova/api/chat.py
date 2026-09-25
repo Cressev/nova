@@ -478,10 +478,40 @@ async def stream_chat_message(
             )
         )
         try:
+            titled = False
             async for event in runner.run_message(session_id, payload.content):
+                if event.get("type") == "session_title":
+                    titled = True
                 yield ctx._ndjson(event)
         finally:
             ctx.agent_sessions.mark_idle(session_id)
+        # dsh session-title-llm 升级：首轮完成且标题仍是兜底时，用辅助 LLM
+        # 生成更好的标题（跟随消息语言，4s 上限，失败静默保留兜底）。
+        # 放在流末尾（mark_idle 之后）：前端 finally 的 reloadSessions 能拿到终值。
+        try:
+            session = ctx.store.get_chat_session(session_id)
+        except Exception:
+            session = None
+        if session is not None and session.title_source in {"default", "fallback"}:
+            user_texts = [
+                message.content
+                for message in ctx.store.list_chat_messages(session_id)
+                if message.role == ctx.ChatRole.USER
+            ]
+            if user_texts:
+                from ..sessions.titling import generate_llm_title
+
+                title = await generate_llm_title(ctx.provider, user_texts)
+                if title:
+                    updated = ctx.store.auto_title_chat_session(session_id, title, "llm")
+                    if updated is not None:
+                        yield ctx._ndjson(
+                            {
+                                "type": "session_title",
+                                "title": updated.title,
+                                "source": "llm",
+                            }
+                        )
 
     return ctx.StreamingResponse(emit(), media_type="application/x-ndjson")
 

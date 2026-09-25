@@ -83,6 +83,14 @@ check("Sidebar 滚动与菜单外部关闭契约存在", () => {
   }
 })
 
+check("会话自动命名契约存在（dsh session-title）", () => {
+  const app = fs.readFileSync(path.join(root, "frontend/src/App.tsx"), "utf8")
+  // 前端消费 session_title 流事件，实时更新侧栏标题。
+  for (const anchor of ["\"session_title\"", "setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, title } : s)))"]) {
+    if (!app.includes(anchor)) throw new Error(`App.tsx 缺少 ${anchor}`)
+  }
+})
+
 check("TypeScript 类型检查通过", () => {
   execSync("npx tsc --noEmit", { cwd: path.join(root, "frontend"), stdio: "pipe" })
 })

@@ -970,6 +970,12 @@ export default function App() {
             data: (event.data || {}) as ToolCallData,
           }])
           setStreamState(`${tool} 等待审批`)
+        } else if (type === "session_title") {
+          // dsh session-title：自动命名事件——侧栏标题实时更新，不等刷新。
+          const title = String(event.title || "")
+          if (title) {
+            setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, title } : s)))
+          }
         } else if (type === "assistant_done") {
           const message = (event.message || {}) as ChatMessage
           setStreamingText(null)
