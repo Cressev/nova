@@ -3049,6 +3049,38 @@ body.inspector-collapsed .inspector-toggle {
 .session-hover-card { position: absolute; left: 10px; bottom: calc(100% + 6px); z-index: 30; display: grid; gap: 3px; min-width: 180px; max-width: 280px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--surface, #fff); box-shadow: 0 8px 22px rgb(0 0 0 / 14%); color: var(--text); font-size: 11px; opacity: 0; pointer-events: none; transform: translateY(3px); transition: opacity 140ms ease, transform 140ms ease; }
 .session-hover-card span { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
 .session-item:hover .session-hover-card, .session-item:focus-within .session-hover-card { opacity: 1; transform: translateY(0); }
+/* dsh（D7）：菜单打开或拖拽进行时抑制悬停卡 */
+.session-item.menu-open .session-hover-card,
+.session-item.dragging .session-hover-card,
+.session-group-head.menu-open .workspace-hover-card { opacity: 0 !important; pointer-events: none !important; }
+
+/* dsh（D7）：悬停卡内可复制标题与状态行 */
+.session-hover-card .hover-copyable { overflow: hidden; color: var(--text); font-size: 12px; cursor: copy; }
+.session-hover-card .copied-flash { margin-left: 6px; color: var(--dsw-static-deepseek-500, #4176e6); font-size: 10px; font-style: normal; }
+.session-hover-card .hover-status { display: flex; align-items: center; gap: 5px; color: var(--muted); }
+.session-hover-card .hover-status::before { content: ""; flex: none; width: 5px; height: 5px; border-radius: 999px; background: var(--dsw-static-deepseek-500, #4176e6); }
+.session-hover-card .hover-status.warning::before { background: #d98b22; }
+.session-hover-card .hover-status.ongoing::before { background: #2b9b69; }
+
+/* dsh（D8）：工作区悬停卡——名称 + ~ 缩写路径（点击复制）+ 创建时间 */
+.workspace-hover-card { position: absolute; left: 26px; bottom: calc(100% + 6px); z-index: 30; display: grid; gap: 3px; min-width: 160px; max-width: 280px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--surface, #fff); box-shadow: 0 8px 22px rgb(0 0 0 / 14%); color: var(--text); font-size: 11px; opacity: 0; pointer-events: none; transform: translateY(3px); transition: opacity 140ms ease, transform 140ms ease; }
+.workspace-hover-card strong { color: var(--text); font-size: 12px; }
+.workspace-hover-card span { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.workspace-hover-card .workspace-hover-path { cursor: copy; }
+.session-group-head { position: relative; }
+.session-group-head:hover .workspace-hover-card, .session-group-head:focus-within .workspace-hover-card { opacity: 1; transform: translateY(0); }
+.workspace-row-plus { flex: none; margin-left: auto; }
+.workspace-row-plus button { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; opacity: 0; transition: opacity 120ms ease, background 120ms ease; }
+.session-group-head:hover .workspace-row-plus button, .session-group-head:focus-within .workspace-row-plus button { opacity: 1; }
+.workspace-row-plus button:hover { background: var(--dsw-specific-sidebar-nav-item-hover); color: var(--text); }
+
+/* dsh（D10）：滚动条跟随指针——quiet-bars 时隐藏，指针在栏内或 2s linger 内绘制 */
+.sidebar.quiet-bars .sidebar-sessions { scrollbar-width: none; }
+.sidebar.quiet-bars .sidebar-sessions::-webkit-scrollbar { display: none; }
+
+/* dsh（D13）：品牌按钮即新会话入口 */
+.brand-button { display: inline-flex; align-items: center; gap: 8px; min-width: 0; border: 0; border-radius: 8px; padding: 4px 6px; background: transparent; color: var(--text); cursor: pointer; transition: background 120ms ease; }
+.brand-button:hover { background: var(--dsw-alias-interactive-bg-hover); }
 
 .session-item .session-dot.running { background: #2b9b69; box-shadow: 0 0 0 3px rgb(43 155 105 / 16%); }
 .session-item .session-dot.completed { background: var(--dsw-alias-state-business-tertiary, #7c5cff); }

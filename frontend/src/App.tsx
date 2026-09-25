@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { ChatMessage, ChatSession, PendingApprovalItem, RuntimeConfig, ToolCallData, TraceEvent } from "./types"
-import { api, cx, formatTime, projectName, relativeTime, relativeTimeAgo, shortText, workspaceGroupKey } from "./lib/api"
+import { api, abbreviateHomePath, cx, formatDateTime, formatTime, projectName, relativeTime, relativeTimeAgo, shortText, workspaceGroupKey } from "./lib/api"
 import { deriveSessionGroups } from "./lib/sessionTree"
 import { subscribeWorkspaceView, workspaceViewSnapshot, setWorkspaceGroupBy, setWorkspaceOrderBy, toggleWorkspaceGroup, setWorkspaceAccountOrder, workspaceOrderSnapshot, setWorkspaceOrder, workspaceAccountOrder } from "./lib/workspaceViewStore"
 import { detectComposerTrigger, filterTriggerCandidates, triggerToken, type TriggerCandidate } from "./lib/composerTrigger"
@@ -243,9 +243,20 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
   const [searchExpanded, setSearchExpanded] = useState(false)
   const [viewMenuOpen, setViewMenuOpen] = useState(false)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const sidebarRootRef = useRef<HTMLElement | null>(null)
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false)
   const [recentWorkspacePaths, setRecentWorkspacePaths] = useState<string[]>([])
-  const [workspaceRegistry, setWorkspaceRegistry] = useState<Array<{ path: string; title: string }>>([])
+  const [workspaceRegistry, setWorkspaceRegistry] = useState<Array<{ path: string; title: string; created_at?: string }>>([])
+  const [homePath, setHomePath] = useState<string>("")
+  // dsh quietBars（D10）：滚动条只在指针位于栏内时绘制，离开 2s linger 后隐藏
+  const [pointerInside, setPointerInside] = useState(false)
+  // dsh 悬停卡点击复制（D7）：闪现"已复制"反馈
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const lingerTimer = useRef<number | undefined>(undefined)
+  const copyFlashTimer = useRef<number | undefined>(undefined)
+  // dsh runningSubagentCount（D12）：该会话名下正在运行的子会话数
+  const subagentRunningCount = (sessionId: string): number =>
+    sessions.filter((item) => item.parent_session_id === sessionId && runtimeBySession[item.id]?.active).length
   const [workspaceMenuPath, setWorkspaceMenuPath] = useState<string | null>(null)
   const [workspaceRenamePath, setWorkspaceRenamePath] = useState<string | null>(null)
   const [workspaceRenameTitle, setWorkspaceRenameTitle] = useState("")
@@ -275,7 +286,7 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
     document.body.classList.toggle("sidebar-settled", collapsedSettled && sidebarCollapsed)
   }, [collapsedSettled, sidebarCollapsed])
   useEffect(() => {
-    void api<{ recent_projects?: string[]; workspaces?: Array<{ path: string; title: string }> }>("/api/workspaces").then((payload) => { setRecentWorkspacePaths(payload.recent_projects || []); setWorkspaceRegistry(payload.workspaces || []) }).catch(() => setRecentWorkspacePaths([]))
+    void api<{ home?: string; recent_projects?: string[]; workspaces?: Array<{ path: string; title: string; created_at?: string }> }>("/api/workspaces").then((payload) => { setHomePath(payload.home || ""); setRecentWorkspacePaths(payload.recent_projects || []); setWorkspaceRegistry(payload.workspaces || []) }).catch(() => setRecentWorkspacePaths([]))
   }, [])
   useEffect(() => {
     setRemoteMatches({}); setSearchError("")
@@ -330,6 +341,34 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
   useEffect(() => {
     if (searchExpanded && !sidebarCollapsed) searchInputRef.current?.focus()
   }, [searchExpanded, sidebarCollapsed])
+  // dsh 滚动条跟随指针（D10）：离开由栏的 BOX 判定（常驻 pointermove 监听），
+  // 固定定位的弹层不算离开；离开后 2000ms 才隐藏，期间折返即取消。
+  const pointerInsideRef = useRef(false)
+  useEffect(() => {
+    const armLinger = () => {
+      if (lingerTimer.current !== undefined) return
+      lingerTimer.current = window.setTimeout(() => { lingerTimer.current = undefined; pointerInsideRef.current = false; setPointerInside(false) }, 2000)
+    }
+    const onMove = (event: PointerEvent) => {
+      const rect = sidebarRootRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const inside = event.clientX >= rect.left && event.clientX < rect.right && event.clientY >= rect.top && event.clientY < rect.bottom
+      if (inside) {
+        if (lingerTimer.current !== undefined) { window.clearTimeout(lingerTimer.current); lingerTimer.current = undefined }
+        if (!pointerInsideRef.current) { pointerInsideRef.current = true; setPointerInside(true) }
+      } else if (pointerInsideRef.current) {
+        armLinger()
+      }
+    }
+    document.addEventListener("pointermove", onMove)
+    return () => { document.removeEventListener("pointermove", onMove); if (lingerTimer.current !== undefined) { window.clearTimeout(lingerTimer.current); lingerTimer.current = undefined } }
+  }, [])
+  const copyTitle = (session: ChatSession) => {
+    void navigator.clipboard?.writeText(session.title || "").catch(() => { /* 剪贴板不可用静默 */ })
+    setCopiedId(session.id)
+    if (copyFlashTimer.current !== undefined) window.clearTimeout(copyFlashTimer.current)
+    copyFlashTimer.current = window.setTimeout(() => setCopiedId(null), 1500)
+  }
   const groups = useMemo(() => {
     const searchSessions = query.trim() ? sessions.filter((session) => String(session.title || "").toLowerCase().includes(query.trim().toLowerCase()) || remoteMatches[session.id]) : sessions
     const derived = deriveSessionGroups(searchSessions, selectedId, query.trim() && Object.keys(remoteMatches).length === 0 ? query : "", view.groupBy, view.orderBy, view.sessionOrderByAccount)
@@ -357,13 +396,21 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
   }, [sessions, query, remoteMatches])
 
   return (
-    <aside className={cx("sidebar", sidebarCollapsed && "is-collapsed")}>
+    <aside
+      ref={sidebarRootRef}
+      className={cx("sidebar", sidebarCollapsed && "is-collapsed", !pointerInside && "quiet-bars")}
+      onPointerEnter={() => { if (lingerTimer.current !== undefined) { window.clearTimeout(lingerTimer.current); lingerTimer.current = undefined } pointerInsideRef.current = true; setPointerInside(true) }}
+      onPointerLeave={() => { if (lingerTimer.current === undefined && pointerInsideRef.current) { pointerInsideRef.current = false; lingerTimer.current = window.setTimeout(() => { lingerTimer.current = undefined; setPointerInside(false) }, 2000) } }}
+    >
       <div className="brand-row">
-        <span className="brand-mark" aria-hidden="true">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2.5 14.6 9 21.5 11.5 14.6 14 12 20.5 9.4 14 2.5 11.5 9.4 9 12 2.5Z" fill="currentColor"/></svg>
-        </span>
-        <strong className="brand-name">Nova</strong>
-        <span className="version-badge" id="nova-version">{version}</span>
+        {/* dsh（D13）：品牌在宽态兼作"新会话"快捷入口 */}
+        <button className="brand-button" type="button" aria-label="Nova 新会话" title="新会话" onClick={() => onNewChat()}>
+          <span className="brand-mark" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2.5 14.6 9 21.5 11.5 14.6 14 12 20.5 9.4 14 2.5 11.5 9.4 9 12 2.5Z" fill="currentColor"/></svg>
+          </span>
+          <strong className="brand-name">Nova</strong>
+          <span className="version-badge" id="nova-version">{version}</span>
+        </button>
         <button className="sidebar-collapse" type="button" aria-label={sidebarCollapsed ? "展开侧栏" : "折叠侧栏"} title={sidebarCollapsed ? "展开侧栏" : "折叠侧栏"} aria-pressed={sidebarCollapsed} onClick={() => setSidebarCollapsed((value) => !value)}>
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M11.2 4.4 6.6 9l4.6 4.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
         </button>
@@ -497,9 +544,24 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
         <nav id="session-list" className="session-list" role="tree" aria-label="会话工作区树">
           {groups.map((group) => (
             <section className={cx("session-group", dragOverGroupKey === group.key ? (dragOverGroupAfter ? "drop-after" : "drop-before") : "")} key={group.key} role="group" aria-label={group.name} draggable={!query.trim() && view.groupBy === "workspace" && !group.ungrouped} onDragStart={(event) => { if (!query.trim() && view.groupBy === "workspace" && !group.ungrouped) { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", `workspace:${group.key}`); setDraggingGroupKey(group.key) } }} onDragEnd={() => { setDraggingGroupKey(null); setDragOverGroupKey(null); setDragOverGroupAfter(false) }} onDragOver={(event) => { if (draggingGroupKey && draggingGroupKey !== group.key) { event.preventDefault(); setDragOverGroupKey(group.key); setDragOverGroupAfter(event.nativeEvent.offsetY > event.currentTarget.clientHeight / 2) } }} onDrop={(event) => { event.preventDefault(); if (draggingGroupKey && dragOverGroupKey && draggingGroupKey !== dragOverGroupKey) { const keys = groups.filter((item) => !item.ungrouped).map((item) => item.key); const from = keys.indexOf(draggingGroupKey); const to = keys.indexOf(group.key); if (from >= 0 && to >= 0) { const previous = workspaceOrderSnapshot(); keys.splice(from, 1); keys.splice(Math.max(0, to + (dragOverGroupAfter ? 1 : 0)), 0, draggingGroupKey); setWorkspaceOrder(keys); const anchorKey = keys[keys.indexOf(draggingGroupKey) + (dragOverGroupAfter ? 1 : -1)] || null; const movingGroup = groups.find((item) => item.key === draggingGroupKey); void api<{ workspaces?: Array<{ path: string; title: string }> }>("/api/workspaces/reorder", { method: "POST", body: JSON.stringify({ path: movingGroup?.workspace, anchor: anchorKey ? groups.find((item) => item.key === anchorKey)?.workspace : null }) }).then((payload) => { if (payload.workspaces) setWorkspaceRegistry(payload.workspaces) }).catch(() => { setWorkspaceOrder(previous); setWorkspaceActionError("工作区顺序保存失败，已恢复原顺序") }) } } setDraggingGroupKey(null); setDragOverGroupKey(null); setDragOverGroupAfter(false) }}>
-              <div className={cx("session-group-head", group.sessions.some((s) => s.id === selectedId) ? "active" : "")} role="button" tabIndex={0} aria-expanded={group.expanded} onClick={() => toggleWorkspaceGroup(group.key)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggleWorkspaceGroup(group.key) } }}>
+              <div className={cx("session-group-head", group.sessions.some((s) => s.id === selectedId) ? "active" : "", workspaceMenuPath === group.workspace ? "menu-open" : "")} role="button" tabIndex={0} aria-expanded={group.expanded} onClick={() => toggleWorkspaceGroup(group.key)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggleWorkspaceGroup(group.key) } }}>
                 <svg className="folder-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 4.2A1.7 1.7 0 0 1 3.5 2.5h2.6l1.4 1.7h5A1.7 1.7 0 0 1 14.2 6v5.8a1.7 1.7 0 0 1-1.7 1.7H3.5a1.7 1.7 0 0 1-1.7-1.7V4.2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>
-                <strong>{group.name}</strong>{group.workspace ? <span className="workspace-group-hover" role="tooltip">{group.workspace}</span> : null}{group.workspace && !group.ungrouped ? <span className="workspace-row-menu"><button type="button" aria-label={`工作区操作：${group.name}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setWorkspaceMenuPath(workspaceMenuPath === group.workspace ? null : group.workspace) }}>•••</button>{workspaceMenuPath === group.workspace ? <span className="workspace-context-menu" role="menu" onPointerDown={(event) => event.stopPropagation()}><button type="button" role="menuitem" onClick={() => { setWorkspaceRenamePath(group.workspace); setWorkspaceRenameTitle(group.name); setWorkspaceMenuPath(null) }}>重命名</button><button type="button" role="menuitem" disabled={group.workspace === currentWorkspace} onClick={async () => { if (!window.confirm("只从 Nova 注册表移除，不删除本地目录。继续吗？")) return; try { await api("/api/workspaces/delete", { method: "POST", body: JSON.stringify({ path: group.workspace }) }); setWorkspaceRegistry((items) => items.filter((item) => item.path !== group.workspace)); setWorkspaceMenuPath(null); setWorkspaceActionError("") } catch { setWorkspaceActionError("工作区删除失败，请重试") } }}>删除</button></span> : null}</span> : null}
+                <strong>{group.name}</strong>
+                {/* dsh 工作区悬停卡（D8）：名称 + ~ 缩写路径（点击复制）+ 创建时间；未分组桶无卡；菜单打开时抑制 */}
+                {group.workspace ? (
+                  <span className="workspace-hover-card" role="tooltip">
+                    <strong>{group.name}</strong>
+                    <span
+                      className="workspace-hover-path"
+                      title="点击复制路径"
+                      onClick={(event) => { event.stopPropagation(); void navigator.clipboard?.writeText(group.workspace || "").catch(() => { /* 剪贴板不可用静默 */ }) }}
+                    >{abbreviateHomePath(group.workspace, homePath)}</span>
+                    {workspaceRegistry.find((item) => item.path === group.workspace)?.created_at ? <span>创建于 {formatDateTime(workspaceRegistry.find((item) => item.path === group.workspace)!.created_at!)}</span> : null}
+                  </span>
+                ) : null}
+                {/* dsh 分组头"+"（D11）：在该工作区直接新建会话 */}
+                {group.workspace && !group.ungrouped ? <span className="workspace-row-plus"><button type="button" aria-label={`在“${group.name}”中新建会话`} title={`在“${group.name}”中新建会话`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onNewChat(group.workspace || undefined) }}><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg></button></span> : null}
+                {group.workspace && !group.ungrouped ? <span className="workspace-row-menu"><button type="button" aria-label={`工作区操作：${group.name}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setWorkspaceMenuPath(workspaceMenuPath === group.workspace ? null : group.workspace) }}>•••</button>{workspaceMenuPath === group.workspace ? <span className="workspace-context-menu" role="menu" onPointerDown={(event) => event.stopPropagation()}><button type="button" role="menuitem" onClick={() => { setWorkspaceRenamePath(group.workspace); setWorkspaceRenameTitle(group.name); setWorkspaceMenuPath(null) }}>重命名</button><button type="button" role="menuitem" disabled={group.workspace === currentWorkspace} onClick={async () => { if (!window.confirm("只从 Nova 注册表移除，不删除本地目录。继续吗？")) return; try { await api("/api/workspaces/delete", { method: "POST", body: JSON.stringify({ path: group.workspace }) }); setWorkspaceRegistry((items) => items.filter((item) => item.path !== group.workspace)); setWorkspaceMenuPath(null); setWorkspaceActionError("") } catch { setWorkspaceActionError("工作区删除失败，请重试") } }}>删除</button></span> : null}</span> : null}
               </div>
               <div className="session-group-items" hidden={!group.expanded}>
                 {/* dsh 空白占位行（D1）：无状态点、无时间、无行菜单——对不存在的内容无从操作 */}
@@ -517,7 +579,7 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
                 {group.sessions.slice(0, expandedSessionGroups[group.key] ? group.sessions.length : 5).map((session) => (
                   <div
                     key={session.id}
-                    className={cx("session-item", session.id === selectedId ? "active" : "", dragOverSessionId === session.id ? (dragOverAfter ? "drop-after" : "drop-before") : "")}
+                    className={cx("session-item", session.id === selectedId ? "active" : "", menuSessionId === session.id ? "menu-open" : "", draggingSessionId === session.id ? "dragging" : "", dragOverSessionId === session.id ? (dragOverAfter ? "drop-after" : "drop-before") : "")}
                     role="treeitem"
                      aria-selected={session.id === selectedId}
                      draggable={!query.trim()}
@@ -545,7 +607,15 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
                     onClick={() => { if (menuSessionId !== session.id) onSelect(session) }}
                     onKeyDown={(e) => { if (e.key === "Enter" && menuSessionId !== session.id) onSelect(session); if (e.key === "ArrowDown") { e.preventDefault(); const next = groups.flatMap((item) => item.sessions); const index = next.findIndex((item) => item.id === session.id); if (next[index + 1]) onSelect(next[index + 1]) } if (e.key === "ArrowUp") { e.preventDefault(); const next = groups.flatMap((item) => item.sessions); const index = next.findIndex((item) => item.id === session.id); if (next[index - 1]) onSelect(next[index - 1]) } }}
                   >
-                    <span className="session-hover-card" role="tooltip"><strong>{session.title || "新会话"}</strong><span>{relativeTimeAgo(session.updated_at || session.created_at)}</span><span>{session.workspace || "未分组"}</span></span>
+                    {/* dsh 悬停卡（D7）：完整标题（点击复制）+ "N前" + 状态行（含子代理计数 D12） */}
+                    <span className="session-hover-card" role="tooltip">
+                      <strong className="hover-copyable" onClick={(event) => { event.stopPropagation(); copyTitle(session) }} title="点击复制标题">{session.title || "新会话"}{copiedId === session.id ? <em className="copied-flash">已复制</em> : null}</strong>
+                      <span>{relativeTimeAgo(session.updated_at || session.created_at)}</span>
+                      {runtimeBySession[session.id]?.pending ? <span className="hover-status warning">等待你的操作</span> : null}
+                      {runtimeBySession[session.id]?.active ? <span className="hover-status ongoing">运行中</span> : null}
+                      {subagentRunningCount(session.id) > 0 ? <span className="hover-status ongoing">{subagentRunningCount(session.id)} 个子会话运行中</span> : null}
+                      {runtimeBySession[session.id]?.completedUnviewed ? <span className="hover-status done">已完成未查看</span> : null}
+                    </span>
                      <span className={cx("session-dot", runtimeBySession[session.id]?.pending ? "pending" : runtimeBySession[session.id]?.active || runtimeBySession[session.id]?.descendantRunning ? "running" : runtimeBySession[session.id]?.completedUnviewed ? "completed" : "")} aria-hidden="true" /><span className="visually-hidden">会话状态：{runtimeBySession[session.id]?.pending ? "等待操作" : runtimeBySession[session.id]?.active ? "运行中" : runtimeBySession[session.id]?.descendantRunning ? "子会话运行中" : runtimeBySession[session.id]?.completedUnviewed ? "已完成未查看" : "空闲"}</span>
                     {session.parent_session_id ? <span className="session-fork-icon" title="分支会话">⑂</span> : null}
                     {editingSessionId === session.id ? <input className="session-inline-rename" value={editingTitle} autoFocus onChange={(e) => setEditingTitle(e.target.value)} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Enter" && editingTitle.trim()) { e.preventDefault(); onRename(session, editingTitle.trim()); setEditingSessionId(null) } if (e.key === "Escape") { e.preventDefault(); setEditingSessionId(null) } }} onBlur={() => { if (editingTitle.trim() && editingTitle.trim() !== session.title) onRename(session, editingTitle.trim()); setEditingSessionId(null) }} /> : <strong>{shortText(session.title || "新会话", 28)}</strong>}

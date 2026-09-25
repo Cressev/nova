@@ -64,6 +64,23 @@ export function relativeTimeAgo(iso: string | null | undefined): string {
   return `${label}前`
 }
 
+// dsh abbreviateHomePath（D8）：home 前缀显示为 ~；home 未知时原样返回
+export function abbreviateHomePath(path: string, home?: string): string {
+  if (!home) return path
+  const normalizedHome = home.replace(/\/+$/, "")
+  return path === normalizedHome ? "~" : path.startsWith(normalizedHome + "/") ? "~" + path.slice(normalizedHome.length) : path
+}
+
+// dsh hover.created（D8）：悬停卡里的绝对创建时间
+export function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return ""
+  const ts = Date.parse(iso)
+  if (Number.isNaN(ts)) return ""
+  const d = new Date(ts)
+  const pad = (v: number) => String(v).padStart(2, "0")
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export function projectName(path: string): string {
   const normalized = String(path || "").replace(/\\/g, "/").replace(/\/+$/, "")
   if (!normalized) return "未分组"

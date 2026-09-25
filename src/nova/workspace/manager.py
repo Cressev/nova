@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -49,6 +50,8 @@ class WorkspaceManager:
         return {
             "current_root": str(self.current_root),
             "allowed_roots": [str(path) for path in self.allowed_roots],
+            # dsh abbreviateHomePath（D8）：前端悬停卡把 home 前缀缩写为 ~
+            "home": str(Path.home()),
             "candidates": [str(path) for path in self._candidate_projects(query)],
             "recent_projects": [str(path) for path in self._recent_projects if path.exists() and path.is_dir()],
             "workspaces": workspaces,
@@ -85,7 +88,10 @@ class WorkspaceManager:
         key = str(self._validate(Path(path)))
         anchor_key = str(self._validate(Path(anchor))) if anchor else None
         items = [item for item in self._workspace_registry if item["path"] != key]
-        item = next((entry for entry in self._workspace_registry if entry["path"] == key), {"path": key, "title": Path(key).name})
+        item = next(
+            (entry for entry in self._workspace_registry if entry["path"] == key),
+            {"path": key, "title": Path(key).name, "created_at": datetime.now(timezone.utc).isoformat()},
+        )
         index = next((i for i, entry in enumerate(items) if entry["path"] == anchor_key), len(items)) if anchor_key else len(items)
         items.insert(index, item)
         self._workspace_registry = items
@@ -298,9 +304,24 @@ class WorkspaceManager:
             return []
         try:
             raw = json.loads(self.registry_file.read_text(encoding="utf-8"))
-            return [item for item in raw if isinstance(item, dict) and isinstance(item.get("path"), str) and isinstance(item.get("title"), str)]
+            registry = [item for item in raw if isinstance(item, dict) and isinstance(item.get("path"), str) and isinstance(item.get("title"), str)]
         except (OSError, ValueError):
             return []
+        # dsh 工作区悬停卡（D8）：补齐缺失 created_at——用注册表文件 mtime 作为
+        # 存量条目的近似创建时间，落盘一次后稳定不变。
+        missing = [item for item in registry if not item.get("created_at")]
+        if missing and self.registry_file is not None:
+            try:
+                approximate = datetime.fromtimestamp(
+                    self.registry_file.stat().st_mtime, tz=timezone.utc
+                ).isoformat()
+            except OSError:
+                approximate = datetime.now(timezone.utc).isoformat()
+            for item in missing:
+                item["created_at"] = approximate
+            self._workspace_registry = registry
+            self._save_workspace_registry()
+        return registry
 
     def _save_workspace_registry(self) -> None:
         if not self.registry_file:
@@ -311,7 +332,11 @@ class WorkspaceManager:
     def _ensure_workspace_registered(self, path: Path) -> None:
         key = str(path)
         if not any(item["path"] == key for item in self._workspace_registry):
-            self._workspace_registry.append({"path": key, "title": path.name or str(path)})
+            self._workspace_registry.append({
+                "path": key,
+                "title": path.name or str(path),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
             self._save_workspace_registry()
 
     def _candidate_projects(self, query: str | None = None) -> list[Path]:
