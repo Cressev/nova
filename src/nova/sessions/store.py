@@ -6,7 +6,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
-from ..models import ChatEvent, ChatMessage, ChatSession, new_id, utc_now
+from ..models import ChatEvent, ChatMessage, ChatRole, ChatSession, new_id, utc_now
 from ..observability.trace import TraceRecorder
 
 
@@ -46,6 +46,37 @@ class SessionStore:
         self._chat_messages: dict[str, list[ChatMessage]] = {}
         self._chat_events: dict[str, list[ChatEvent]] = {}
         self._load()
+        self._backfill_placeholder_titles()
+
+    def _backfill_placeholder_titles(self) -> None:
+        """dsh session-title 历史回填（一次性、幂等）。
+
+        自动命名上线前的存量会话可能带着占位标题但已有真实对话——正是
+        "侧栏全是新对话、找不到历史会话"的来源。此处对占位标题 + 有用户
+        消息的会话，用首条用户消息生成兜底标题（source=fallback，之后仍可
+        被 LLM 升级、被用户改名钉住）。零消息的空壳保持占位，由列表过滤。
+        """
+        from .titling import fallback_title, is_placeholder_title
+
+        with self._lock:
+            changed = False
+            for session in self._chat_sessions.values():
+                if session.title_source != "default" or not is_placeholder_title(session.title):
+                    continue
+                first_user = next(
+                    (m for m in self._chat_messages.get(session.id, []) if m.role == ChatRole.USER),
+                    None,
+                )
+                if first_user is None:
+                    continue
+                title = fallback_title(first_user.content)
+                if title and title != session.title:
+                    self._chat_sessions[session.id] = session.model_copy(
+                        update={"title": title, "title_source": "fallback"}
+                    )
+                    changed = True
+            if changed:
+                self._save_chats()
 
     def _load(self) -> None:
         if self.chat_file.exists():

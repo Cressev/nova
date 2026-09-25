@@ -2983,6 +2983,10 @@ body.inspector-collapsed .inspector-toggle {
 .session-item.drop-before::before { top: -1px; }
 .session-item.drop-after::after { bottom: -1px; }
 
+/* dsh 空白占位行（D1）：草稿态的新会话行——仅标题，无状态点/时间/菜单 */
+.session-item.draft-placeholder { color: var(--dsw-alias-label-secondary, var(--muted)); cursor: text; }
+.session-item.draft-placeholder:hover { background: var(--dsw-specific-sidebar-nav-item-hover); }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

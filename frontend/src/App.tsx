@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { ChatMessage, ChatSession, PendingApprovalItem, RuntimeConfig, ToolCallData, TraceEvent } from "./types"
-import { api, cx, formatTime, projectName, relativeTime, shortText, workspaceGroupKey } from "./lib/api"
+import { api, cx, formatTime, projectName, relativeTime, relativeTimeAgo, shortText, workspaceGroupKey } from "./lib/api"
 import { deriveSessionGroups } from "./lib/sessionTree"
 import { subscribeWorkspaceView, workspaceViewSnapshot, setWorkspaceGroupBy, setWorkspaceOrderBy, toggleWorkspaceGroup, setWorkspaceAccountOrder, workspaceOrderSnapshot, setWorkspaceOrder, workspaceAccountOrder } from "./lib/workspaceViewStore"
 import { detectComposerTrigger, filterTriggerCandidates, triggerToken, type TriggerCandidate } from "./lib/composerTrigger"
@@ -220,7 +220,7 @@ function CheckpointView({ message }: { message: ChatMessage }) {
 }
 
 /* ---- 侧栏 ---- */
-function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySession, onSelect, onRename, onFork, onArchive, onNewChat, onOpenSettings, onWorkspaceSwitched }: {
+function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySession, draftActive, onSelect, onRename, onFork, onArchive, onNewChat, onOpenSettings, onWorkspaceSwitched }: {
   sessions: ChatSession[]
   selectedId: string | null
   currentWorkspace: string
@@ -231,8 +231,10 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
   onFork: (session: ChatSession) => void
   onArchive: (session: ChatSession) => void
   onOpenSettings: () => void
-  onNewChat: () => void
+  onNewChat: (workspace?: string) => void
   onWorkspaceSwitched: (root: string) => void
+  /** dsh 空白占位（D1）：true 时在当前工作区分组顶部渲染一条无时间无菜单的占位行 */
+  draftActive: boolean
 }) {
   const [query, setQuery] = useState("")
   const [remoteMatches, setRemoteMatches] = useState<Record<string, string>>({})
@@ -343,7 +345,7 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M11.2 4.4 6.6 9l4.6 4.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
         </button>
       </div>
-      <button className="new-session rail-add-control" type="button" aria-label="新会话" title="新会话" onClick={onNewChat}>
+      <button className="new-session rail-add-control" type="button" aria-label="新会话" title="新会话" onClick={() => onNewChat()}>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
         <span>新会话</span>
       </button>
@@ -390,6 +392,18 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
                 <strong>{group.name}</strong>{group.workspace ? <span className="workspace-group-hover" role="tooltip">{group.workspace}</span> : null}{group.workspace && !group.ungrouped ? <span className="workspace-row-menu"><button type="button" aria-label={`工作区操作：${group.name}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setWorkspaceMenuPath(workspaceMenuPath === group.workspace ? null : group.workspace) }}>•••</button>{workspaceMenuPath === group.workspace ? <span className="workspace-context-menu" role="menu" onPointerDown={(event) => event.stopPropagation()}><button type="button" role="menuitem" onClick={() => { setWorkspaceRenamePath(group.workspace); setWorkspaceRenameTitle(group.name); setWorkspaceMenuPath(null) }}>重命名</button><button type="button" role="menuitem" disabled={group.workspace === currentWorkspace} onClick={async () => { if (!window.confirm("只从 Nova 注册表移除，不删除本地目录。继续吗？")) return; try { await api("/api/workspaces/delete", { method: "POST", body: JSON.stringify({ path: group.workspace }) }); setWorkspaceRegistry((items) => items.filter((item) => item.path !== group.workspace)); setWorkspaceMenuPath(null); setWorkspaceActionError("") } catch { setWorkspaceActionError("工作区删除失败，请重试") } }}>删除</button></span> : null}</span> : null}
               </div>
               <div className="session-group-items" hidden={!group.expanded}>
+                {/* dsh 空白占位行（D1）：无状态点、无时间、无行菜单——对不存在的内容无从操作 */}
+                {draftActive && workspaceGroupKey(group.workspace || null) === workspaceGroupKey(currentWorkspace || null) ? (
+                  <div
+                    className="session-item draft-placeholder"
+                    role="treeitem"
+                    aria-selected="true"
+                    data-draft-placeholder=""
+                    onClick={() => (document.getElementById("message-input") as HTMLTextAreaElement | null)?.focus()}
+                  >
+                    <strong>新会话</strong>
+                  </div>
+                ) : null}
                 {group.sessions.slice(0, expandedSessionGroups[group.key] ? group.sessions.length : 5).map((session) => (
                   <div
                     key={session.id}
@@ -421,7 +435,7 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
                     onClick={() => { if (menuSessionId !== session.id) onSelect(session) }}
                     onKeyDown={(e) => { if (e.key === "Enter" && menuSessionId !== session.id) onSelect(session); if (e.key === "ArrowDown") { e.preventDefault(); const next = groups.flatMap((item) => item.sessions); const index = next.findIndex((item) => item.id === session.id); if (next[index + 1]) onSelect(next[index + 1]) } if (e.key === "ArrowUp") { e.preventDefault(); const next = groups.flatMap((item) => item.sessions); const index = next.findIndex((item) => item.id === session.id); if (next[index - 1]) onSelect(next[index - 1]) } }}
                   >
-                    <span className="session-hover-card" role="tooltip"><strong>{session.title || "新会话"}</strong><span>更新于 {relativeTime(session.updated_at || session.created_at)}</span><span>{session.workspace || "未分组"}</span></span>
+                    <span className="session-hover-card" role="tooltip"><strong>{session.title || "新会话"}</strong><span>{relativeTimeAgo(session.updated_at || session.created_at)}</span><span>{session.workspace || "未分组"}</span></span>
                      <span className={cx("session-dot", runtimeBySession[session.id]?.pending ? "pending" : runtimeBySession[session.id]?.active || runtimeBySession[session.id]?.descendantRunning ? "running" : runtimeBySession[session.id]?.completedUnviewed ? "completed" : "")} aria-hidden="true" /><span className="visually-hidden">会话状态：{runtimeBySession[session.id]?.pending ? "等待操作" : runtimeBySession[session.id]?.active ? "运行中" : runtimeBySession[session.id]?.descendantRunning ? "子会话运行中" : runtimeBySession[session.id]?.completedUnviewed ? "已完成未查看" : "空闲"}</span>
                     {session.parent_session_id ? <span className="session-fork-icon" title="分支会话">⑂</span> : null}
                     {editingSessionId === session.id ? <input className="session-inline-rename" value={editingTitle} autoFocus onChange={(e) => setEditingTitle(e.target.value)} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Enter" && editingTitle.trim()) { e.preventDefault(); onRename(session, editingTitle.trim()); setEditingSessionId(null) } if (e.key === "Escape") { e.preventDefault(); setEditingSessionId(null) } }} onBlur={() => { if (editingTitle.trim() && editingTitle.trim() !== session.title) onRename(session, editingTitle.trim()); setEditingSessionId(null) }} /> : <strong>{shortText(session.title || "新会话", 28)}</strong>}
@@ -624,6 +638,9 @@ function ConversationView({ entries, streamingText, onForkAt }: { entries: Timel
 export default function App() {
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // dsh 空白占位会话（D1）：点"新会话"只进入草稿态，首条消息才真正建会话；
+  // 选回已有会话或刷新即放弃，不再积累"新对话"空壳。
+  const [draftActive, setDraftActive] = useState(false)
   const [entries, setEntries] = useState<TimelineEntry[]>([])
   const inline = useInlineComments(selectedId, entries.length)
   const [takeovers, setTakeovers] = useState<PendingApprovalItem[]>([])
@@ -795,6 +812,7 @@ export default function App() {
   }
 
   const selectSession = async (session: ChatSession) => {
+    setDraftActive(false)
     setSelectedId(session.id)
     setActiveTab("chat")
     try {
@@ -802,12 +820,20 @@ export default function App() {
     } catch { /* 选择失败保持空 */ }
   }
 
-  const newChat = async () => {
-    const session = await api<ChatSession>("/api/chat/sessions", { method: "POST", body: JSON.stringify({ title: "新线程" }) })
-    setSelectedId(session.id)
+  // dsh startSession 语义（D1/D11）：不落库，仅进入草稿态；带 workspace 参数时
+  // 先切换到目标工作区（分组头"+"在该工作区新建会话）。
+  const newChat = async (workspacePath?: string) => {
+    if (workspacePath && workspacePath !== workspace) {
+      try {
+        const next = await api<{ current_root?: string }>("/api/workspace/select", { method: "POST", body: JSON.stringify({ path: workspacePath }) })
+        setWorkspace(String(next.current_root || workspacePath))
+        await reloadSessions()
+      } catch { /* 切换失败仍在当前工作区开草稿 */ }
+    }
+    setDraftActive(true)
+    setSelectedId(null)
     setEntries([])
     setTakeovers([])
-    await reloadSessions()
   }
 
   const renameSession = async (session: ChatSession, title: string) => {
@@ -854,9 +880,11 @@ export default function App() {
   const send = async (content: string) => {
     let sessionId = selectedId
     if (!sessionId) {
+      // 草稿态首条消息：此刻才创建会话（dsh 空白占位转正），并走自动命名。
       const session = await api<ChatSession>("/api/chat/sessions", { method: "POST", body: JSON.stringify({ title: "新对话" }) })
       sessionId = session.id
       setSelectedId(sessionId)
+      setDraftActive(false)
       await reloadSessions()
     }
     setEntries((prev) => [...prev, { kind: "message", key: `local-u-${Date.now()}`, message: { id: `local-${Date.now()}`, role: "user", content, created_at: new Date().toISOString() } }])
@@ -1111,6 +1139,7 @@ export default function App() {
         currentWorkspace={workspace}
         version={version}
          runtimeBySession={runtimeBySession}
+         draftActive={draftActive}
         onSelect={selectSession}
         onRename={renameSession}
         onFork={forkSession}

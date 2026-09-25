@@ -190,7 +190,16 @@ async def list_chat_sessions(
     workspace: str | None = ctx.Query(default=None),
     include_archived: bool = ctx.Query(default=False),
 ) -> list[ctx.ChatSession]:
-    return ctx.store.list_chat_sessions(workspace=workspace, include_archived=include_archived)
+    sessions = ctx.store.list_chat_sessions(workspace=workspace, include_archived=include_archived)
+    # dsh 侧栏语义：占位标题且零消息的空壳会话（历史"新会话"点击残留）不进侧栏；
+    # 数据保留在存储中不删除，只是不再与有效会话混排。
+    from ..sessions.titling import is_placeholder_title
+
+    return [
+        session
+        for session in sessions
+        if not (is_placeholder_title(session.title) and not ctx.store.list_chat_messages(session.id))
+    ]
 
 
 @router.get("/api/chat/sessions/search")

@@ -42,6 +42,8 @@ export function shortText(text: string, max = 64): string {
   return value.length > max ? `${value.slice(0, max)}…` : value
 }
 
+// dsh 六桶相对时间（tree.ts relativeTime 同款分桶）：
+// 刚刚 / N分钟 / N小时 / N天 / N个月 / N年。
 export function relativeTime(iso: string | null | undefined): string {
   if (!iso) return ""
   const ts = Date.parse(iso)
@@ -50,8 +52,16 @@ export function relativeTime(iso: string | null | undefined): string {
   if (diff < 60_000) return "刚刚"
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}分钟`
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}小时`
-  const d = new Date(ts)
-  return `${d.getMonth() + 1}/${d.getDate()}`
+  if (diff < 30 * 86_400_000) return `${Math.floor(diff / 86_400_000)}天`
+  if (diff < 365 * 86_400_000) return `${Math.floor(diff / (30 * 86_400_000))}个月`
+  return `${Math.floor(diff / (365 * 86_400_000))}年`
+}
+
+// 悬停卡措辞（dsh time.ago 模板）：非"刚刚"桶追加"前"。
+export function relativeTimeAgo(iso: string | null | undefined): string {
+  const label = relativeTime(iso)
+  if (!label || label === "刚刚") return label
+  return `${label}前`
 }
 
 export function projectName(path: string): string {
