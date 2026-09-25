@@ -3033,3 +3033,13 @@ N2 进展（状态层部分）：完成 frontend/src/lib/workspaceViewStore.ts�
 [x] 实现：新增 src/nova/sessions/titling.py；ChatSession.title_source（default→fallback→llm，user 钉住）；store.auto_title_chat_session 升级链；SessionRunner 首条消息同步兜底 + session_title 流事件；stream 端点首轮后 LLM 升级（4s 上限，失败静默保留兜底）；前端 session_title 事件实时更新侧栏
 [x] 回归与实测：新增 tests/test_titling.py 14 项通过；全量后端 317 tests OK；smoke 新增自动命名契约；tsc/build/diff-check 通过；HTTP 流实测 session_title 事件实时触发且 store 持久化（title_source=fallback）
 ------ todo-list end at 2026/09/25/19:40:00 -----
+------ todo-list begin at 2026/09/26/01:33:48 -----
+左侧会话侧边栏的ui显示和交互方式你在对照dsh核对一下差异
+[] 调研 DSH 会话侧边栏的显示与交互源码（分组、条目结构、菜单、折叠、搜索等）
+[] 实测两侧线上行为（DSH 3080 只读观测，Nova 8765），逐项列差异
+[] 产出差异清单与验收指标（含现状证据），更新 durable 记录
+------ todo-list end at 2026/09/26/01:33:48 -----
+[x] 调研 DSH 会话侧边栏源码：SidebarRoot 壳（折叠滑动+淡出编排、滚动条跟随指针）、WorkspaceBrowser（视图菜单、内联搜索、分组树、5条折叠、拖拽）、Rows（状态点优先级、悬停卡+复制、时间↔菜单互换、空白占位行）、tree.ts（六桶相对时间）
+[x] 实测两侧：DSH 280/56px、导轨 4 图标、行高 34/32、时间桶"1分钟/4天"；Nova 279px、时间 opacity=1 与菜单同显、无天级桶、新会话立即落库（10 个会话 5 个占位）
+[x] 产出差异清单 reports/2026-09-26-0135_侧边栏差异清单.md（D1–D13 分级 + 验收指标 + 已对齐项），P0 = 新会话延迟落库 + 六桶时间
+------ todo-list end at 2026/09/26/01:55:00 -----
