@@ -3079,3 +3079,9 @@ N2 进展（状态层部分）：完成 frontend/src/lib/workspaceViewStore.ts�
 [x] P2-D13 品牌按钮=新会话快捷入口（点击出草稿，选回已有会话即取消）
 [x] 回归：后端 319 tests OK、前端 4 项门禁全过、tsc/build/diff-check 通过、全项浏览器实测
 ------ todo-list end at 2026/09/26/02:45:00 -----
+------ todo-list begin at 2026/09/26/11:49:41 -----
+比例很奇怪，...和+换行了，而且+不是一直显示，显示有bug
+[x] 根因：session-group-head 是 3 列 grid，新加的"+"与原有"•••"是两个独立子元素，••• 被挤进隐式第二行
+[x] 修复：按 dsh rowActions 收进单个 .workspace-row-actions 容器（grid 最后一列），+ 与 ••• 同行、悬停一起显现、菜单打开保持可见；清理 stale CSS 与外点关闭选择器
+[x] 回归实测：head 恢复 34px、同行/默认隐藏/悬停显现/对齐右缘/点 + 出草稿/菜单项齐全；前端门禁全过
+------ todo-list end at 2026/09/26/12:05:00 -----

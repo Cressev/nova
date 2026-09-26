@@ -318,7 +318,7 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
   useEffect(() => {
     const close = (event: PointerEvent) => {
       const target = event.target as HTMLElement
-      if (!target.closest(".session-row-menu, .workspace-row-menu, .workspace-rename-popover, .view-menu")) {
+      if (!target.closest(".session-row-menu, .workspace-row-actions, .workspace-rename-popover, .view-menu")) {
         setMenuSessionId(null)
         setWorkspaceMenuPath(null)
         setWorkspaceRenamePath(null)
@@ -559,9 +559,14 @@ function Sidebar({ sessions, selectedId, currentWorkspace, version, runtimeBySes
                     {workspaceRegistry.find((item) => item.path === group.workspace)?.created_at ? <span>创建于 {formatDateTime(workspaceRegistry.find((item) => item.path === group.workspace)!.created_at!)}</span> : null}
                   </span>
                 ) : null}
-                {/* dsh 分组头"+"（D11）：在该工作区直接新建会话 */}
-                {group.workspace && !group.ungrouped ? <span className="workspace-row-plus"><button type="button" aria-label={`在“${group.name}”中新建会话`} title={`在“${group.name}”中新建会话`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onNewChat(group.workspace || undefined) }}><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg></button></span> : null}
-                {group.workspace && !group.ungrouped ? <span className="workspace-row-menu"><button type="button" aria-label={`工作区操作：${group.name}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setWorkspaceMenuPath(workspaceMenuPath === group.workspace ? null : group.workspace) }}>•••</button>{workspaceMenuPath === group.workspace ? <span className="workspace-context-menu" role="menu" onPointerDown={(event) => event.stopPropagation()}><button type="button" role="menuitem" onClick={() => { setWorkspaceRenamePath(group.workspace); setWorkspaceRenameTitle(group.name); setWorkspaceMenuPath(null) }}>重命名</button><button type="button" role="menuitem" disabled={group.workspace === currentWorkspace} onClick={async () => { if (!window.confirm("只从 Nova 注册表移除，不删除本地目录。继续吗？")) return; try { await api("/api/workspaces/delete", { method: "POST", body: JSON.stringify({ path: group.workspace }) }); setWorkspaceRegistry((items) => items.filter((item) => item.path !== group.workspace)); setWorkspaceMenuPath(null); setWorkspaceActionError("") } catch { setWorkspaceActionError("工作区删除失败，请重试") } }}>删除</button></span> : null}</span> : null}
+                {/* dsh rowActions（D11）：+ 与 ••• 同处一个动作容器（grid 最后一列），悬停一起显现 */}
+                {group.workspace && !group.ungrouped ? (
+                  <span className={cx("workspace-row-actions", workspaceMenuPath === group.workspace ? "open" : "")}>
+                    <button type="button" className="workspace-plus" aria-label={`在“${group.name}”中新建会话`} title={`在“${group.name}”中新建会话`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onNewChat(group.workspace || undefined) }}><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg></button>
+                    <button type="button" className="workspace-more" aria-label={`工作区操作：${group.name}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setWorkspaceMenuPath(workspaceMenuPath === group.workspace ? null : group.workspace) }}>•••</button>
+                    {workspaceMenuPath === group.workspace ? <span className="workspace-context-menu" role="menu" onPointerDown={(event) => event.stopPropagation()}><button type="button" role="menuitem" onClick={() => { setWorkspaceRenamePath(group.workspace); setWorkspaceRenameTitle(group.name); setWorkspaceMenuPath(null) }}>重命名</button><button type="button" role="menuitem" disabled={group.workspace === currentWorkspace} onClick={async () => { if (!window.confirm("只从 Nova 注册表移除，不删除本地目录。继续吗？")) return; try { await api("/api/workspaces/delete", { method: "POST", body: JSON.stringify({ path: group.workspace }) }); setWorkspaceRegistry((items) => items.filter((item) => item.path !== group.workspace)); setWorkspaceMenuPath(null); setWorkspaceActionError("") } catch { setWorkspaceActionError("工作区删除失败，请重试") } }}>删除</button></span> : null}
+                  </span>
+                ) : null}
               </div>
               <div className="session-group-items" hidden={!group.expanded}>
                 {/* dsh 空白占位行（D1）：无状态点、无时间、无行菜单——对不存在的内容无从操作 */}

@@ -2924,8 +2924,42 @@ body.inspector-collapsed .inspector-toggle {
 .workspace-group-hover { position: absolute; left: 8px; top: calc(100% + 4px); z-index: 25; display: none; max-width: 300px; overflow: hidden; padding: 6px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; background: var(--surface, #fff); box-shadow: 0 7px 20px rgb(0 0 0 / 13%); color: var(--muted); font-size: 10px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .session-group-head:hover .workspace-group-hover, .session-group-head:focus-visible .workspace-group-hover { display: block; }
 
-.workspace-row-menu { margin-left: auto; position: relative; flex: none; }
-.workspace-row-menu > button { border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+/* dsh rowActions（D11）：+ 与 ••• 同一容器，悬停分组头一起显现，菜单打开保持可见 */
+.workspace-row-actions { position: relative; display: inline-flex; align-items: center; gap: 2px; }
+.workspace-row-actions .workspace-plus,
+.workspace-row-actions .workspace-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+.session-group-head:hover .workspace-row-actions .workspace-plus,
+.session-group-head:hover .workspace-row-actions .workspace-more,
+.session-group-head:focus-within .workspace-row-actions .workspace-plus,
+.session-group-head:focus-within .workspace-row-actions .workspace-more,
+.workspace-row-actions.open .workspace-plus,
+.workspace-row-actions.open .workspace-more {
+  opacity: 1;
+  pointer-events: auto;
+}
+.workspace-row-actions .workspace-plus:hover,
+.workspace-row-actions .workspace-more:hover,
+.workspace-row-actions.open .workspace-more {
+  background: var(--dsw-specific-sidebar-nav-item-hover);
+  color: var(--text);
+}
 .workspace-context-menu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 50; display: grid; min-width: 120px; padding: 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--surface, #fff); box-shadow: 0 8px 24px rgb(0 0 0 / 14%); }
 .workspace-context-menu button { border: 0; padding: 6px 8px; background: transparent; text-align: left; cursor: pointer; }
 .workspace-context-menu button:hover { background: var(--dsw-alias-interactive-bg-hover); }
@@ -3069,11 +3103,6 @@ body.inspector-collapsed .inspector-toggle {
 .workspace-hover-card .workspace-hover-path { cursor: copy; }
 .session-group-head { position: relative; }
 .session-group-head:hover .workspace-hover-card, .session-group-head:focus-within .workspace-hover-card { opacity: 1; transform: translateY(0); }
-.workspace-row-plus { flex: none; margin-left: auto; }
-.workspace-row-plus button { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; opacity: 0; transition: opacity 120ms ease, background 120ms ease; }
-.session-group-head:hover .workspace-row-plus button, .session-group-head:focus-within .workspace-row-plus button { opacity: 1; }
-.workspace-row-plus button:hover { background: var(--dsw-specific-sidebar-nav-item-hover); color: var(--text); }
-
 /* dsh（D10）：滚动条跟随指针——quiet-bars 时隐藏，指针在栏内或 2s linger 内绘制 */
 .sidebar.quiet-bars .sidebar-sessions { scrollbar-width: none; }
 .sidebar.quiet-bars .sidebar-sessions::-webkit-scrollbar { display: none; }
