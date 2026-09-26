@@ -75,7 +75,7 @@ check("React 源码包含核心交互锚点", () => {
 check("Sidebar 滚动与菜单外部关闭契约存在", () => {
   const app = fs.readFileSync(path.join(root, "frontend/src/App.tsx"), "utf8")
   const css = fs.readFileSync(path.join(root, "frontend/src/app.css"), "utf8")
-  for (const anchor of ["pointerdown", ".session-row-menu, .workspace-row-menu, .workspace-rename-popover", "setWorkspaceMenuPath(null)", "setMenuSessionId(null)", "onPointerDown={(event) => event.stopPropagation()}", "onPointerDown={(e) => e.stopPropagation()}", "workspace-context-menu\" role=\"menu\" onPointerDown", "session-context-menu\" role=\"menu\" onPointerDown", "role=\"button\" tabIndex={0}", "aria-expanded={group.expanded}", "event.key === \"Enter\" || event.key === \" \""]) {
+  for (const anchor of ["pointerdown", ".session-row-menu, .workspace-row-actions, .workspace-rename-popover", "setWorkspaceMenuPath(null)", "setMenuSessionId(null)", "onPointerDown={(event) => event.stopPropagation()}", "onPointerDown={(e) => e.stopPropagation()}", "workspace-context-menu\" role=\"menu\" onPointerDown", "session-context-menu\" role=\"menu\" onPointerDown", "workspace-row-actions", "role=\"button\" tabIndex={0}", "aria-expanded={group.expanded}", "event.key === \"Enter\" || event.key === \" \""]) {
     if (!app.includes(anchor)) throw new Error(`App.tsx 缺少 ${anchor}`)
   }
   for (const anchor of ["scrollbar-gutter: stable", "overflow-x: hidden", "overflow-y: scroll", ".sidebar-sessions", ".session-list", "flex: 0 0 279px", "flex: 0 0 24px"]) {
