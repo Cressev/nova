@@ -677,6 +677,8 @@ body.sidebar-collapsed .sidebar-foot-button {
   width: 100%;
   overflow-x: hidden;
   overflow-y: auto;
+  /* 滚动条出现不再挤压正文：常驻预留 gutter（与侧栏一致），文字不因滚动条显隐重排 */
+  scrollbar-gutter: stable;
   overscroll-behavior: contain;
 }
 

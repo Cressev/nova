@@ -3094,3 +3094,12 @@ N2 进展（状态层部分）：完成 frontend/src/lib/workspaceViewStore.ts�
 [x] 复现并量化：+/••• 右缘 378 超出可视区 265——head 被 grid auto 列撑到 371px
 [x] 修复：session-group 与 session-group-items 两级 grid 列钉死 minmax(0,1fr)，长标题行不再撑爆列宽（head/行回归 236px）
 [x] 回归实测 + 门禁 + 提交推送：9 行 maxRight=265、+/••• 同行双显现且右缘 243<滚动条 250；前端门禁全过
+------ todo-list begin at 2026/09/26/12:46:52 -----
+不要一出滚动条，字体就被挤压
+[] 复现量化：滚动条显隐导致内容宽度跳变
+[] 修复：原生滚动条常驻隐藏 + 自绘 overlay 指示条（进栏显现/2s linger 隐藏），内容宽度恒定
+[] 回归实测 + 门禁 + 提交推送
+------ todo-list end at 2026/09/26/12:46:52 -----
+[x] 复现量化：聊天消息区 .scroll-body 无 gutter 预留，滚动条出现瞬间内容变窄、文字重排
+[x] 修复：.scroll-body 加 scrollbar-gutter: stable（与侧栏一致），滚动条显隐不再改变正文可用宽
+[x] 回归实测 + 门禁 + 提交推送：有/无滚动条 clientW/消息区/文字宽恒定（986/780/352）；前端门禁全过
