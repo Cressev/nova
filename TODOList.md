@@ -3085,3 +3085,12 @@ N2 进展（状态层部分）：完成 frontend/src/lib/workspaceViewStore.ts�
 [x] 修复：按 dsh rowActions 收进单个 .workspace-row-actions 容器（grid 最后一列），+ 与 ••• 同行、悬停一起显现、菜单打开保持可见；清理 stale CSS 与外点关闭选择器
 [x] 回归实测：head 恢复 34px、同行/默认隐藏/悬停显现/对齐右缘/点 + 出草稿/菜单项齐全；前端门禁全过
 ------ todo-list end at 2026/09/26/12:05:00 -----
+------ todo-list begin at 2026/09/26/12:09:11 -----
+被滚动条挡住了现在
+[] 复现并量化：悬停分组头时 +/••• 与滚动条的重叠
+[] 修复：给滚动条预留空间，动作不再被盖
+[] 回归实测 + 门禁 + 提交推送
+------ todo-list end placeholder -----
+[x] 复现并量化：+/••• 右缘 378 超出可视区 265——head 被 grid auto 列撑到 371px
+[x] 修复：session-group 与 session-group-items 两级 grid 列钉死 minmax(0,1fr)，长标题行不再撑爆列宽（head/行回归 236px）
+[x] 回归实测 + 门禁 + 提交推送：9 行 maxRight=265、+/••• 同行双显现且右缘 243<滚动条 250；前端门禁全过

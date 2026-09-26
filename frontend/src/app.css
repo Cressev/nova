@@ -2882,6 +2882,9 @@ body.inspector-collapsed .inspector-toggle {
 
 .session-group {
   display: grid;
+  /* 钉死为可用宽：auto 列会被长标题会话行的 min-content 撑爆，
+     连带 width:100% 的分组头溢出裁切线，行动作(+/•••)被滚动条区域盖住 */
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
 }
 
@@ -2976,6 +2979,8 @@ body.inspector-collapsed .inspector-toggle {
 
 
 .session-group-items {
+  /* 同 session-group：钉死列宽，防止长标题行把 auto 列撑出可视区 */
+  grid-template-columns: minmax(0, 1fr);
   display: grid;
   gap: 3px;
   padding-left: 10px;
